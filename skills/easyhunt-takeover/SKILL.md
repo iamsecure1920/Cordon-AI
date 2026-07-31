@@ -37,6 +37,25 @@ Anything short of that is `not_a_candidate`. Do not report it.
 | CNAME, provider claimable | High | Content control on a target hostname |
 | CNAME, provider `edge-case` | Medium, often not a bug | Provider verifies ownership |
 
+### NS and MX coverage is conditional
+
+The CNAME flow above runs on the tools that ship by default (subzy, dnsReaper).
+**Lame NS delegation is not covered by any of them** — HTTP-oriented scanners
+only see hosts that answer HTTP, and a broken delegation usually answers
+nothing at all.
+
+`subdomainsleuth` is the tool for that, it needs authoritative zone files, and
+it is not installed by default. Check before you claim coverage:
+
+```
+easyhunt doctor | grep subdomainsleuth
+```
+
+If it is absent, NS and MX delegation on this engagement is **UNTESTED, not
+clean** — say so in the report rather than letting a silent gap read as a
+negative result. That distinction is the same one the validators make when a
+binary is missing.
+
 CloudFront, Netlify, Vercel, Shopify, and Fastly are marked `edge-case`: they
 verify domain ownership, so the fingerprint appears but the takeover usually is
 not possible. The verifier flags this and downgrades with a reason. Do not argue

@@ -451,38 +451,50 @@ def _count_findings(result: Any) -> int | None:
 # Sandboxed execution helper
 # --------------------------------------------------------------------------- #
 
-#: Host config directories to expose, read-only, to the container that runs each
-#: tool. Without these a containerised subfinder finds no config and no API keys,
-#: so it returns an error or a fraction of the results it would find on the host
-#: — and it does so *quietly*, which reads as "the target has few subdomains"
-#: rather than "the tool was never configured".
-_CONFIG_DIRS: dict[str, str] = {
-    "subfinder": "~/.config/subfinder",
-    "amass": "~/.config/amass",
-    "nuclei": "~/.config/nuclei",
-    "httpx": "~/.config/httpx",
-    "katana": "~/.config/katana",
-    "naabu": "~/.config/naabu",
-    "dnsx": "~/.config/dnsx",
-    "uncover": "~/.config/uncover",
-    "notify": "~/.config/notify",
+#: Host directories to expose, read-only, to the container that runs each tool,
+#: as ``tool -> [(host path, container path)]``.
+#:
+#: Containers ship the binary and nothing else. Without these mounts a
+#: containerised subfinder finds no config and no API keys, and a containerised
+#: nuclei finds none of the 13,391 templates on the host — and because
+#: ``-disable-update-check`` stops it fetching them, it exits with "no templates
+#: provided for scan". Both failures are quiet enough to read as "this estate is
+#: clean" rather than "the tool never ran".
+_CONTAINER_MOUNTS: dict[str, list[tuple[str, str]]] = {
+    "subfinder": [("~/.config/subfinder", "/root/.config/subfinder")],
+    "amass": [("~/.config/amass", "/root/.config/amass")],
+    "nuclei": [
+        ("~/.config/nuclei", "/root/.config/nuclei"),
+        # The template library is the tool. Without it nuclei is an empty shell.
+        ("~/nuclei-templates", "/root/nuclei-templates"),
+        # nuclei initialises uncover's provider config even when uncover is unused.
+        ("~/.config/uncover", "/root/.config/uncover"),
+    ],
+    "httpx": [("~/.config/httpx", "/root/.config/httpx")],
+    "katana": [("~/.config/katana", "/root/.config/katana")],
+    "naabu": [("~/.config/naabu", "/root/.config/naabu")],
+    "dnsx": [("~/.config/dnsx", "/root/.config/dnsx")],
+    "uncover": [("~/.config/uncover", "/root/.config/uncover")],
+    "notify": [("~/.config/notify", "/root/.config/notify")],
 }
 
 
 def _config_mounts(tool: str) -> list[tuple[Path, str, str]]:
-    """Read-only mounts carrying a tool's host config into its container.
+    """Read-only mounts carrying a tool's host config and data into its container.
 
     Read-only on purpose: a tool must not be able to rewrite the operator's
-    credentials, and nothing in a scan should mutate configuration.
+    credentials, and nothing in a scan should mutate configuration or templates.
+
+    Absent host paths are skipped rather than mounted. Mounting a non-existent
+    path makes Docker create an empty directory, which looks configured and
+    behaves as if it were not.
     """
-    configured = _CONFIG_DIRS.get(tool)
-    if not configured:
-        return []
-    host = Path(configured).expanduser()
-    if not host.is_dir():
-        return []
-    # Containers for these tools all run as root.
-    return [(host, f"/root/.config/{tool}", "ro")]
+    mounts: list[tuple[Path, str, str]] = []
+    for host_path, container_path in _CONTAINER_MOUNTS.get(tool, []):
+        host = Path(host_path).expanduser()
+        if host.is_dir():
+            mounts.append((host, container_path, "ro"))
+    return mounts
 
 
 async def guarded_run(

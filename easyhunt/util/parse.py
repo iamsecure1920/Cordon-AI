@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 from collections.abc import Iterable, Iterator
 from typing import Any
 from urllib.parse import urlsplit
@@ -106,16 +107,49 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+#: Characters with no visual width that break up a word without changing how it
+#: reads. "ig<ZWSP>nore previous instructions" renders identically to the plain
+#: string and matches none of the patterns above.
+_INVISIBLE = dict.fromkeys(
+    [
+        0x00AD,  # soft hyphen
+        0x200B, 0x200C, 0x200D,  # zero-width space / non-joiner / joiner
+        0x2060,  # word joiner
+        0xFEFF,  # zero-width no-break space
+        0x180E,  # mongolian vowel separator
+        *range(0x202A, 0x202F),  # bidi embedding/override
+        *range(0x2066, 0x206A),  # bidi isolates
+    ]
+)
+
+
+def _fold(text: str) -> str:
+    """Collapse Unicode variants onto the ASCII forms the patterns are written in.
+
+    Regex-only stripping is bypassable three ways, all verified against this
+    codebase: fullwidth forms (ｉｇｎｏｒｅ), zero-width characters splitting a
+    word, and soft hyphens. NFKC maps the compatibility forms onto ASCII, and the
+    invisible characters are deleted outright — they carry no meaning in scanner
+    output, only the ability to hide from a matcher.
+    """
+    return unicodedata.normalize("NFKC", text).translate(_INVISIBLE)
+
+
 def sanitize_for_model(text: str, *, max_lines: int = 400, max_chars: int = 60_000) -> str:
     """Neutralize prompt-injection markers and cap size before a model sees it.
 
     Findings keep their original text on disk and in the report — only the copy
     that enters a context window is rewritten, and every rewrite leaves a visible
     ``[stripped: ...]`` marker so a reviewer can tell something was there.
+
+    Matching runs against a Unicode-folded copy so that homoglyph and
+    zero-width evasion cannot slip a directive past the patterns. The folded text
+    is what the model receives: returning the original would defeat the folding,
+    since the unfolded bytes are exactly what the injection needs.
     """
     if not text:
         return ""
-    out = text
+    out = _fold(text)
     for pattern, replacement in _INJECTION_PATTERNS:
         out = pattern.sub(replacement, out)
 

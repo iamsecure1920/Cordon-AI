@@ -467,7 +467,20 @@ class Scope:
             )
         else:
             return None
-        if bool(self.engagement.get("refuse_when_stale")):
+
+        # Default to refusing for bug bounty work. A program's published policy
+        # *is* the authorization, and scope drifts — targets get removed, rules
+        # change. Continuing on a stale bug-bounty scope risks testing something
+        # that is no longer in scope, which is the one failure this whole file
+        # exists to prevent. Owned assets and written approvals do not expire the
+        # same way, so they keep warning as the default.
+        declared = self.engagement.get("refuse_when_stale")
+        if declared is None:
+            refuse = str(self.engagement.get("authorization", "")).lower() == "bug-bounty"
+        else:
+            refuse = bool(declared)
+
+        if refuse:
             raise StaleScopeError(message, source=self.source, age_days=age, max_age_days=max_age)
         return message
 

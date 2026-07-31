@@ -26,12 +26,12 @@ dependencies = [
 
 [project.optional-dependencies]
 llm = ["openai>=1.40"]
-engines = ["bbot>=2.4"]
+engines = ["bbot>=3.0"]
 memory = ["neo4j>=5.20"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.6"]
 all = [
   "openai>=1.40",
-  "bbot>=2.4",
+  "bbot>=3.0",
   "pytest>=8.0",
   "pytest-asyncio>=0.23",
 ]

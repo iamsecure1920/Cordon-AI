@@ -154,7 +154,8 @@ def _template_args(engagement: Any, templates: list[str] | None, workflow: str |
         args += ["-w", workflow]
         return args
 
-    for template in templates or []:
+    explicit = list(templates or [])
+    for template in explicit:
         args += ["-t", template]
 
     # Custom templates from the rule layer always participate.
@@ -164,7 +165,12 @@ def _template_args(engagement: Any, templates: list[str] | None, workflow: str |
     for directory in custom_dirs:
         args += ["-t", directory]
 
-    if not args:
+    # The main library is included whenever the caller did not name specific
+    # templates. This used to be an `if not args` fallback, which meant a single
+    # custom rule silently *replaced* all 13,391 upstream templates: nuclei then
+    # exited with "no templates provided for scan" for any tag the custom rule
+    # did not carry. Custom rules add to the library, they do not stand in for it.
+    if not explicit:
         configured = engagement.config.get("engines.nuclei.templates_dir")
         if configured:
             expanded = Path(str(configured)).expanduser()
@@ -240,8 +246,23 @@ async def _run(
     for finding in stored:
         by_severity[finding.severity.value] = by_severity.get(finding.severity.value, 0) + 1
 
+    # Nuclei exits 1 both for "found nothing" and for fatal startup errors, so the
+    # exit code alone cannot distinguish them. A [FTL] line means the scan never
+    # ran — and reporting ok=True there turns "nuclei was misconfigured" into
+    # "this estate is clean", which is the most expensive lie this tool can tell.
+    fatal = ""
+    for line in (result.stderr or "").splitlines():
+        if "[FTL]" in line or "Could not run nuclei" in line:
+            fatal = line.strip()
+            break
+
     return {
-        "ok": True,
+        "ok": not fatal,
+        "error": "nuclei_failed" if fatal else None,
+        "message": (
+            f"nuclei did not run: {fatal}. Zero findings here means UNTESTED, "
+            "not clean."
+        ) if fatal else None,
         "targets": len(targets),
         "raw_output": str(result.output_path) if result.output_path else None,
         "exit_code": result.exit_code,

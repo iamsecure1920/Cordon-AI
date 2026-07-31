@@ -739,14 +739,21 @@ def build_server(
         for warning in engagement.warnings:
             log.warning("scope: %s", warning)
         # Pin tool definitions so a later change to a tool's shape is detectable.
+        #
+        # The import is guarded; the call deliberately is not. Wrapping both in
+        # `except ImportError: pass` meant an ImportError raised *inside*
+        # verify_or_write_pins — a missing transitive dependency, a bad lazy
+        # import — silently disabled supply-chain pinning while the server
+        # reported healthy. A pin check that quietly does nothing is worse than
+        # no pin check, because it is trusted.
         try:
             from easyhunt.control_plane.pins import verify_or_write_pins
-
+        except ImportError as exc:  # pragma: no cover — module ships with us
+            log.error("tool definition pinning unavailable: %s", exc)
+        else:
             report = verify_or_write_pins(engagement, REGISTRY)
             if report.get("changed"):
                 log.warning("tool definition drift detected: %s", report["changed"])
-        except ImportError:
-            pass
     return mcp
 
 
