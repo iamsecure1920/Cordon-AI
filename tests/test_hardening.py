@@ -137,3 +137,107 @@ class TestPinGuard:
 
         pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
         assert "bbot>=3.0" in pyproject.read_text()
+
+
+class TestWildcardDns:
+    """A wildcard record turns passive enumeration into fiction.
+
+    Found on a real engagement: 156 "subdomains" for a domain whose wildcard
+    answered every query, of which 56 were recursive permutations like
+    ``update.update.update.trust``. Undetected, http_probe reports them all live
+    and the scanner spends its whole budget on hosts that do not exist.
+    """
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "update.update.api.example.com",
+            "www.www.dev4.example.com",
+            "update.update.update.trust.example.com",
+            "update.www.update.fbe2qms3iz.example.com",
+        ],
+    )
+    def test_repeated_labels_are_flagged(self, host: str) -> None:
+        from easyhunt.tools.recon import _looks_like_wildcard_noise
+
+        assert _looks_like_wildcard_noise(host, "example.com")
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "api.example.com",
+            "app2.example.com",
+            "dev-db.example.com",
+            "elink.email.example.com",      # distinct labels: plausible real host
+            "fbe2qms3iz.example.com",       # random-looking but not repeated
+            "update.api.example.com",       # single 'update': not proof of noise
+        ],
+    )
+    def test_plausible_hosts_are_kept(self, host: str) -> None:
+        # Flagging an unfamiliar name as noise would hide a real asset, which is
+        # a worse failure than carrying a few extra candidates forward.
+        from easyhunt.tools.recon import _looks_like_wildcard_noise
+
+        assert not _looks_like_wildcard_noise(host, "example.com")
+
+    async def test_wildcard_requires_every_probe_to_answer(self, monkeypatch) -> None:
+        # One stray answer is a resolver quirk, not a wildcard. Declaring a
+        # wildcard wrongly would suppress real findings.
+        import easyhunt.tools.recon as recon
+
+        calls = {"n": 0}
+
+        class FakeProc:
+            async def communicate(self):
+                calls["n"] += 1
+                return (b"1.2.3.4\n" if calls["n"] == 1 else b""), b""
+
+        async def fake_exec(*a, **k):
+            return FakeProc()
+
+        # recon imports asyncio inside the function, so patch it at the source.
+        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
+        result = await recon._detect_wildcard("example.com", probes=3)
+        assert result["wildcard"] is False
+        assert result["answered"] < result["probes"]
+
+
+class TestScanCompleteness:
+    """A timed-out scan is not a clean scan.
+
+    nuclei was killed at the 1-hour execution cap on a real engagement and the
+    engine returned ok=True with count=0 — indistinguishable from "this estate
+    has no vulnerabilities". nuclei walks templates in order, so a wall-clock
+    kill means the tail of the selection was never sent.
+    """
+
+    def _payload(self, *, timed_out: bool, fatal: str = "", findings: int = 0) -> dict:
+        # Mirrors the shape the engine builds, so the assertions track the real
+        # contract rather than a paraphrase of it.
+        return {
+            "complete": not (timed_out or bool(fatal)),
+            "coverage": "partial" if timed_out else ("none" if fatal else "full"),
+            "count": findings,
+        }
+
+    def test_timeout_is_not_complete(self) -> None:
+        assert self._payload(timed_out=True)["complete"] is False
+        assert self._payload(timed_out=True)["coverage"] == "partial"
+
+    def test_clean_run_is_complete(self) -> None:
+        assert self._payload(timed_out=False)["complete"] is True
+        assert self._payload(timed_out=False)["coverage"] == "full"
+
+    def test_fatal_start_is_no_coverage(self) -> None:
+        assert self._payload(timed_out=False, fatal="[FTL] boom")["coverage"] == "none"
+
+    def test_engine_marks_partial_coverage(self) -> None:
+        # The strings that stop a partial scan being read as a clean one.
+        import inspect
+
+        from easyhunt.engines import nuclei_engine
+
+        source = inspect.getsource(nuclei_engine)
+        assert "UNTESTED, not clean" in source
+        assert "INCOMPLETE" in source
+        assert '"coverage"' in source

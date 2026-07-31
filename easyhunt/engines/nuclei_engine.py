@@ -273,7 +273,27 @@ async def _run(
         "dropped_out_of_scope": dropped,
         "by_severity": by_severity,
         "findings": [f.to_dict() for f in sorted(stored, key=lambda f: -f.severity.rank)],
+        # A timed-out scan covered an unknown fraction of the template set. It is
+        # not a clean result and must never be summarized as one: nuclei works
+        # through templates in order, so a kill at the wall clock means the tail
+        # of the selection was never sent at all.
+        "complete": not (result.timed_out or bool(fatal)),
+        "coverage": "partial" if result.timed_out else ("none" if fatal else "full"),
         "note": (
+            (
+                "INCOMPLETE: killed at the execution timeout after covering an "
+                "unknown fraction of the selected templates. "
+                + (
+                    "Zero findings here means UNTESTED, not clean — narrow the "
+                    "template selection or raise the timeout and re-run."
+                    if not stored
+                    else "The findings below are real, but absence of others proves nothing."
+                )
+                + " "
+            )
+            if result.timed_out
+            else ""
+        ) + (
             "All results are CANDIDATES. Run triage, then validate the survivors "
             "with a PoC before any of them is reported as confirmed."
         ),

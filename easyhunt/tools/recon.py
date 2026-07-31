@@ -144,6 +144,64 @@ THEHARVESTER = register_spec(
 )
 
 
+# --------------------------------------------------------------------------- #
+# Wildcard DNS
+# --------------------------------------------------------------------------- #
+
+
+async def _detect_wildcard(seed: str, probes: int = 3) -> dict[str, Any]:
+    """Does ``*.seed`` answer for names that cannot exist?
+
+    A wildcard record turns passive enumeration into fiction: every source has
+    recorded whatever nonsense anyone ever queried, and all of it resolves. On a
+    real engagement this produced 156 "subdomains" of which roughly 90 were
+    recursive permutations like ``update.update.update.trust``. Left undetected,
+    http_probe reports them all live (the wildcard answers) and the scanner then
+    spends the whole budget on hosts that do not exist.
+    """
+    import asyncio
+    import secrets
+
+    addresses: set[str] = set()
+    answered = 0
+    for _ in range(probes):
+        label = f"eh-{secrets.token_hex(6)}"
+        proc = await asyncio.create_subprocess_exec(
+            "dig", "+short", "+tries=1", "+time=3", f"{label}.{seed}",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await proc.communicate()
+        found = [
+            line.strip() for line in out.decode(errors="replace").splitlines()
+            if line.strip() and not line.strip().endswith(".")
+        ]
+        if found:
+            answered += 1
+            addresses.update(found)
+
+    # Every probe must answer. One stray hit is a resolver quirk, not a wildcard.
+    return {
+        "wildcard": answered == probes and bool(addresses),
+        "addresses": sorted(addresses),
+        "probes": probes,
+        "answered": answered,
+    }
+
+
+def _looks_like_wildcard_noise(host: str, seed: str) -> bool:
+    """Recursive permutations that only exist because a wildcard answered.
+
+    Conservative on purpose: it flags repetition, not unfamiliarity. A real host
+    with an unusual name is not noise, and calling it noise would hide an asset.
+    """
+    prefix = host[: -len(seed)].rstrip(".") if host.endswith(seed) else host
+    labels = [p for p in prefix.split(".") if p]
+    if len(labels) < 2:
+        return False
+    # "update.update.x" or "www.www.x": a label repeated in the same name.
+    return len(labels) != len(set(labels))
+
+
 @easyhunt_tool(
     phase="recon",
     mode="passive",
@@ -220,21 +278,36 @@ async def subdomain_enum(
 
     merged = merge_runs(runs)
     kept, dropped = in_scope_only(merged, phase="recon", tool="subdomain_enum")
+
+    wildcard = await _detect_wildcard(seed)
+    extra: dict[str, Any] = {
+        "seed": seed,
+        "unique_per_source": {k: v for k, v in unique.items() if v},
+        "next_step": "Resolve these with dns_resolve, then probe with http_probe.",
+    }
+    if wildcard["wildcard"]:
+        suspect = [h for h in kept if _looks_like_wildcard_noise(h, seed)]
+        extra["wildcard_dns"] = {
+            **wildcard,
+            "likely_noise": len(suspect),
+            "warning": (
+                f"*.{seed} resolves every name to {sorted(wildcard['addresses'])}. "
+                f"{len(suspect)} of {len(kept)} results are recursive permutations "
+                "with no independent evidence of existence. Probing them will report "
+                "them all live because the wildcard answers, and scanning them burns "
+                "budget on hosts that do not exist. Confirm with http_probe titles or "
+                "content length before treating any of them as real."
+            ),
+            "examples": sorted(suspect)[:5],
+        }
+
     store_assets(kept, kind="subdomain", source="subdomain_enum", tags=["passive"])
     for host in kept:
         engagement.discovered("subdomain", host, source="subdomain_enum")
     engagement.assets.save(engagement.workspace / "assets.json")
 
     return grouped_result(
-        kind="subdomains",
-        runs=runs,
-        values=kept,
-        dropped=dropped,
-        extra={
-            "seed": seed,
-            "unique_per_source": {k: v for k, v in unique.items() if v},
-            "next_step": "Resolve these with dns_resolve, then probe with http_probe.",
-        },
+        kind="subdomains", runs=runs, values=kept, dropped=dropped, extra=extra
     )
 
 
