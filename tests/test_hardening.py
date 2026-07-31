@@ -241,3 +241,73 @@ class TestScanCompleteness:
         assert "UNTESTED, not clean" in source
         assert "INCOMPLETE" in source
         assert '"coverage"' in source
+
+
+class TestScanSizing:
+    """estimated_requests was a fixed 500 for a scan that needed 218,000.
+
+    The budget gate compares a declared estimate against the engagement ceiling.
+    Fed a constant, it waved through a scan needing 2.2x the entire budget and
+    ~6h against a 1h execution cap — which then died at ~16% coverage and
+    reported zero findings.
+    """
+
+    def test_constants_come_from_measurement(self) -> None:
+        from easyhunt.engines import nuclei_engine
+
+        # 5,148 templates produced 10,922 requests after nuclei's clustering.
+        assert 1.5 <= nuclei_engine._REQUESTS_PER_TEMPLATE <= 3.0
+        assert 5.0 <= nuclei_engine._OBSERVED_RPS <= 50.0
+
+    async def test_oversized_scan_is_refused_before_it_starts(self, engagement, monkeypatch) -> None:
+        from easyhunt.engines import nuclei_engine
+
+        async def many(*a, **k):
+            return 5000
+
+        monkeypatch.setattr(nuclei_engine, "_count_templates", many)
+        estimate = await nuclei_engine._estimate_scan(
+            engagement, targets=[f"https://h{i}.example.com" for i in range(20)],
+            templates=None, workflow=None, tags="cve", severity="high",
+        )
+        assert estimate["infeasible"] is True
+        # The message must say why zero findings would be misleading.
+        assert "clean estate" in estimate["message"]
+
+    async def test_feasible_scan_is_allowed(self, engagement, monkeypatch) -> None:
+        from easyhunt.engines import nuclei_engine
+
+        async def few(*a, **k):
+            return 200
+
+        monkeypatch.setattr(nuclei_engine, "_count_templates", few)
+        estimate = await nuclei_engine._estimate_scan(
+            engagement, targets=["https://a.example.com"], templates=None,
+            workflow=None, tags="takeover", severity="high",
+        )
+        assert not estimate.get("infeasible")
+        assert estimate["estimated_requests"] > 0
+
+    async def test_unknown_template_count_does_not_block(self, engagement, monkeypatch) -> None:
+        # An estimate that cannot be produced must not become a refusal — that
+        # would let a broken `-tl` disable scanning entirely.
+        from easyhunt.engines import nuclei_engine
+
+        async def unknown(*a, **k):
+            return None
+
+        monkeypatch.setattr(nuclei_engine, "_count_templates", unknown)
+        estimate = await nuclei_engine._estimate_scan(
+            engagement, targets=["https://a.example.com"], templates=None,
+            workflow=None, tags="cve", severity="high",
+        )
+        assert not estimate.get("infeasible")
+        assert "not sized" in estimate["note"]
+
+    def test_template_listing_flag_is_allowed(self) -> None:
+        # -tl lists templates locally and sends nothing to a target; without it
+        # on the allowlist the sanitizer blocks the sizing pass.
+        from easyhunt.control_plane.sanitize import sanitize_argv
+        from easyhunt.engines.nuclei_engine import SPEC
+
+        sanitize_argv("nuclei", ["-tl", "-silent"], policy=SPEC.arg_policy)

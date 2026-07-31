@@ -54,10 +54,13 @@ SPEC = register_spec(
                 "-rate-limit", "-c", "-timeout", "-retries", "-jsonl", "-silent",
                 "-no-color", "-duc", "-nc", "-H", "-nh", "-ni", "-stats", "-me",
                 "-disable-update-check", "-header", "-follow-redirects", "-mhe",
+                # -tl lists the selected templates locally and sends nothing to
+                # any target. It is how a scan is sized before it is launched.
+                "-tl",
             },
             boolean_flags={
                 "-jsonl", "-silent", "-no-color", "-duc", "-nc", "-stats", "-nh", "-ni",
-                "-disable-update-check", "-follow-redirects",
+                "-disable-update-check", "-follow-redirects", "-tl",
             },
             # -itags is deliberately absent: it re-enables dos/fuzz/intrusive.
             denied_flags={"-itags", "-headless", "-proxy", "-si", "-interactsh-server"},
@@ -177,6 +180,84 @@ def _template_args(engagement: Any, templates: list[str] | None, workflow: str |
             if expanded.is_dir():
                 args += ["-t", str(expanded)]
     return args
+
+
+
+#: Requests per template, measured on a live estate: 5,148 templates produced
+#: 10,922 requests after nuclei's own clustering. Templates are not 1:1 with
+#: requests — some probe several paths, and clustering merges others.
+_REQUESTS_PER_TEMPLATE = 2.1
+
+#: Sustained throughput nuclei actually achieved at rate-limit 10, concurrency 5,
+#: against a Cloudflare-fronted estate. Used to turn a request count into wall
+#: clock, because the ceiling that kills a scan is time, not requests.
+_OBSERVED_RPS = 15.0
+
+
+async def _count_templates(
+    engagement: Any, *, templates: list[str] | None, workflow: str | None,
+    tags: str | None, severity: str,
+) -> int | None:
+    """How many templates would this selection load? Sends nothing to the target.
+
+    ``-tl`` lists templates locally. It costs 30-60s, which is cheap against the
+    multi-hour scan it prevents from starting blind.
+    """
+    argv = ["-tl", "-silent", "-duc", "-disable-update-check", "-severity", severity,
+            "-etags", ",".join(sorted(DENIED_TAGS))]
+    argv += _template_args(engagement, templates, workflow)
+    if tags:
+        argv += ["-tags", tags]
+    try:
+        result = await guarded_run(
+            SPEC, argv, timeout=180, engagement=engagement, check=False, allow_codes=(0, 1),
+        )
+    except Exception:  # noqa: BLE001 — an estimate must never block the scan
+        return None
+    lines = [line for line in (result.stdout or "").splitlines() if line.strip()]
+    return len(lines) or None
+
+
+async def _estimate_scan(
+    engagement: Any, *, targets: list[str], templates: list[str] | None,
+    workflow: str | None, tags: str | None, severity: str,
+) -> dict[str, Any]:
+    """Predict request count and wall clock, and refuse what cannot finish."""
+    count = await _count_templates(
+        engagement, templates=templates, workflow=workflow, tags=tags, severity=severity
+    )
+    if not count:
+        # Unknown is not the same as fine; proceed, but say the estimate is absent.
+        return {"templates": None, "note": "template count unavailable; scan not sized"}
+
+    rules = engagement.scope.rules
+    rps = min(float(rules.max_rps or _OBSERVED_RPS), _OBSERVED_RPS)
+    requests = int(count * _REQUESTS_PER_TEMPLATE * len(targets))
+    seconds = requests / max(rps, 0.1)
+    # The engine's own execution ceiling, matching the decorator's timeout.
+    ceiling = 3600.0
+    reachable = int(rps * ceiling)
+
+    estimate = {
+        "templates": count,
+        "targets": len(targets),
+        "estimated_requests": requests,
+        "estimated_seconds": int(seconds),
+        "estimated_hours": round(seconds / 3600, 1),
+        "reachable_within_timeout": reachable,
+        "coverage_if_run": round(min(1.0, reachable / max(requests, 1)) * 100),
+    }
+
+    if seconds > ceiling:
+        estimate["infeasible"] = True
+        estimate["message"] = (
+            f"{count} templates x {len(targets)} targets is ~{requests:,} requests "
+            f"(~{seconds / 3600:.1f}h at {rps:.0f} rps), but the execution ceiling is "
+            f"{ceiling / 3600:.0f}h. Running this would cover about "
+            f"{estimate['coverage_if_run']}% of the templates and then be killed — "
+            "and zero findings from a truncated scan reads exactly like a clean estate."
+        )
+    return estimate
 
 
 async def _run(
@@ -347,6 +428,28 @@ async def nuclei_scan(
             )
 
     targets = [t.strip() for t in target.replace("\n", ",").split(",") if t.strip()]
+
+    # Size the scan before running it. `estimated_requests` on the decorator is a
+    # fixed 500, which on a real engagement was 437x too low: 5,148 templates
+    # across 20 hosts needed 218,440 requests against a 100,000 budget, and the
+    # budget gate waved it through because it was comparing against 500. A gate
+    # fed a constant cannot protect anything.
+    feasibility = await _estimate_scan(
+        engagement, targets=targets, templates=templates, workflow=workflow,
+        tags=tags, severity=severity,
+    )
+    if feasibility.get("infeasible"):
+        return {
+            "ok": False,
+            "error": "scan_too_large",
+            "message": feasibility["message"],
+            "estimate": feasibility,
+            "hint": (
+                "Narrow the template selection (dropping 'cve' usually removes ~75% "
+                "of them), scan fewer hosts, or raise the timeout deliberately."
+            ),
+        }
+
     job = engagement.jobs.launch(
         lambda j: _run(
             j,
