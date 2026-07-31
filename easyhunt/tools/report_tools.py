@@ -10,7 +10,7 @@ from easyhunt.knowledge.findings import Severity, Status
 from easyhunt.report.synthesize import generate_report
 from easyhunt.tools.base import easyhunt_tool
 
-__all__ = ["findings_list", "report_generate"]
+__all__ = ["findings_list", "job_status", "report_generate"]
 
 
 @easyhunt_tool(
@@ -121,3 +121,47 @@ async def finding_note(finding_id: str, note: str) -> dict[str, Any]:
     finding.note(note)
     engagement.findings.save()
     return {"ok": True, "finding_id": finding_id, "notes": finding.triage_notes}
+
+
+@easyhunt_tool(
+    phase="inspection", mode="passive", targets_arg=None, timeout=330,
+    name="job_status", tags={"inspection"}, estimated_requests=0,
+    budget_exempt=True,
+)
+async def job_status(
+    job_id: str | None = None, wait_seconds: float = 0.0, status: str | None = None
+) -> dict[str, Any]:
+    """Check, wait on, or list long-running scans.
+
+    Tools that can outlast a single MCP call — nuclei_scan, bbot_scan,
+    osmedeus_flow — hand back ``{"completed": false, "job_id": ...}`` once their
+    internal wait (capped at 300s) elapses. This is how the result is collected
+    afterwards. Without it a scan longer than five minutes finishes into a job
+    nothing can read.
+
+    Omit ``job_id`` to list jobs. ``wait_seconds`` blocks for up to 300s, so a
+    nearly-finished scan can be collected in one call instead of polled.
+    """
+    engagement = get_engagement()
+
+    if job_id is None:
+        return {"ok": True, "jobs": engagement.jobs.list(status=status)}
+
+    if wait_seconds > 0:
+        payload = await engagement.jobs.wait(
+            job_id, timeout=max(0.0, min(wait_seconds, 300.0))
+        )
+    else:
+        payload = engagement.jobs.fetch(job_id)
+
+    if payload.get("ready") and payload.get("ok"):
+        return {"ok": True, "job_id": job_id, "completed": True, **(payload.get("result") or {})}
+    return {
+        "ok": True,
+        "job_id": job_id,
+        "completed": False,
+        "status": payload.get("status"),
+        "progress": payload.get("progress"),
+        "error": payload.get("error"),
+        "hint": "call again with wait_seconds to block until it finishes",
+    }

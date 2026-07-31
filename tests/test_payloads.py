@@ -159,3 +159,38 @@ class TestCatalogTool:
         assert result["ok"] is False
         assert result["error"] == "store_not_built"
         assert "vet_payloads.py --fetch" in result["message"]
+
+
+class TestJobStatus:
+    """Long scans hand back a job_id; something has to be able to read it.
+
+    nuclei_scan, bbot_scan and osmedeus_flow cap their internal wait at 300s and
+    return {"completed": false, "job_id": ...}. Before job_status existed no
+    registered tool could fetch that result, so any scan over five minutes
+    finished into a job nothing could reach.
+    """
+
+    async def test_registered_and_free(self) -> None:
+        spec = REGISTRY["job_status"]
+        assert spec.mode == "passive"
+        assert spec.estimated_requests == 0
+
+    async def test_lists_jobs_without_an_id(self, engagement) -> None:
+        result = await REGISTRY["job_status"].fn()
+        assert result["ok"] is True
+        assert isinstance(result["jobs"], list)
+
+    async def test_unknown_job_is_an_error_not_a_silent_empty(self, engagement) -> None:
+        from easyhunt.errors import EasyHuntError
+
+        with pytest.raises(EasyHuntError):
+            await REGISTRY["job_status"].fn(job_id="nuclei_scan-9999")
+
+    async def test_finished_job_returns_its_result(self, engagement) -> None:
+        async def work(job):
+            return {"count": 3, "findings": []}
+
+        job = engagement.jobs.launch(work, tool="nuclei_scan", phase="vuln_scan", targets=[])
+        result = await REGISTRY["job_status"].fn(job_id=job.id, wait_seconds=10.0)
+        assert result["completed"] is True
+        assert result["count"] == 3
