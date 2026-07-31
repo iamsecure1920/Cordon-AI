@@ -146,8 +146,14 @@ async def http_probe(
             "tech": record.get("tech") or [],
             "server": record.get("webserver"),
             "content_length": record.get("content_length"),
-            "ip": record.get("host"),
-            "cname": record.get("cname"),
+            # httpx's "host" is the hostname it was given, not an address —
+            # the resolved address is "host_ip", with "a" as the record list.
+            # Reading "host" here put hostnames into a field the asset store and
+            # CIDR scope checks treat as an IP.
+            "ip": record.get("host_ip") or (record.get("a") or [None])[0],
+            "cname": (record.get("cname") or [None])[0]
+            if isinstance(record.get("cname"), list)
+            else record.get("cname"),
             "cdn": record.get("cdn_name"),
             "final_url": record.get("final_url") or record.get("location"),
         }
