@@ -1,0 +1,30 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Engagement artifacts contain target data, findings, and evidence.
+# These must never be committed.
+engagements/
+scope.yaml
+config.yaml
+.easyhunt-pins.json
+*.jsonl
+tests/_lab_root/
+
+# Vetted third-party payload store.
+# The upstream repo declares NO LICENSE, so its contents are all-rights-reserved
+# and must not be redistributed with EasyHunt. The manifest and the vetting
+# script are ours and DO ship — they let a new machine rebuild the store from
+# the pinned commit with: python3 scripts/vet_payloads.py --fetch
+payloads/*
+!payloads/manifest.json
+
+# Secrets — never committed.
+.env
+.env.*
+*.pem
+*.key
+scope.yaml

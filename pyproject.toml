@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "easyhunt-ai"
+version = "2.0.0"
+description = "Agentic VAPT orchestrator: MCP control plane over open-source security engines"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "EasyHunt AI" }]
+keywords = ["security", "vapt", "bugbounty", "mcp", "recon"]
+classifiers = [
+  "Intended Audience :: Information Technology",
+  "Topic :: Security",
+  "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+  "fastmcp>=2.10",
+  "pydantic>=2.7",
+  "pyyaml>=6.0",
+  "httpx>=0.27",
+  "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+llm = ["openai>=1.40"]
+engines = ["bbot>=2.4"]
+memory = ["neo4j>=5.20"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.6"]
+all = [
+  "openai>=1.40",
+  "bbot>=2.4",
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+easyhunt = "easyhunt.cli:main"
+easyhunt-mcp = "easyhunt.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/sobila/EasyHunt-AI"
+
+[tool.setuptools.packages.find]
+include = ["easyhunt*"]
+
+[tool.setuptools.package-data]
+easyhunt = ["py.typed", "data/*.json"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+  "e2e: end-to-end run against a local lab target this test owns (needs real binaries)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S"]
+ignore = [
+  # Subprocess calls are the point of this project; they are guarded by the
+  # argument sanitizer and the sandbox, never by a shell.
+  "S603", "S607",
+  "E501",
+  # `timeout` as a parameter name is the clearest API for tool wrappers.
+  "ASYNC109",
+  # str+Enum is used for JSON round-tripping; StrEnum would change to_dict output.
+  "UP042",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "S108", "S311", "B017", "ASYNC240"]
+# The sandbox writes a container-internal tmpfs spec, not a host temp path.
+"easyhunt/control_plane/sandbox.py" = ["S108"]
+# Canary placement and retry jitter are not security-relevant randomness.
+"easyhunt/llm/*" = ["S311"]
+# Path existence checks in async setup paths are startup-time and negligible.
+"easyhunt/**" = ["ASYNC240"]

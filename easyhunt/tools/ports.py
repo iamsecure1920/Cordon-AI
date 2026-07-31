@@ -1,0 +1,276 @@
+"""Port and service scanning.
+
+All aggressive and gated. Two guards beyond the usual approval prompt:
+
+* **Rate is capped in code.** ``masscan``'s ``--rate`` and ``nmap``'s ``-T``
+  timing are bounded by the argument policy, so an approved scan cannot become a
+  volumetric one. ``-T5`` and unbounded rates are simply not on the allowlist.
+* **NSE categories are restricted.** ``exploit``, ``dos``, ``brute``, and
+  ``malware`` scripts are refused. ``default`` and ``safe`` are what a port scan
+  needs; the rest is exploitation wearing a scanner's clothes.
+
+Run ``cdn_check`` first. Scanning a CDN edge measures the CDN.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+from xml.etree import ElementTree
+
+from easyhunt.control_plane.context import get_engagement
+from easyhunt.control_plane.sanitize import ArgPolicy
+from easyhunt.errors import SanitizeError
+from easyhunt.knowledge.findings import Asset
+from easyhunt.tools.base import ToolSpec, easyhunt_tool
+from easyhunt.tools.common import HOST_PATTERN, PORT_PATTERN, register_spec, run_one, split_targets
+
+__all__ = ["port_scan", "service_scan"]
+
+# NSE categories that are safe to run during reconnaissance.
+ALLOWED_NSE_CATEGORIES = {"default", "safe", "discovery", "version", "banner"}
+DENIED_NSE_CATEGORIES = {"exploit", "dos", "brute", "malware", "intrusive", "vuln"}
+
+NAABU = register_spec(
+    ToolSpec(
+        name="naabu", binary="naabu", image="projectdiscovery/naabu:latest", license="MIT",
+        homepage="https://github.com/projectdiscovery/naabu", version_args=["-version"],
+        # SYN scanning needs raw sockets; that is the only capability granted.
+        capabilities=["NET_RAW"],
+        arg_policy=ArgPolicy(
+            tool="naabu",
+            allowed_flags={
+                "-host", "-list", "-p", "-top-ports", "-json", "-silent", "-nc", "-duc",
+                "-rate", "-c", "-timeout", "-retries", "-o", "-exclude-cdn", "-s",
+            },
+            boolean_flags={"-json", "-silent", "-nc", "-duc", "-exclude-cdn"},
+            value_patterns={
+                "-host": HOST_PATTERN,
+                "-p": PORT_PATTERN,
+                "-top-ports": re.compile(r"100|1000|full"),
+                "-s": re.compile(r"s|c"),
+            },
+            numeric_caps={"-rate": 1000, "-c": 25, "-timeout": 10000, "-retries": 3},
+        ),
+    )
+)
+
+NMAP = register_spec(
+    ToolSpec(
+        name="nmap", binary="nmap", license="NPSL (custom, not OSI)",
+        homepage="https://nmap.org", version_args=["--version"],
+        capabilities=["NET_RAW"],
+        arg_policy=ArgPolicy(
+            tool="nmap",
+            allowed_flags={
+                "-p", "-sV", "-sC", "-sT", "-sS", "-Pn", "-oX", "-oN", "-T",
+                "--script", "--version-intensity", "--max-rate", "--max-retries",
+                "--host-timeout", "-open", "-n",
+            },
+            boolean_flags={"-sV", "-sC", "-sT", "-sS", "-Pn", "-open", "-n"},
+            # -A pulls in intrusive scripts; -T5 ignores rate considerations.
+            denied_flags={"-A", "-O", "--script-args", "-iL", "--datadir"},
+            value_patterns={
+                "-p": PORT_PATTERN,
+                "-T": re.compile(r"[0-4]"),
+                "--script": re.compile(r"[a-z0-9,._*-]{1,200}"),
+            },
+            numeric_caps={"--version-intensity": 7, "--max-rate": 500, "--max-retries": 3},
+            allow_positional=True,
+            positional_pattern=HOST_PATTERN,
+        ),
+    )
+)
+
+MASSCAN = register_spec(
+    ToolSpec(
+        name="masscan", binary="masscan", license="AGPL-3.0",
+        homepage="https://github.com/robertdavidgraham/masscan", version_args=["--version"],
+        capabilities=["NET_RAW"],
+        arg_policy=ArgPolicy(
+            tool="masscan",
+            allowed_flags={"-p", "--ports", "--rate", "-oJ", "-oX", "--wait", "--open-only"},
+            boolean_flags={"--open-only"},
+            value_patterns={"-p": PORT_PATTERN, "--ports": PORT_PATTERN},
+            # Hard ceiling: masscan's entire reputation is built on rates that
+            # take services offline.
+            numeric_caps={"--rate": 1000, "--wait": 10},
+            allow_positional=True,
+            positional_pattern=HOST_PATTERN,
+        ),
+    )
+)
+
+
+def _check_nse(scripts: str) -> str:
+    """Refuse NSE selections that reach beyond safe reconnaissance."""
+    requested = {s.strip().lower() for s in scripts.split(",") if s.strip()}
+    denied = requested & DENIED_NSE_CATEGORIES
+    if denied:
+        raise SanitizeError(
+            f"NSE categories {sorted(denied)} are refused — they exploit, brute-force, "
+            "or disrupt rather than enumerate. Permitted: "
+            f"{sorted(ALLOWED_NSE_CATEGORIES)}",
+            tool="nmap",
+            categories=sorted(denied),
+        )
+    unknown = {s for s in requested if s in DENIED_NSE_CATEGORIES}
+    if unknown:
+        raise SanitizeError(f"unknown NSE selection {sorted(unknown)}", tool="nmap")
+    return ",".join(sorted(requested))
+
+
+@easyhunt_tool(
+    phase="ports", mode="aggressive", targets_arg="target", timeout=1800,
+    name="port_scan", tags={"ports"}, estimated_requests=1000,
+    risk_notes=[
+        "Connects to many ports on the target — unmistakable in network logs.",
+        "Rate is capped at the engagement ceiling and cannot be raised by argument.",
+        "Run cdn_check first: scanning a CDN edge tells you about the CDN.",
+    ],
+)
+async def port_scan(target: str, ports: str = "top-100") -> dict[str, Any]:
+    """Discover open TCP ports with naabu.
+
+    ports: "top-100", "top-1000", or an explicit list like "80,443,8080-8090".
+    CDN ranges are excluded automatically.
+    """
+    engagement = get_engagement()
+    hosts = split_targets(target)
+
+    targets_file = engagement.raw_path("naabu-targets", "txt")
+    targets_file.write_text("\n".join(hosts) + "\n", encoding="utf-8")
+
+    argv = [
+        "-list", str(targets_file),
+        "-json", "-silent", "-nc", "-duc", "-exclude-cdn",
+        "-rate", str(min(1000, max(10, int(engagement.scope.rules.max_rps) * 20))),
+        "-c", str(max(1, engagement.scope.rules.max_concurrency)),
+        "-retries", "1",
+    ]
+    if ports == "top-100":
+        argv += ["-top-ports", "100"]
+    elif ports == "top-1000":
+        argv += ["-top-ports", "1000"]
+    else:
+        argv += ["-p", ports]
+
+    run = await run_one("naabu", argv, timeout=1500)
+
+    import json
+
+    open_ports: list[dict[str, Any]] = []
+    for line in run.values:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        host = str(record.get("host") or record.get("ip") or "")
+        if not engagement.scope.check(host).in_scope:
+            continue
+        entry = {"host": host, "ip": record.get("ip"), "port": record.get("port")}
+        open_ports.append(entry)
+        engagement.assets.add(
+            Asset(
+                value=f"{host}:{entry['port']}",
+                kind="open_port",
+                source="naabu",
+                host=host,
+                attributes=entry,
+            )
+        )
+
+    engagement.assets.save(engagement.workspace / "assets.json")
+    return {
+        "ok": True,
+        "hosts_scanned": len(hosts),
+        "open_ports": open_ports,
+        "count": len(open_ports),
+        "tools": [run.to_dict()],
+        "next_step": "Fingerprint the interesting ports with service_scan.",
+    }
+
+
+@easyhunt_tool(
+    phase="ports", mode="aggressive", targets_arg="target", timeout=1800,
+    name="service_scan", tags={"ports"}, estimated_requests=200,
+    risk_notes=[
+        "Version detection sends protocol-specific probes to each open port.",
+        "Only safe NSE categories are permitted; exploit/dos/brute are refused.",
+    ],
+)
+async def service_scan(
+    target: str, ports: str = "80,443", scripts: str = "default,safe"
+) -> dict[str, Any]:
+    """Fingerprint services on specific ports with nmap -sV plus safe NSE scripts.
+
+    scripts is restricted to default/safe/discovery/version/banner. Exploit,
+    dos, brute, malware, and intrusive categories are refused.
+    """
+    engagement = get_engagement()
+    host = split_targets(target)[0]
+    selection = _check_nse(scripts)
+
+    output = engagement.raw_path("nmap", "xml")
+    argv = [
+        "-p", ports, "-sV", "-Pn", "-open", "-n",
+        "-T", "3",
+        "--version-intensity", "5",
+        "--max-rate", str(min(500, max(10, int(engagement.scope.rules.max_rps) * 10))),
+        "--max-retries", "2",
+        "--host-timeout", "600s",
+        "-oX", str(output),
+    ]
+    if selection:
+        argv += ["--script", selection]
+    argv.append(host)
+
+    run = await run_one("nmap", argv, timeout=1500, allow_codes=(0, 1))
+
+    services: list[dict[str, Any]] = []
+    if output.exists():
+        try:
+            tree = ElementTree.parse(output)  # noqa: S314 — our own tool's output
+            for port in tree.iter("port"):
+                state = port.find("state")
+                service = port.find("service")
+                if state is None or state.get("state") != "open":
+                    continue
+                services.append(
+                    {
+                        "port": int(port.get("portid", 0)),
+                        "protocol": port.get("protocol"),
+                        "service": service.get("name") if service is not None else None,
+                        "product": service.get("product") if service is not None else None,
+                        "version": service.get("version") if service is not None else None,
+                        "extrainfo": service.get("extrainfo") if service is not None else None,
+                    }
+                )
+        except ElementTree.ParseError:
+            pass
+
+    for service in services:
+        engagement.assets.add(
+            Asset(
+                value=f"{host}:{service['port']}",
+                kind="service",
+                source="nmap",
+                host=host,
+                attributes=service,
+            )
+        )
+    engagement.assets.save(engagement.workspace / "assets.json")
+
+    return {
+        "ok": True,
+        "host": host,
+        "services": services,
+        "count": len(services),
+        "nse_scripts": selection,
+        "xml_output": str(output) if output.exists() else None,
+        "tools": [run.to_dict()],
+        "note": (
+            "Version strings are a lead, not a finding. A banner claiming a "
+            "vulnerable version proves nothing without a working PoC."
+        ),
+    }

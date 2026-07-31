@@ -1,0 +1,77 @@
+# Default triage taskflow — two adversarial passes plus a severity sanity check.
+#
+# The falsifier and red-team steps are deliberately opposed. Asking one model
+# "is this real?" measures its agreeableness; asking one model to attack the
+# finding and another to defend it, then escalating when they disagree, measures
+# something closer to the actual uncertainty.
+#
+# No step may issue a "confirm" verdict. The loader rejects a taskflow that tries.
+name: default-triage
+description: >
+  Reduce scanner false positives with an adversarial falsifier/red-team pair,
+  escalating disagreements to PoC validation.
+canaries: 3
+
+steps:
+  - name: falsifier
+    role: falsifier
+    # Cheap tier: arguing that a finding is wrong is mostly pattern recognition
+    # over what scanners habitually get wrong.
+    tier: t1
+    filter:
+      status: candidate
+    allowed_verdicts: [drop, downgrade, keep]
+    prompt: >
+      For each finding, argue that it is a FALSE POSITIVE and see whether the
+      argument holds. Consider the ways scanners are routinely wrong: soft 404s
+      that return 200 with the site's HTML shell; version banners that do not
+      imply exploitability; WAF interstitials matching a fingerprint; sample and
+      documentation files that look like configuration; default pages on shared
+      infrastructure; and findings whose asset could not plausibly exist.
+      Verdict 'drop' when you are confident it is a false positive, 'downgrade'
+      when it is probably real but unproven, 'keep' when the falsification
+      attempt fails.
+    output_schema:
+      id: finding id
+      verdict: drop|downgrade|keep
+      reason: the strongest argument that it is a false positive, or why that argument fails
+      confidence: 0.0-1.0
+
+  - name: red-team
+    role: red-team
+    tier: t1
+    filter:
+      status: candidate
+    allowed_verdicts: [keep, escalate, downgrade]
+    prompt: >
+      For each finding, argue that it IS real and exploitable, and state what a
+      proof of concept would have to demonstrate. Verdict 'escalate' when a
+      concrete, low-impact PoC would settle it; 'keep' when it is real but
+      informational; 'downgrade' when you cannot construct a plausible path to
+      impact. Do not inflate severity to make a finding interesting, and do not
+      claim a finding is confirmed — you cannot confirm anything.
+    output_schema:
+      id: finding id
+      verdict: keep|escalate|downgrade
+      reason: what a minimal PoC would need to show
+      confidence: 0.0-1.0
+
+  - name: severity-check
+    role: analyst
+    # Only high/critical claims get the more expensive tier: an over-rated
+    # medium costs the program's time, an over-rated critical costs its trust.
+    tier: t2
+    filter:
+      min_severity: high
+    allowed_verdicts: [keep, downgrade]
+    prompt: >
+      These findings claim high or critical severity. For each, check whether the
+      claimed severity is justified by the evidence actually present, not by what
+      the vulnerability class can achieve in general. An exposed .env with live
+      credentials is critical; an exposed .env containing only APP_NAME is not.
+      Verdict 'downgrade' when the evidence does not support the rating.
+    output_schema:
+      id: finding id
+      verdict: keep|downgrade
+      reason: whether the evidence supports the claimed severity
+      confidence: 0.0-1.0

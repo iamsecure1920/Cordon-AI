@@ -1,0 +1,410 @@
+# EasyHunt AI — runtime configuration (not the authorization boundary; see scope.yaml)
+version: 1
+
+workspace:
+  # Engagement artifacts land in <root>/<engagement>_<date>/
+  root: ./engagements
+  # Cap on any single structured payload returned over MCP, in bytes. Bigger
+  # outputs stay on disk and are reached with fetch_slice().
+  max_payload_bytes: 262144
+
+approval:
+  # elicitation → ask the MCP client (Claude) to prompt the human
+  # deny         → refuse every aggressive call (safe default for unattended runs)
+  # policy       → consult approval.policy below, no human in the loop
+  backend: elicitation
+  # Seconds to wait for a human decision before treating it as a decline.
+  timeout: 300
+  # Let one approval cover repeat calls of the same tool against the same target.
+  remember_ttl: 900
+  policy:
+    auto_approve: []
+    auto_deny: ["sqlmap_scan", "strix_deep"]
+
+auth:
+  # OAuth 2.1 + PKCE for the remote (streamable-HTTP) transport.
+  #
+  #   none        stdio only. Binding a non-loopback address is REFUSED.
+  #   jwt         you run an IdP; EasyHunt verifies its JWTs as a Resource Server.
+  #   oauth_proxy your IdP has no Dynamic Client Registration (GitHub, Google);
+  #               FastMCP fronts it and forwards PKCE upstream.
+  #
+  # stdio (the normal Claude CLI setup) is a pipe to the parent process and needs
+  # none of this.
+  mode: none
+
+  # The public URL clients reach this server on. Doubles as the RFC 8707 resource
+  # indicator: tokens are audience-bound to it, so a token minted for another
+  # service that trusts the same IdP cannot be replayed here.
+  base_url: https://easyhunt.internal.example.com
+
+  # --- mode: jwt ---
+  # jwks_uri: https://idp.example.com/.well-known/jwks.json
+  # issuer: https://idp.example.com/
+  # audience: https://easyhunt.internal.example.com   # defaults to base_url
+  # authorization_servers:
+  #   - https://idp.example.com
+  # required_scopes: [easyhunt:read]                  # floor for ANY call
+
+  # --- mode: oauth_proxy ---
+  # upstream_authorization_endpoint: https://github.com/login/oauth/authorize
+  # upstream_token_endpoint: https://github.com/login/oauth/access_token
+  # Client credentials come from the environment, never this file:
+  # upstream_client_id_env: EASYHUNT_OAUTH_CLIENT_ID
+  # upstream_client_secret_env: EASYHUNT_OAUTH_CLIENT_SECRET
+  # allowed_client_redirect_uris: ["http://127.0.0.1:*"]
+  # require_consent: true
+
+  # Map OAuth scopes onto EasyHunt's risk tiers. A token becomes a ceiling on
+  # what can be invoked, checked before the human approval gate:
+  #   easyhunt:read     status, findings, scope checks (no target contact)
+  #   easyhunt:recon    passive tools
+  #   easyhunt:scan     aggressive tools (ports, nuclei, brute force)
+  #   easyhunt:exploit  exploit tools (PoC validation, takeover confirmation)
+  #   easyhunt:approve  answering approval prompts — issue to an OPERATOR token
+  #                     only. If the agent's token holds this, the agent can
+  #                     approve its own aggressive actions.
+  #   easyhunt:admin    loading a scope, reloading rules, closing an engagement
+  #
+  # Setting this false keeps authentication but drops the ladder: any
+  # authenticated caller becomes fully privileged.
+  enforce_tool_scopes: true
+
+sandbox:
+  # none → run binaries on the host. docker → one container per tool invocation.
+  mode: docker
+  # Fall back to host execution when the image is missing rather than failing.
+  fallback_to_host: true
+  default_network: bridge
+  memory: 2g
+  cpus: "2.0"
+  read_only_rootfs: true
+  drop_all_capabilities: true
+  images:
+    nuclei: projectdiscovery/nuclei:latest
+    subfinder: projectdiscovery/subfinder:latest
+    httpx: projectdiscovery/httpx:latest
+    katana: projectdiscovery/katana:latest
+    naabu: projectdiscovery/naabu:latest
+    dalfox: hahwul/dalfox:latest
+    trufflehog: trufflesecurity/trufflehog:latest
+    prowler: toniblyx/prowler:latest
+    semgrep: semgrep/semgrep:latest
+
+engines:
+  bbot:
+    enabled: true
+    default_preset: subdomain-enum
+    allowed_presets:
+      - subdomain-enum
+      - cloud-enum
+      - code-enum
+      - email-enum
+      - web-basic
+      - web-thorough
+      - spider
+      - paramminer
+      - web-screenshots
+      - baddns
+    # Presets that reach out aggressively; these route through the approval gate.
+    aggressive_presets: [web-thorough, spider, paramminer]
+    extra_config: {}
+  nuclei:
+    enabled: true
+    binary: nuclei
+    templates_dir: ~/nuclei-templates
+    custom_templates_dir: ./rules/nuclei
+    default_severity: [low, medium, high, critical]
+    # Templates whose intent is disruption are never runnable.
+    denied_tags: [dos, fuzz, intrusive]
+  osmedeus:
+    enabled: false
+    binary: osmedeus
+    flows_dir: ./rules/osmedeus
+  strix:
+    enabled: false
+    # Deep app exploitation. Always aggressive, always sandboxed, never auto-run.
+    image: usestrix/strix:latest
+
+llm:
+  provider: openrouter
+  base_url: https://openrouter.ai/api/v1
+  # Read from $OPENROUTER_API_KEY; never commit a key here.
+  api_key_env: OPENROUTER_API_KEY
+  referer: https://github.com/sobila/EasyHunt-AI
+  title: EasyHunt AI
+  # Model slugs are config, never hardcoded. `easyhunt doctor` probes which of
+  # these actually exist right now and warns on any that have been renamed.
+  tiers:
+    t0:
+      model: meta-llama/llama-3.3-70b-instruct:free
+      fallbacks:
+        - qwen/qwen-2.5-7b-instruct
+        - openrouter/auto
+      max_price: { prompt: 0.3, completion: 0.6 }
+      provider_sort: price
+      max_output_tokens: 2048
+    t1:
+      model: anthropic/claude-3.5-haiku
+      fallbacks:
+        - google/gemini-2.0-flash-001
+        - openrouter/auto
+      max_price: { prompt: 2.0, completion: 6.0 }
+      provider_sort: price
+      max_output_tokens: 4096
+    t2:
+      model: anthropic/claude-sonnet-4.5
+      fallbacks:
+        - openai/gpt-5
+        - openrouter/auto
+      max_price: { prompt: 10.0, completion: 30.0 }
+      provider_sort: throughput
+      max_output_tokens: 16384
+  # Demote to a cheaper tier instead of failing when a tier is rate-limited.
+  demote_on_ratelimit: true
+  max_retries: 4
+  # Per-phase token allowances. Exhausting one summarizes and moves on.
+  phase_token_budget:
+    recon: 120000
+    expand: 60000
+    vuln_scan: 120000
+    takeover: 40000
+    secrets: 40000
+    cloud: 60000
+    triage: 200000
+    validate: 120000
+    report: 150000
+
+payloads:
+  # Vetted third-party payload store, built by scripts/vet_payloads.py from a
+  # pinned commit. Tiers live in payloads/manifest.json; see docs/PAYLOADS.md.
+  #
+  # Tools take a list NAME, never a path. sanitize_path refuses anything outside
+  # the engagement workspace and the store deliberately sits outside it, so the
+  # store stays read-only and unreachable by anything the model can write to.
+  # A name is also tier-checkable in a way a path is not: no name below maps to
+  # tier C, so quarantined payloads cannot be requested at all.
+  store: ./payloads
+
+  # Every entry here is tier A — discovery wordlists. Requesting a path is what a
+  # web client does, so these run under the normal scope and rate limits.
+  #
+  # Tier B injection payloads (xss, sqli, ssti, ...) are deliberately absent:
+  # they belong to approval-gated exploitation tools that pass them to dalfox and
+  # sqlmap directly, not to path brute-forcing.
+  #
+  # `get_only` in the manifest marks lists holding state-changing paths
+  # (actuator/shutdown, /restart). content_discovery is safe for these by
+  # construction — ffuf's -X is not on the argument allowlist, so it cannot issue
+  # anything but a read method.
+  lists:
+    # ── ffuf / feroxbuster: content discovery ──────────────────────────────
+    admin:
+      file: admin.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Admin panels and management interfaces.
+    config:
+      file: config.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Exposed configuration files.
+    env:
+      file: env.txt
+      tools: [ffuf, feroxbuster]
+      purpose: .env and environment files leaking credentials.
+    juicy-paths:
+      file: juicy-paths.txt
+      tools: [ffuf, feroxbuster]
+      purpose: High-signal paths worth checking first. Good default.
+    juicy-files:
+      file: juicy_files.txt
+      tools: [ffuf, feroxbuster]
+      purpose: High-signal filenames. Broader than juicy-paths.
+    backups:
+      file: backup_files_only.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Backup and archive files left in the webroot.
+    git-config:
+      file: git_config.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Exposed .git directories and config.
+    extensions:
+      file: extensions.txt
+      tools: [ffuf, feroxbuster]
+      purpose: File extensions, for the -e flag rather than -w.
+    leaked-files:
+      file: all-files-leaked.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Files commonly left exposed by deploys.
+    zip:
+      file: zip.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Archive filenames.
+
+    # ── stack-specific: use after http_probe identifies the technology ─────
+    spring-boot:
+      file: spring-boot.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Spring Boot actuators. Holds state-changing paths; GET only.
+    phpmyadmin:
+      file: phpmyadmin.txt
+      tools: [ffuf, feroxbuster]
+      purpose: phpMyAdmin installs.
+    adminer:
+      file: adminer.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Adminer database front-ends.
+    kibana:
+      file: kibana.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Kibana and Elastic endpoints.
+    wordpress:
+      file: coffin-wp-fuzz.txt
+      tools: [ffuf, feroxbuster]
+      purpose: WordPress paths and plugins.
+    wp-content:
+      file: wp-content.txt
+      tools: [ffuf, feroxbuster]
+      purpose: WordPress wp-content contents.
+    iis:
+      file: iis.txt
+      tools: [ffuf, feroxbuster]
+      purpose: IIS-specific paths.
+    aspx:
+      file: aspx.txt
+      tools: [ffuf, feroxbuster]
+      purpose: ASP.NET paths and handlers.
+    jsp:
+      file: jsp.txt
+      tools: [ffuf, feroxbuster]
+      purpose: JSP/Java paths.
+    jsf:
+      file: jsf.txt
+      tools: [ffuf, feroxbuster]
+      purpose: JavaServer Faces paths.
+    cgi:
+      file: cgi-bin.txt
+      tools: [ffuf, feroxbuster]
+      purpose: cgi-bin scripts.
+    cgi-files:
+      file: cgi-files.txt
+      tools: [ffuf, feroxbuster]
+      purpose: CGI script filenames.
+
+    # ── arjun / ffuf: parameter discovery ──────────────────────────────────
+    params:
+      file: params.txt
+      tools: [arjun, ffuf]
+      purpose: HTTP parameter names. The default for param_discovery.
+    params-short:
+      file: param.txt
+      tools: [arjun, ffuf]
+      purpose: Smaller parameter list; faster, lower coverage.
+
+    # ── ffuf: vhost discovery ──────────────────────────────────────────────
+    vhosts:
+      file: vhosts.txt
+      tools: [ffuf]
+      purpose: Virtual host names for Host-header fuzzing.
+
+    # ── ffuf / katana: API surface ─────────────────────────────────────────
+    api-routes:
+      file: api.txt
+      tools: [ffuf, katana]
+      purpose: API route names. 280k lines — budget for it.
+    api-httparchive:
+      file: httparchive_apiroutes_2022_08_28.txt
+      tools: [ffuf, katana]
+      purpose: API routes observed in the HTTP Archive crawl.
+
+    # ── large general lists: deliberate use only ───────────────────────────
+    # At a 20 rps program limit, everything.txt against one host is 18+ hours.
+    # The rate limiter will hold the line; the engagement simply will not finish.
+    # Exhaust the small lists first.
+    fuzz-small:
+      file: onelistforallmicro.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Compact general-purpose list. Start here.
+    fuzz-medium:
+      file: fuzz.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Mid-size general fuzzing list.
+    fuzz-php:
+      file: fuzz_php_special.txt
+      tools: [ffuf, feroxbuster]
+      purpose: PHP-specific fuzzing.
+    fuzz-large:
+      file: onelistforallshort.txt
+      tools: [ffuf, feroxbuster]
+      purpose: 774k lines. Hours of traffic — approve deliberately.
+    fuzz-everything:
+      file: everything.txt
+      tools: [ffuf, feroxbuster]
+      purpose: 1.3M lines. 18+ hours at 20 rps. Rarely the right choice.
+    traversal-unix:
+      file: directory_traversal_unix.txt
+      tools: [ffuf]
+      purpose: Unix path traversal sequences.
+    traversal-win:
+      file: directory_traversal_win.txt
+      tools: [ffuf]
+      purpose: Windows path traversal sequences.
+
+rules:
+  # Every YAML file under these roots is discovered at startup. A subdirectory
+  # named nuclei/ jaeles/ semgrep/ bbot/ osmedeus/ holds that engine's native
+  # rule format; easyhunt/ holds native rule-packs and Python plugin manifests.
+  dirs:
+    - ./rules
+  import_python_plugins: true
+  validate_nuclei: true
+
+memory:
+  # Techniques that worked, carried between engagements. Stores methods only —
+  # never credentials, response bodies, or target hostnames (those are
+  # generalized to {TARGET_HOST} on the way in).
+  poc_store: ~/.easyhunt/poc-memory.jsonl
+  # Graph memory: entities and how they relate, for engagements too long to hold
+  # in a context window. Works natively with no database; set graph_enabled to
+  # persist into Neo4j instead (needs the [memory] extra).
+  graph_enabled: false
+  graph_uri: bolt://localhost:7687
+  graph_user: neo4j
+  graph_password_env: NEO4J_PASSWORD
+
+cloud:
+  cartography:
+    # Cartography walks the provider APIs and records real trust relationships.
+    # With it, attack paths are OBSERVED; without it they are inferred from
+    # Prowler control failures and flagged as such in the report.
+    # https://github.com/cartography-cncf/cartography
+    enabled: false
+    uri: bolt://localhost:7687
+    user: neo4j
+    password_env: NEO4J_PASSWORD
+    max_hops: 4
+
+triage:
+  taskflows_dir: ./taskflows
+  default_taskflow: default-triage.yaml
+  # Seed known-fake findings into the triage input; a pass that "confirms" one
+  # gets its confidence recalibrated downward.
+  canaries_enabled: true
+  canary_count: 3
+
+report:
+  formats: [md, csv, json]
+  include_audit: true
+  include_cost_summary: true
+
+audit:
+  # Every attempt is recorded, including refusals. Hash-chained, append-only.
+  file: audit.jsonl
+  hash_chain: true
+
+hardening:
+  # Cryptographic pinning of tool definitions; any drift raises an alert.
+  pin_tool_definitions: true
+  pin_file: .easyhunt-pins.json
+  # Strip prompt-injection markers from tool output before it enters the model.
+  sanitize_tool_output: true
+  max_output_lines_to_model: 400

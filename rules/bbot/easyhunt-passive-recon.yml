@@ -1,0 +1,37 @@
+# BBOT preset: passive-only attack surface mapping.
+#
+# Everything here reads public sources — certificate transparency, passive DNS,
+# public code search. No requests are sent to the target's own infrastructure
+# beyond DNS resolution, which is why EasyHunt exposes it as a passive tool that
+# runs without an approval prompt.
+description: EasyHunt passive attack-surface mapping (no active probing)
+
+flags:
+  - passive
+  - subdomain-enum
+
+modules:
+  - anubisdb
+  - certspotter
+  - crt
+  - dnscommonsrv
+  - digitorus
+  - hackertarget
+  - otx
+  - rapiddns
+  - sitedossier
+  - subdomaincenter
+  - wayback
+
+output_modules:
+  - json
+
+config:
+  # EasyHunt overwrites scope.whitelist / scope.blacklist from scope.yaml at
+  # launch time. Anything set here is a floor, never a ceiling.
+  dns:
+    minimal: false
+  web:
+    user_agent: "EasyHunt-AI/2.0 (authorized-testing)"
+  scope:
+    report_distance: 0

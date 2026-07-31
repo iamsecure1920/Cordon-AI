@@ -1,0 +1,67 @@
+# Semgrep rules (plugin class D) — request sinks that take user-controlled URLs.
+#
+# These target the pattern behind most SSRF findings: a request library called
+# with a value that traces back to request input. Semgrep parses rather than
+# regexes, so it sees the taint flow a grep cannot.
+#
+# Reachability is the open question every hit leaves behind — that is what the
+# PoC has to settle, and why these are candidates.
+rules:
+  - id: easyhunt-python-requests-user-url
+    languages: [python]
+    severity: WARNING
+    message: >
+      HTTP request built from user-controlled input. If the URL is not validated
+      against an allowlist, this is SSRF: an attacker chooses what the server
+      fetches, including cloud metadata endpoints and internal services.
+    metadata:
+      cwe: "CWE-918: Server-Side Request Forgery (SSRF)"
+      owasp: "A10:2021 - Server-Side Request Forgery"
+      confidence: MEDIUM
+      references:
+        - https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
+    mode: taint
+    pattern-sources:
+      - pattern: flask.request.args.get(...)
+      - pattern: flask.request.form.get(...)
+      - pattern: flask.request.json[...]
+      - pattern: django.http.HttpRequest.GET.get(...)
+    pattern-sinks:
+      - pattern: requests.get($URL, ...)
+      - pattern: requests.post($URL, ...)
+      - pattern: requests.request(..., $URL, ...)
+      - pattern: httpx.get($URL, ...)
+      - pattern: urllib.request.urlopen($URL, ...)
+    pattern-sanitizers:
+      - pattern: urllib.parse.urlparse(...)
+
+  - id: easyhunt-js-open-redirect
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: >
+      Redirect target taken from request input without validation. An attacker
+      controls where the user lands, which matters most as a link in an OAuth
+      flow — the authorization code goes with them.
+    metadata:
+      cwe: "CWE-601: URL Redirection to Untrusted Site"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: $RES.redirect($REQ.query.$P)
+          - pattern: $RES.redirect($REQ.params.$P)
+          - pattern: $RES.redirect($REQ.body.$P)
+      - pattern-not: $RES.redirect("=~/^\\/[^\\/]/")
+
+  - id: easyhunt-hardcoded-cloud-credential
+    languages: [generic]
+    severity: ERROR
+    message: >
+      Hardcoded cloud credential in source. Disclosure is compromise — removing
+      the line does not un-disclose it, so the key must be rotated.
+    metadata:
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      confidence: HIGH
+    patterns:
+      - pattern-regex: '\b(AKIA[0-9A-Z]{16}|sk_live_[0-9a-zA-Z]{24,})\b'
+      - pattern-not-regex: '(?i)(example|sample|dummy|test|placeholder|xxxx|AKIAIOSFODNN7EXAMPLE)'

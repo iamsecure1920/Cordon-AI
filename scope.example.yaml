@@ -1,0 +1,81 @@
+# EasyHunt AI — engagement scope artifact
+#
+# This file IS the legal authorization boundary for a run. The MCP control plane
+# refuses every network-touching call whose target does not match it.
+#
+# Program policy text drifts. Re-pull it and update `fetched_at` before each run:
+# a scope older than `max_age_days` triggers a warning, and `refuse_when_stale`
+# turns that warning into a hard refusal.
+version: 1
+
+engagement:
+  name: example-bbp
+  # owned | bug-bounty | written-approval
+  authorization: bug-bounty
+  program_url: https://hackerone.com/example/policy
+  # Required when authorization == written-approval. Ticket/contract reference.
+  approval_ref: null
+  # ISO-8601 UTC. When the policy above was last read and transcribed here.
+  fetched_at: "2026-07-30T00:00:00Z"
+  max_age_days: 7
+  refuse_when_stale: false
+  # Appended to the tagged user-agent so the target can identify your traffic.
+  researcher_handle: your-handle
+  # Where takeovers / infra bugs must be reported, if the program splits them out.
+  vdp_note: null
+
+in_scope:
+  domains:
+    - example.com
+  wildcards:
+    - "*.example.com"
+  cidrs:
+    - 203.0.113.0/24
+  # Nmap-style octet ranges.
+  ip_ranges:
+    - 198.51.100.10-50
+  # Anchored full-match against the normalized hostname.
+  regex:
+    - '^api-\d+\.example\.com$'
+  urls:
+    - https://app.example.com/v2/
+
+out_of_scope:
+  # Denylist always wins over the allowlist, at every level.
+  domains:
+    - blog.example.com
+    - status.example.com
+  wildcards:
+    - "*.corp.example.com"
+    - "*.internal.example.com"
+  cidrs:
+    - 203.0.113.240/28
+  ip_ranges: []
+  regex:
+    - '.*\.staging\.example\.com$'
+
+rules:
+  # Does "*.example.com" also authorize example.com itself? Most programs mean
+  # yes, but EasyHunt fails closed: list the apex under domains: if you want it.
+  wildcard_includes_apex: false
+  # Refuse loopback/link-local/private/reserved IPs unless a cidr above covers
+  # them explicitly. Stops SSRF-style pivots into infrastructure you don't own.
+  deny_reserved_ips: true
+  max_rps: 5
+  max_concurrency: 5
+  # Aggressive tools additionally require per-call human approval.
+  allow_aggressive: true
+  allow_exploitation: true
+  # Anything whose purpose is volumetric disruption stays off, always.
+  no_dos: true
+  user_agent: "EasyHunt-AI/2.0 (authorized-testing; handle=your-handle)"
+  # Paths the program has asked researchers not to touch.
+  forbidden_paths:
+    - /admin/delete
+    - /api/v1/payments/execute
+
+budget:
+  llm_usd: 5.00
+  wall_clock_minutes: 240
+  max_requests: 50000
+  max_tool_seconds: 14400

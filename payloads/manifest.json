@@ -1,0 +1,848 @@
+{
+  "source": {
+    "repo": "https://github.com/coffinxp/payloads.git",
+    "commit": "ff9bd2045961cbaba00bdc988db62edd2273dcd2",
+    "license": "NONE DECLARED \u2014 all rights reserved by default",
+    "redistribute": false
+  },
+  "tiers": {
+    "A": "discovery wordlists \u2014 normal scope + rate limits apply",
+    "B": "injection payloads \u2014 aggressive mode, approval gate required",
+    "C": "QUARANTINED \u2014 destructive or exfiltrating. Never auto-run."
+  },
+  "tool_map": {
+    "content_discovery": {
+      "tools": "ffuf, feroxbuster",
+      "flag": "-w",
+      "files": "admin, config, env, juicy-paths, backup_files_only, extensions, git_config, phpmyadmin, spring-boot, kibana, adminer, wp-content"
+    },
+    "param_discovery": {
+      "tools": "arjun, ffuf",
+      "flag": "-w",
+      "files": "params, param"
+    },
+    "vhost_discovery": {
+      "tools": "ffuf",
+      "flag": "-w",
+      "files": "vhosts"
+    },
+    "api_discovery": {
+      "tools": "ffuf, katana",
+      "flag": "-w",
+      "files": "api, httparchive_apiroutes_2022_08_28"
+    },
+    "xss_validate": {
+      "tools": "dalfox",
+      "flag": "--custom-payload",
+      "files": "xss, xsspollygots, xsswafbypss",
+      "tier": "B \u2014 approval gated"
+    },
+    "sqli_validate": {
+      "tools": "sqlmap",
+      "flag": "--tamper / -v",
+      "files": "allsqli, blindsqli, sqli2",
+      "tier": "B \u2014 approval gated"
+    }
+  },
+  "files": [
+    {
+      "name": "403_header_payloads.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 42,
+      "sha256": "fe13b38e1846f2b4ba06a6503bbc07fa23e469dcdfd117f2309f60e08af9ef22",
+      "get_only": false,
+      "reasons": [
+        "unlisted \u2014 defaulted to B (gated)"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "403_url_payloads.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 236,
+      "sha256": "6ef7495861d3f3259a3613380616f3fab342a0f490513fc61a14dc029e14adc1",
+      "get_only": false,
+      "reasons": [
+        "unlisted \u2014 defaulted to B (gated)"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "SQL.txt",
+      "tier": "C",
+      "kind": "injection",
+      "lines": 288,
+      "sha256": "79e01a1cf18993d1ea0fd0ba0e7bedcad7e1091cc4e3c0a43f50957ab848f3b9",
+      "get_only": false,
+      "reasons": [
+        "6 destructive/RCE statement(s) \u2014 would damage a live target"
+      ],
+      "destructive": 6,
+      "callbacks": [],
+      "slow_payloads": 41
+    },
+    {
+      "name": "admin.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 7683,
+      "sha256": "e898b372290ddcd159bf06c45bf45e6a0f6e73e78231906445f217140de086a0",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "adminer.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 194,
+      "sha256": "4f7422b6e0d421f505cd2c8252a9a5138de7d1e3cf42cbe665bdfcdca97fd88c",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "all-files-leaked.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 676,
+      "sha256": "98146f3d5035309e52c9ada5e15020127dd1602e3705fd85e08c6df4889de569",
+      "get_only": true,
+      "reasons": [
+        "3 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "all_attacks.txt",
+      "tier": "C",
+      "kind": "injection",
+      "lines": 466,
+      "sha256": "b97f723024b5e3b863a5d1d62aced856b40b23253c139a8049d58cf81cd8155f",
+      "get_only": false,
+      "reasons": [
+        "2 destructive/RCE statement(s) \u2014 would damage a live target"
+      ],
+      "destructive": 2,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "all_fuzz.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 329081,
+      "sha256": "905636bd0d75d2912357537310b1f587f8955192a222c178e249a43d6e303208",
+      "get_only": true,
+      "reasons": [
+        "22 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "allsqli.txt",
+      "tier": "B",
+      "kind": "injection",
+      "lines": 584,
+      "sha256": "fcbc4bf5507c4571635e0f69399d71249dc425fa0fe48ddc82b5861dde94fab3",
+      "get_only": false,
+      "reasons": [
+        "386 time-delay payload(s) \u2014 heavy on the engagement clock"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 386
+    },
+    {
+      "name": "android_all_permissions.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 323,
+      "sha256": "5e2271d0ba56e35bbaf23c641b58e5c87fe0ce9e7d6109468ae7a23315e323b2",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "apac.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 13231,
+      "sha256": "39263e6a647b1e9c2528aec4bde9d065535a89d97277cdaff3c89e6d58509ae4",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "api.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 280610,
+      "sha256": "b38d966406162dc7576fbe2c5bf4e766650d2b7303ee2454c366b2a6040e1e9a",
+      "get_only": true,
+      "reasons": [
+        "19 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "aspx.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 33418,
+      "sha256": "581771268dffe4c3917863fa1910f0608c79de836945f0f3e403996462e06ea4",
+      "get_only": true,
+      "reasons": [
+        "5 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "backup_files_only.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 1035,
+      "sha256": "0b6d67137b4148dc39b507ae788d2fcbed98c262f1158323b17befb82fbc9d6d",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "bambda.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 63,
+      "sha256": "dae9f0735db66808f4b187f3db6dee07b88537cd86d4ccd5c8319a5001006699",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "blindsqli.txt",
+      "tier": "B",
+      "kind": "injection",
+      "lines": 95,
+      "sha256": "5bf6974a3fb3702626c0e8b08f39b9d3edee4a933343a2fc9bbeeb188ef8f884",
+      "get_only": false,
+      "reasons": [
+        "127 time-delay payload(s) \u2014 heavy on the engagement clock"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 127
+    },
+    {
+      "name": "cgi-bin.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 90,
+      "sha256": "f5e4814fde138c2a996e5f3052b690ab5ea82aa0c983c369f66b51271fd3cbec",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "cgi-files.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 1192,
+      "sha256": "064dbee01c1096ee89d4c7971dcc961d9f24ea584bd7ad72627f440c90a5c4a1",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "coffin-wp-fuzz.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 7548,
+      "sha256": "9b21424a26f13fde5586fb35293db75ec55a7123c426a28f9c6c8897fb1dd200",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "config.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 48,
+      "sha256": "117a990c3b01e34f0f70747430c1f31464e8c7522e84f09eea675a8dc3b90a00",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "crlf.txt",
+      "tier": "B",
+      "kind": "injection",
+      "lines": 62,
+      "sha256": "d782261c4b0a8aa38cc8e1f020eed120dba420b258ba8922a76c10c1dedd45e4",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "directory_traversal_unix.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 870,
+      "sha256": "616aa676c1e4dfa307edf3acc71d3b589f4bf83b2714dacac099984d4cc10487",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "directory_traversal_win.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 846,
+      "sha256": "b8f61cf0e54de79b2a4318b1339244f8dcaf91b56b94c90e2c830b19cc33ac5f",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "env.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 590,
+      "sha256": "14a11249e62878165389178427d81cbb154aa877766a4f1b56c73fe8091b8743",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "everything.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 1308818,
+      "sha256": "059bb1e1f9063e1d4346bd9a25165a2759f3e39d095801522983982a409778c0",
+      "get_only": true,
+      "reasons": [
+        "10 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "extensions.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 58,
+      "sha256": "0bd1fe63a6958a990105ccdff4da8684c80ab316ae3a64c8bd993b61440862e9",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "fuzz.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 5329,
+      "sha256": "bbd40329b30a806fbd49578456a47ebd7ad7a3c98d09c7119eca0cc67045de45",
+      "get_only": true,
+      "reasons": [
+        "2 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "fuzz_php_special.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 136920,
+      "sha256": "246ee2100622eeaec72d6e855cb135baa0cac55630a4d29671a7e74b41218cba",
+      "get_only": true,
+      "reasons": [
+        "18 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "git_config.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 49,
+      "sha256": "21e601f706651450c0c5c5cee4bbbd4a3d60e681475b51313c1c37b144f2d4b7",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "github-dork.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 409,
+      "sha256": "acd381ad35914e0267e09945f85d098c71c279893bc57d2f1a968a2fb6104b86",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "htaccess",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 33,
+      "sha256": "34f6deb1db96352481a98176a91533de9545c62a13a17e8639b173a1d541c6a3",
+      "get_only": false,
+      "reasons": [
+        "unlisted \u2014 defaulted to B (gated)"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "httparchive_apiroutes_2022_08_28.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 242690,
+      "sha256": "843f93e5b1254608855d6108b58bc06275d1fffc2012926babde5086d27946ea",
+      "get_only": true,
+      "reasons": [
+        "16 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "iis.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 73165,
+      "sha256": "f4721efcb01d3352ae752451714bc7503c37639dbeb33b7357330aab516ea220",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "jsf.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 36054,
+      "sha256": "877e87caa8c20f696425667597b28492518f589974e58bbe3ced1bbbc551f392",
+      "get_only": true,
+      "reasons": [
+        "5 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "jsp.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 92215,
+      "sha256": "85f9027a27ef83463e404e93fff08e20c873dee3db52572d2df3b9a16bc32fd2",
+      "get_only": true,
+      "reasons": [
+        "10 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "juicy-paths.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 70,
+      "sha256": "300f964f2e637430266468305c6f7210ec940b1c5f72a1de90668b9d2f17e78b",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "juicy_files.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 187963,
+      "sha256": "8f10b020066247b9589ddb28db1e6b36e50594bc6cb607f917a0abc7b72a307a",
+      "get_only": true,
+      "reasons": [
+        "16 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "jwt-secrets.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 3502,
+      "sha256": "355d82249f553f2da717bc9baa7d04c504978e2b544a80e1a66bba1ad0736e58",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "kibana.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 612,
+      "sha256": "6a5ebb66f9702e7c74f51c00d89b7181acb102a258b8d3fff06fed8459f50b76",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "lfi.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 70465,
+      "sha256": "a276ac150769eeab15c6dfdb7622b297d757973f9c854ab216bbb0144366bb3d",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "onelistforallmicro.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 25320,
+      "sha256": "4648662eccf44fb7e73277d6c7c003a040c2047a4521a5de093d02b5e97cdda0",
+      "get_only": true,
+      "reasons": [
+        "6 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "onelistforallshort.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 774429,
+      "sha256": "a8a7a6ba0517dbf2314c2c4446a6d55f6ff9a0f6b0f0c1513868813031e5610a",
+      "get_only": true,
+      "reasons": [
+        "43 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "param.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 25906,
+      "sha256": "6685635a63001975f738f5a9dffd5a39cff949d8b3078851adfc09e51aa59545",
+      "get_only": true,
+      "reasons": [
+        "9 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "params.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 10252,
+      "sha256": "fa4c80e6184ba2b28cd0f39772eb6c2576bb03efaa333998da4cdc2ca2abffa3",
+      "get_only": true,
+      "reasons": [
+        "8 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "phpmyadmin.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 199,
+      "sha256": "016bc383ee0f0f4e7ee135e4630dc29cf2a1e68b52c7a0b1e1a7aa9a276ec77b",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "pl.txt",
+      "tier": "B",
+      "kind": "injection",
+      "lines": 7567,
+      "sha256": "41e4977bd51396f534c54ef2162f5183a61e0addbaf653b3d463f9bf08bce3c4",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "robots.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 989,
+      "sha256": "e8ce89400000566a4dac0f96943efdd2ab5a08f39ce46f58fa08cf5bf83da174",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "spring-boot.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 112,
+      "sha256": "f5dbfe698a02c55c914ea530f6dce423044526c610227f5edec2948c7c5e8803",
+      "get_only": true,
+      "reasons": [
+        "3 state-changing path(s) \u2014 GET/HEAD only, never POST/PUT/DELETE"
+      ],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "sqldb.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 534,
+      "sha256": "8e8d20eb17a1fbd44b41da6784e384fff05311f614a34fabb1764277f895d6ab",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "sqli2.txt",
+      "tier": "C",
+      "kind": "injection",
+      "lines": 361,
+      "sha256": "caa72fc1e3af4917cb35424037ed6ce2b37a3f478d9f337d783e0898ee472ed9",
+      "get_only": false,
+      "reasons": [
+        "1 third-party callback(s) (xxx.burpcollaborator.net) \u2014 target data would leave to infrastructure we do not control",
+        "7 destructive/RCE statement(s) \u2014 would damage a live target"
+      ],
+      "destructive": 7,
+      "callbacks": [
+        "xxx.burpcollaborator.net"
+      ],
+      "slow_payloads": 81
+    },
+    {
+      "name": "ssrf.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 122,
+      "sha256": "2544e043734264a5302aa03a6d94790ef066553c3cd9ea577e2618d477fdc479",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "ssti.txt",
+      "tier": "B",
+      "kind": "injection",
+      "lines": 106,
+      "sha256": "c79d8cf64202da8333e50d7ae14ade1100e13f25676323846372b189fbb7d138",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "vhosts.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 173,
+      "sha256": "92b640571e2c7c42bdebc74995dce5f1dfc00e624cb4f2e66f4c601b6e436ec2",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "vulJs.txt",
+      "tier": "B",
+      "kind": "injection",
+      "lines": 51,
+      "sha256": "7b1a666271dfedc1e1371bf679d181966b1298bcd73d7ff3825ba83de3d921ae",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "wordpress-random.txt",
+      "tier": "A",
+      "kind": "injection",
+      "lines": 169,
+      "sha256": "871c454988546cc096f426c948dd970cf4c62818ca9232b3b92b6325018f221c",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "wp-content.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 5524,
+      "sha256": "3a972d776652503c332938d29f5b005b225efbd0810f56b518bbf7a62a2cc4e4",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "xml.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 76,
+      "sha256": "04ce0ddaba904da227fb3305d6c3871da88dc6c6216796683b075abe6bf05457",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "xor.txt",
+      "tier": "B",
+      "kind": "wordlist",
+      "lines": 51,
+      "sha256": "9a2e39a85d40863937b916c331bb3b33b61a622acf951a0c588109570b1b6db9",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "xss.txt",
+      "tier": "C",
+      "kind": "injection",
+      "lines": 2669,
+      "sha256": "ea12da3a31498263f043ac1b3e649c1fad21aa3caf93fa483a1a224fa6f5b46b",
+      "get_only": false,
+      "reasons": [
+        "1 third-party callback(s) (GH0ST.xss.ht) \u2014 target data would leave to infrastructure we do not control"
+      ],
+      "destructive": 0,
+      "callbacks": [
+        "GH0ST.xss.ht"
+      ],
+      "slow_payloads": 0
+    },
+    {
+      "name": "xsspollygots.txt",
+      "tier": "B",
+      "kind": "injection",
+      "lines": 95,
+      "sha256": "7718e3c7ff8a2720d5b4e81a06e58217233080cd623c93a18e1d80d5ab7f3086",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "xsswafbypss.txt",
+      "tier": "B",
+      "kind": "injection",
+      "lines": 101,
+      "sha256": "0a3bf0744de74418b289519ac638ad4c02de8a1a70c76c200a9da9a87936aabc",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    },
+    {
+      "name": "zip.txt",
+      "tier": "A",
+      "kind": "wordlist",
+      "lines": 3956,
+      "sha256": "b3c32a02e83873adae1bf389230de1720eaaf544bb491b6bffff0d1b5d0c9c09",
+      "get_only": false,
+      "reasons": [],
+      "destructive": 0,
+      "callbacks": [],
+      "slow_payloads": 0
+    }
+  ]
+}
