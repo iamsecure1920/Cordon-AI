@@ -154,7 +154,7 @@ THEHARVESTER = register_spec(
     estimated_requests=50,
 )
 async def subdomain_enum(
-    target: str, include_amass: bool = True, thorough: bool = False
+    target: str, include_amass: bool = False, thorough: bool = False
 ) -> dict[str, Any]:
     """Enumerate subdomains from every installed passive source and merge them.
 
@@ -162,6 +162,14 @@ async def subdomain_enum(
     are present, in parallel, and returns the deduplicated union filtered through
     the engagement scope. Installing more sources widens coverage with no code
     change — the tool set is discovered, not hardcoded.
+
+    ``include_amass`` defaults off. On a real engagement amass ran the full 15
+    minutes and returned **zero** subdomains — its productive sources want API
+    keys — while subfinder and assetfinder found 322 and 301. It also spawns an
+    ``amass engine`` child that calls ``setsid`` itself, so it escapes the
+    process-group kill on timeout and keeps running, unthrottled, after the
+    engagement believes the tool stopped. Turn it on when amass is configured
+    with datasource credentials; leave it off otherwise.
 
     thorough adds slower sources (theHarvester, amass with more providers).
     Prefer bbot_scan when BBOT is available: it covers more sources than all of
@@ -179,7 +187,19 @@ async def subdomain_enum(
         run_one("findomain", ["-t", seed, "--quiet"], timeout=300),
     ]
     if include_amass:
-        tasks.append(run_one("amass", ["enum", "-passive", "-d", seed, "-silent"], timeout=900))
+        # -timeout bounds amass itself (minutes). Without it amass runs until the
+        # outer kill fires, which measured 15 minutes for zero results on a real
+        # engagement — it dominated the recon wall clock and contributed nothing,
+        # because its useful sources want API keys this install does not have.
+        # Bounded to 5 minutes so it can help when configured without being able
+        # to monopolise the phase when it is not.
+        tasks.append(
+            run_one(
+                "amass",
+                ["enum", "-passive", "-d", seed, "-silent", "-timeout", "5"],
+                timeout=360,
+            )
+        )
     if thorough:
         tasks.append(
             run_one(

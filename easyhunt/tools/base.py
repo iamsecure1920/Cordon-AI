@@ -21,6 +21,7 @@ import inspect
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 from easyhunt.control_plane.approval import ApprovalRequest
@@ -450,6 +451,39 @@ def _count_findings(result: Any) -> int | None:
 # Sandboxed execution helper
 # --------------------------------------------------------------------------- #
 
+#: Host config directories to expose, read-only, to the container that runs each
+#: tool. Without these a containerised subfinder finds no config and no API keys,
+#: so it returns an error or a fraction of the results it would find on the host
+#: — and it does so *quietly*, which reads as "the target has few subdomains"
+#: rather than "the tool was never configured".
+_CONFIG_DIRS: dict[str, str] = {
+    "subfinder": "~/.config/subfinder",
+    "amass": "~/.config/amass",
+    "nuclei": "~/.config/nuclei",
+    "httpx": "~/.config/httpx",
+    "katana": "~/.config/katana",
+    "naabu": "~/.config/naabu",
+    "dnsx": "~/.config/dnsx",
+    "uncover": "~/.config/uncover",
+    "notify": "~/.config/notify",
+}
+
+
+def _config_mounts(tool: str) -> list[tuple[Path, str, str]]:
+    """Read-only mounts carrying a tool's host config into its container.
+
+    Read-only on purpose: a tool must not be able to rewrite the operator's
+    credentials, and nothing in a scan should mutate configuration.
+    """
+    configured = _CONFIG_DIRS.get(tool)
+    if not configured:
+        return []
+    host = Path(configured).expanduser()
+    if not host.is_dir():
+        return []
+    # Containers for these tools all run as root.
+    return [(host, f"/root/.config/{tool}", "ro")]
+
 
 async def guarded_run(
     spec: ToolSpec,
@@ -511,6 +545,7 @@ async def guarded_run(
         argv=final_argv,
         network=spec.network,
         capabilities=spec.capabilities,
+        extra_mounts=_config_mounts(spec.name),
     )
     output_path = engagement.raw_path(output_name or spec.name) if output_name else None
     result = await run_process(plan, timeout=timeout, stdin=stdin, output_path=output_path)

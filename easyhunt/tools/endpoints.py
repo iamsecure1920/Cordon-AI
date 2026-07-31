@@ -36,6 +36,7 @@ KATANA = register_spec(
     ToolSpec(
         name="katana", binary="katana", image="projectdiscovery/katana:latest", license="MIT",
         homepage="https://github.com/projectdiscovery/katana", version_args=["-version"],
+        user_agent_flag="-H",
         arg_policy=ArgPolicy(
             tool="katana",
             allowed_flags={
@@ -122,6 +123,7 @@ FFUF = register_spec(
     ToolSpec(
         name="ffuf", binary="ffuf", license="MIT", homepage="https://github.com/ffuf/ffuf",
         version_args=["-V"],
+        user_agent_flag="-H",
         arg_policy=ArgPolicy(
             tool="ffuf",
             allowed_flags={

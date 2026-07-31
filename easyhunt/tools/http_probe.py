@@ -57,6 +57,7 @@ WHATWEB = register_spec(
     ToolSpec(
         name="whatweb", binary="whatweb", license="GPL-2.0",
         homepage="https://github.com/urbanadventurer/WhatWeb", version_args=["--version"],
+        user_agent_flag="--user-agent",
         arg_policy=ArgPolicy(
             tool="whatweb",
             allowed_flags={"--log-json", "-a", "--no-errors", "--user-agent", "--max-threads"},
