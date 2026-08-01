@@ -9,6 +9,10 @@ dist/
 # These must never be committed.
 engagements/
 scope.yaml
+# Every per-engagement scope, not just the active one. These name real
+# targets, contacts, and authorization references.
+scope.*.yaml
+!scope.example.yaml
 config.yaml
 .easyhunt-pins.json
 *.jsonl
@@ -28,3 +32,7 @@ payloads/*
 *.pem
 *.key
 scope.yaml
+# Every per-engagement scope, not just the active one. These name real
+# targets, contacts, and authorization references.
+scope.*.yaml
+!scope.example.yaml
