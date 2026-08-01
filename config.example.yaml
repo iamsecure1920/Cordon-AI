@@ -29,8 +29,11 @@ approval:
       # discovery
       - bbot_scan_active
       - dns_permute
-      - port_scan
-      - service_scan
+      # port_scan / service_scan deliberately absent. Programs commonly
+      # exclude "attacks against infrastructure" (AT&T does, verbatim),
+      # which makes port scanning both unrewarded and outside the
+      # invitation. Add them back only for a program that scopes
+      # infrastructure explicitly.
       - content_discovery
       - param_discovery
       - waf_detect
