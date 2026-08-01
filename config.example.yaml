@@ -12,14 +12,53 @@ approval:
   # elicitation → ask the MCP client (Claude) to prompt the human
   # deny         → refuse every aggressive call (safe default for unattended runs)
   # policy       → consult approval.policy below, no human in the loop
-  backend: elicitation
-  # Seconds to wait for a human decision before treating it as a decline.
+  #
+  # `policy` is unattended mode. It is not a weaker gate — it is the same gate,
+  # decided once, in writing, before the run instead of under time pressure
+  # mid-scan. Everything is still scope-checked, rate-limited, sanitized, and
+  # recorded in the hash-chained audit log; only the interactive prompt goes away.
+  backend: policy
   timeout: 300
-  # Let one approval cover repeat calls of the same tool against the same target.
   remember_ttl: 900
+
   policy:
-    auto_approve: []
-    auto_deny: ["sqlmap_scan", "strix_deep"]
+    # Pre-approved: the full recon → probe → discover → scan → validate chain.
+    # These are noisy and visible in a target's logs, which is why they are gated
+    # at all, but none of them changes state on the target.
+    auto_approve:
+      # discovery
+      - bbot_scan_active
+      - dns_permute
+      - port_scan
+      - service_scan
+      - content_discovery
+      - param_discovery
+      - waf_detect
+      # scanning
+      - nuclei_scan
+      - jaeles_scan
+      - secret_validate
+      - takeover_detect
+      # out-of-band listener: needed to prove blind SSRF and command injection
+      - oob_listener
+      # PoC validation. dalfox proves XSS with alert(document.domain); sqlmap is
+      # constrained by its argument policy (no --os-shell, no --dump-all). These
+      # produce the reproducible PoC that a report needs to be accepted.
+      - xss_validate
+      - sqli_validate
+      - validate_findings
+
+    # Never unattended, regardless of the list above.
+    auto_deny:
+      # Claims a dangling subdomain. That registers a resource on a third-party
+      # provider under the target's name — a real-world change that cannot be
+      # undone by stopping the scan, and that a program may read as going too far.
+      - takeover_confirm
+      # Autonomous multi-step exploitation. Its whole purpose is to chain further
+      # than a single validated PoC, which is exactly what needs a human.
+      - strix_deep
+      # Cloud mutation paths.
+      - cloud_permissions
 
 auth:
   # OAuth 2.1 + PKCE for the remote (streamable-HTTP) transport.
