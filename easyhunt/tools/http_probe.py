@@ -205,8 +205,23 @@ async def http_probe(
     engagement.assets.save(engagement.workspace / "assets.json")
     engagement.findings.save()
 
+    # httpx buffers its JSON output, so a kill at the timeout discards everything
+    # it had found. Measured: 764 hosts at 5 rps, ~35% of them dead names each
+    # costing a 15s connect timeout, ran past the 800s ceiling and returned zero
+    # results — reported as "0 live hosts", which reads exactly like an estate
+    # with nothing on it.
+    incomplete = run.error in {"timed out"} or (not run.ran)
     return {
-        "ok": True,
+        "ok": not incomplete,
+        "error": "probe_incomplete" if incomplete else None,
+        "message": (
+            f"httpx did not finish ({run.error}). It buffers output, so results "
+            f"gathered before the cutoff were lost. {len(hosts)} hosts at "
+            f"{engagement.scope.rules.max_rps:.0f} rps needs more headroom than the "
+            "ceiling allowed — probe in batches. Zero live here means UNKNOWN, "
+            "not empty."
+        ) if incomplete else None,
+        "complete": not incomplete,
         "probed": len(hosts),
         "live": len(live),
         "services": live,
