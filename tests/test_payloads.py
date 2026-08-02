@@ -194,3 +194,76 @@ class TestJobStatus:
         result = await REGISTRY["job_status"].fn(job_id=job.id, wait_seconds=10.0)
         assert result["completed"] is True
         assert result["count"] == 3
+
+
+class TestWstgIndex:
+    """Methodology as queryable data — the gap a live engagement exposed.
+
+    On a mature estate nuclei came back clean and the next move was improvisation.
+    The WSTG names 115 tests by phase; retrieval turns "what now" into a query.
+    """
+
+    def test_index_is_built_and_attributed(self) -> None:
+        from easyhunt.knowledge.wstg import load_index
+
+        index = load_index()
+        if not index.available:
+            pytest.skip("WSTG index not built on this machine")
+        # CC BY-SA 4.0 obliges attribution wherever the text travels.
+        assert index.source["license"] == "CC BY-SA 4.0"
+        assert "OWASP" in index.source["attribution"]
+        assert len(index.source["commit"]) == 40, "source must be pinned"
+
+    def test_known_tests_resolve(self) -> None:
+        from easyhunt.knowledge.wstg import load_index
+
+        index = load_index()
+        if not index.available:
+            pytest.skip("WSTG index not built")
+        for wstg_id in ("WSTG-INPV-05", "WSTG-INPV-19", "WSTG-ATHZ-04"):
+            test = index.get(wstg_id)
+            assert test is not None, f"{wstg_id} missing"
+            assert test["title"] and test["objectives"]
+
+    def test_search_ranks_the_obvious_answer_first(self) -> None:
+        from easyhunt.knowledge.wstg import load_index
+
+        index = load_index()
+        if not index.available:
+            pytest.skip("WSTG index not built")
+        assert index.search("server side request forgery")[0]["id"] == "WSTG-INPV-19"
+        assert index.search("insecure direct object reference")[0]["id"] == "WSTG-ATHZ-04"
+
+    def test_stack_hints_map_to_categories(self) -> None:
+        from easyhunt.knowledge.wstg import load_index
+
+        index = load_index()
+        if not index.available:
+            pytest.skip("WSTG index not built")
+        # The stack actually observed on a real engagement.
+        matches = index.for_stack(["Java", "Akamai", "SAML", "OAuth", "API"])
+        categories = {m["category"] for m in matches}
+        assert {"ATHZ", "ATHN"} & categories, "auth tests should surface for SAML/OAuth"
+
+    def test_unknown_stack_returns_nothing_rather_than_everything(self) -> None:
+        from easyhunt.knowledge.wstg import load_index
+
+        index = load_index()
+        if not index.available:
+            pytest.skip("WSTG index not built")
+        # Returning all 115 for an unrecognised stack would be noise pretending
+        # to be guidance.
+        assert index.for_stack(["CompletelyUnknownTech"]) == []
+
+    async def test_tool_reports_a_missing_index(self, engagement, monkeypatch) -> None:
+        from easyhunt.knowledge import wstg
+
+        monkeypatch.setattr(wstg, "load_index", lambda *a, **k: wstg.WstgIndex({}))
+        result = await REGISTRY["wstg_lookup"].fn(query="xss")
+        assert result["ok"] is False
+        assert "fetch_wstg.py --fetch" in result["message"]
+
+    async def test_tool_is_free_and_targetless(self) -> None:
+        spec = REGISTRY["wstg_lookup"]
+        assert spec.mode == "passive"
+        assert spec.estimated_requests == 0
