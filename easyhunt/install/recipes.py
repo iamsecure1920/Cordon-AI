@@ -322,6 +322,32 @@ _add(Recipe(tool="gitdorker", method="git", category="secrets", license="MIT",
             caveat="Needs a GitHub token to be useful."))
 
 # --------------------------------------------------------------------------- #
+# Smart contracts
+# --------------------------------------------------------------------------- #
+
+_add(Recipe(tool="slither", method="pipx", package="slither-analyzer",
+            category="contracts", license="AGPL-3.0",
+            caveat="AGPL-3.0 — matters if an EasyHunt bundle is redistributed. "
+                   "Needs a matching solc; install solc-select alongside it."))
+_add(Recipe(tool="aderyn", method="cargo", package="aderyn",
+            category="contracts", license="MIT",
+            caveat="Rust build; the first install compiles for several minutes."))
+_add(Recipe(tool="forge", method="release", package="foundry-rs/foundry",
+            asset_match="linux_{arch}.tar.gz", category="contracts",
+            license="Apache-2.0 OR MIT",
+            caveat="Ships forge/cast/anvil/chisel. The upstream foundryup "
+                   "installer writes a shim that did not resolve on this host, "
+                   "so the release tarball is used directly."))
+_add(Recipe(tool="medusa", method="go",
+            package="github.com/crytic/medusa@latest",
+            category="contracts", license="AGPL-3.0",
+            caveat="AGPL-3.0. NAME COLLISION: Kali ships /usr/bin/medusa, a password "
+                   "brute-forcer by Foofus Networks. The catalog carries an "
+                   "identity_marker so the wrong binary is reported rather than "
+                   "run — running it would fire credential attacks at a host."))
+
+
+# --------------------------------------------------------------------------- #
 # Cloud
 # --------------------------------------------------------------------------- #
 

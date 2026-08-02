@@ -60,6 +60,7 @@ CAPABILITY_MODULES = [
     "easyhunt.tools.ports",
     "easyhunt.tools.takeover",
     "easyhunt.tools.secrets",
+    "easyhunt.tools.contracts",
     "easyhunt.tools.cloud",
     "easyhunt.tools.exploitation",
     "easyhunt.tools.llmsec",

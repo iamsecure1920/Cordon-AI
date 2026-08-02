@@ -276,6 +276,49 @@ async def param_discovery(target: str, method: str = "GET") -> dict[str, Any]:
     }
 
 
+#: Pages a server returns for paths that do not exist, while still answering 200.
+#: A WAF block page is the worst case: it looks like a hit on every single path.
+_SOFT_404_MARKERS = (
+    "request rejected", "access denied", "not found", "404", "error",
+    "incapsula", "cloudfront", "akamai", "forbidden",
+)
+
+
+async def _soft_404_baseline(fuzz_url: str) -> dict[str, Any]:
+    """Probe paths that cannot exist, and learn what "nothing here" looks like.
+
+    Measured on a live estate: /composer.json returned HTTP 200 carrying an
+    Imperva "Request Rejected" page, and /static/api/swagger.json returned 200
+    with the site's Next.js shell. Both were reported as discovered paths. A
+    content-discovery tool without this check reports the whole wordlist as
+    findings on any host with a catch-all.
+    """
+    import secrets as _secrets
+
+    sizes: set[int] = set()
+    statuses: set[int] = set()
+    for _ in range(2):
+        probe = fuzz_url.replace("FUZZ", f"eh-{_secrets.token_hex(8)}")
+        run = await run_one(
+            "httpx",
+            ["-u", probe, "-json", "-silent", "-nc", "-duc",
+             "-status-code", "-content-length", "-timeout", "10"],
+            timeout=60,
+        )
+        for line in run.values:
+            try:
+                import json as _json
+
+                rec = _json.loads(line)
+            except Exception:  # noqa: BLE001, S112 — a failed baseline must not stop the scan
+                continue  # noqa: S112
+            if rec.get("content_length") is not None:
+                sizes.add(int(rec["content_length"]))
+            if rec.get("status_code"):
+                statuses.add(int(rec["status_code"]))
+    return {"sizes": sizes, "statuses": statuses}
+
+
 @easyhunt_tool(
     phase="endpoints", mode="aggressive", targets_arg="target", timeout=1800,
     name="content_discovery", tags={"endpoints"}, estimated_requests=2000,
@@ -301,6 +344,10 @@ async def content_discovery(
     url = split_targets(target)[0]
     if not url.startswith("http"):
         url = f"https://{url}"
+    # Wordlist entries conventionally start with "/" ("/.git", "/admin"), and
+    # FUZZ is substituted literally, so "host/" + "/admin" produced "host//admin".
+    # Some servers route that differently from "host/admin", which silently
+    # changes what was actually tested. Entries are normalized below instead.
     fuzz_url = url.rstrip("/") + "/FUZZ"
 
     from easyhunt.control_plane.sanitize import sanitize_path
@@ -339,11 +386,24 @@ async def content_discovery(
                 "available": [item["name"] for item in store.catalog(tool="ffuf")],
             }
 
+    # Normalize into the workspace: strip leading slashes and blank lines. The
+    # store itself is mounted read-only and must not be rewritten.
+    normalized = engagement.workspace / "raw" / f"wordlist-{wordlist_path.stem}.txt"
+    normalized.parent.mkdir(parents=True, exist_ok=True)
+    if not normalized.exists():
+        cleaned = [
+            line.strip().lstrip("/")
+            for line in wordlist_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        ]
+        normalized.write_text("\n".join(w for w in cleaned if w) + "\n", encoding="utf-8")
+
+    baseline = await _soft_404_baseline(fuzz_url)
+
     output = engagement.raw_path("ffuf", "json")
     run = await run_one(
         "ffuf",
         [
-            "-u", fuzz_url, "-w", str(wordlist_path),
+            "-u", fuzz_url, "-w", str(normalized),
             "-mc", "200,201,204,301,302,307,401,403,405",
             "-t", str(max(1, engagement.scope.rules.max_concurrency)),
             "-rate", str(max(1, int(engagement.scope.rules.max_rps))),
@@ -351,6 +411,10 @@ async def content_discovery(
             "-maxtime", str(min(max_seconds, 900)),
             "-of", "json", "-o", str(output),
         ]
+        # Drop the catch-all response sizes outright. ffuf's -ac calibrates on a
+        # few random strings and still let an Imperva "Request Rejected" page —
+        # served with HTTP 200 — through as a hit on every path tried.
+        + (["-fs", ",".join(str(s) for s in sorted(baseline["sizes"]))] if baseline["sizes"] else [])
         + (["-e", extensions] if extensions and "-e" in FFUF.arg_policy.allowed_flags else []),  # type: ignore[union-attr]
         timeout=1500,
     )
