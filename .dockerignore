@@ -1,0 +1,11 @@
+.venv/
+.git/
+engagements/
+payloads/
+knowledge/wstg/_src/
+__pycache__/
+*.pyc
+.env
+scope.yaml
+scope.*.yaml
+tests/_lab_root/
