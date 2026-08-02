@@ -311,3 +311,73 @@ class TestScanSizing:
         from easyhunt.engines.nuclei_engine import SPEC
 
         sanitize_argv("nuclei", ["-tl", "-silent"], policy=SPEC.arg_policy)
+
+
+class TestAmpersandInUrls:
+    """A query separator is not a shell operator when argv goes to execve.
+
+    Denying "&" outright refused every multi-parameter URL — most real ones —
+    while guarding against shell interpretation that cannot happen: tool argv is
+    passed to create_subprocess_exec, never a shell. The relaxation is scoped to
+    the query string of a real http(s) URL and nowhere else.
+    """
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://x.com/p?a=1&b=2",
+            "http://x.com/api?id=1&token=abc&page=2",
+            "https://x.com/p?a=1&b=FUZZ",
+        ],
+    )
+    def test_query_separators_are_permitted(self, url: str) -> None:
+        from easyhunt.control_plane.sanitize import sanitize_value
+
+        sanitize_value(url, name="t", tool="t")
+
+    @pytest.mark.parametrize(
+        ("label", "value"),
+        [
+            ("bare shell chain", "foo & rm -rf /"),
+            ("ampersand in path", "https://x.com/a&b/c"),
+            ("ampersand in host", "https://x.com&evil.com/p"),
+            ("not a url at all", "file&name.txt"),
+            ("non-http scheme", "ftp://x.com/p?a=1&b=2"),
+            ("no host", "https:///p?a=1&b=2"),
+        ],
+    )
+    def test_ampersand_denied_everywhere_else(self, label: str, value: str) -> None:
+        from easyhunt.control_plane.sanitize import sanitize_value
+        from easyhunt.errors import SanitizeError
+
+        with pytest.raises(SanitizeError):
+            sanitize_value(value, name="t", tool="t")
+
+    @pytest.mark.parametrize("value", [
+        "https://x.com/p?a=1&&b=2",   # shell AND, still a hard-denied substring
+        "https://x.com/p?a=1;id",     # semicolon
+        "https://x.com/p?a=1|id",     # pipe
+        "https://x.com/p?a=$(id)",    # command substitution
+    ])
+    def test_other_shell_metacharacters_unaffected(self, value: str) -> None:
+        from easyhunt.control_plane.sanitize import sanitize_value
+        from easyhunt.errors import SanitizeError
+
+        with pytest.raises(SanitizeError):
+            sanitize_value(value, name="t", tool="t")
+
+    def test_real_tools_accept_multi_param_targets(self) -> None:
+        # The regression that mattered: sqlmap could not be pointed at a URL
+        # with two parameters, which is most of the URLs worth testing.
+        from easyhunt.control_plane.sanitize import sanitize_argv
+        from easyhunt.mcp_server import load_capabilities
+
+        # CATALOG is populated by importing the capability modules; without this
+        # the specs simply are not there and the test passes on an empty dict.
+        load_capabilities()
+        from easyhunt.tools.common import CATALOG
+
+        url = "https://x.com/p?id=1&token=abc"
+        sanitize_argv("sqlmap", ["-u", url], policy=CATALOG["sqlmap"].arg_policy)
+        sanitize_argv("dalfox", ["url", url], policy=CATALOG["dalfox"].arg_policy)
+        sanitize_argv("ffuf", ["-u", url], policy=CATALOG["ffuf"].arg_policy)

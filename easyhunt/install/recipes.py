@@ -391,6 +391,174 @@ _add(Recipe(tool="xsstrike", method="git", category="exploit", license="GPL-3.0"
             post_install=_python_repo_setup("xsstrike", "xsstrike.py")))
 
 # --------------------------------------------------------------------------- #
+# Injection classes the wrapped engines do not cover
+# --------------------------------------------------------------------------- #
+#
+# These ship in the container image. They are catalogued here so `easyhunt doctor`
+# can see them at all: a tool that is in the image but not in the recipes is
+# invisible to the health check, which is exactly how nikto and testssl below
+# shipped 100% non-functional for days with nothing reporting it.
+
+_add(Recipe(tool="ssrfmap", method="git", category="exploit", license="MIT",
+            package="https://github.com/swisskyrepo/SSRFmap",
+            clone_to="/opt/ssrfmap",
+            post_install=_python_repo_setup("ssrfmap", "ssrfmap.py"),
+            caveat=(
+                "Driven by a saved HTTP request file (-r) with the injectable parameter "
+                "named by -p; there is no URL-only mode, so it cannot be pointed at a "
+                "bare host the way nuclei can. Modules beyond detection (portscan, redis, "
+                "smtp, readfiles) are active exploitation and belong behind approval."
+            )))
+_add(Recipe(tool="sstimap", method="git", category="exploit", license="GPL-3.0",
+            package="https://github.com/vladko312/SSTImap",
+            clone_to="/opt/sstimap",
+            post_install=_python_repo_setup("sstimap", "sstimap.py"),
+            caveat=(
+                "Maintained successor to the abandoned tplmap. Detection is safe; "
+                "--os-cmd, --os-shell, --upload and --download execute on the target and "
+                "are exploitation, not scanning. Pins urllib3~=1.26 and requests~=2.27 — "
+                "old, which is why it gets its own venv rather than sharing one."
+            )))
+# NOT from PyPI. See the caveat: the PyPI package of this name is not commix.
+_add(Recipe(tool="commix", method="git", category="exploit", license="GPL-3.0",
+            package="https://github.com/commixproject/commix",
+            clone_to="/opt/commix",
+            post_install=_python_repo_setup("commix", "commix.py"),
+            caveat=(
+                "Installed from upstream git, deliberately NOT from PyPI. The PyPI project "
+                "named 'commix' (version 0.1, uploaded 2022 by an unrelated author) contains "
+                "no commix code at all — its single payload is a Termux helper shell script "
+                "that clones this repository into $HOME when you run it. `pip install commix` "
+                "therefore puts a 'commix' on PATH that is not commix, which no identity "
+                "check based on the binary's name would catch. "
+                "Everything past detection is OS command execution on the target."
+            )))
+_add(Recipe(tool="smuggler", method="git", category="exploit", license="MIT",
+            package="https://github.com/defparam/smuggler",
+            clone_to="/opt/smuggler",
+            post_install=_python_repo_setup("smuggler", "smuggler.py"),
+            caveat=(
+                "Unmaintained — last commit April 2021. Vendors its dependencies, so the "
+                "venv stays empty and it must be run by path from its checkout: it loads "
+                "configs/ from the script directory and writes proof-of-concept payload "
+                "files into /opt/smuggler/payloads, which therefore has to stay writable. "
+                "Desync probes are deliberately malformed requests that can poison or wedge "
+                "a shared front-end proxy — never run outside an authorised window."
+            )))
+# `go install …@latest` was verified working here (resolves v0.5.4) even though the
+# Dockerfile builds it from a checkout. The simpler path is kept.
+_add(Recipe(tool="nosqli", method="go", category="exploit", license="AGPL-3.0",
+            package="github.com/Charlie-belmer/nosqli@latest",
+            caveat=(
+                "AGPL-3.0 — matters the moment an EasyHunt bundle is redistributed. "
+                "Dormant upstream (last release v0.5.4, 2021) against a go 1.15 module, so "
+                "it builds only because Go stayed backward-compatible; if a future toolchain "
+                "drops that, fall back to 'git clone && go build -o /usr/local/bin/nosqli .'"
+            )))
+
+# --------------------------------------------------------------------------- #
+# Web scanners and TLS posture
+# --------------------------------------------------------------------------- #
+#
+# nikto and testssl are the reason this section exists. Both were in the image and
+# in neither the catalog nor the recipes, and both were completely non-functional
+# — nikto could not load XML::Writer, testssl could not find hexdump — for as long
+# as they had been shipping. Their run-time dependencies are declared, not assumed.
+
+_add(Recipe(tool="nikto", method="git", category="http", license="GPL-3.0",
+            package="https://github.com/sullo/nikto",
+            clone_to="/opt/nikto",
+            system_deps=("perl", "libnet-ssleay-perl", "libxml-writer-perl"),
+            post_install=(
+                "chmod +x /opt/nikto/program/nikto.pl && "
+                "ln -sf /opt/nikto/program/nikto.pl /usr/local/bin/nikto"
+            ),
+            caveat=(
+                "Needs the XML::Writer Perl module (Debian: libxml-writer-perl) or it dies "
+                "with 'Required module not found: XML::Writer' on EVERY invocation, -Version "
+                "included — it builds its XML report object unconditionally. perl and "
+                "libnet-ssleay-perl alone are not enough. Licensing is split: the Perl code "
+                "is GPL-3.0, but the scan databases are NOT under the GPL and may only be "
+                "redistributed as part of the official Nikto package (see cirt.net/"
+                "Nikto-Licensing) — check that before shipping a bundle. Loud by design: "
+                "thousands of requests, trivially logged."
+            )))
+_add(Recipe(tool="testssl", method="git", category="http", license="GPL-2.0",
+            package="https://github.com/testssl/testssl.sh",
+            clone_to="/opt/testssl.sh",
+            system_deps=("bsdextrautils", "procps"),
+            post_install=(
+                "chmod +x /opt/testssl.sh/testssl.sh && "
+                "ln -sf /opt/testssl.sh/testssl.sh /usr/local/bin/testssl"
+            ),
+            caveat=(
+                "Two run-time dependencies that a successful install does not imply, both "
+                "of which it exits on rather than degrades: hexdump ('You need to install "
+                "hexdump for this program to work' — Debian ships it in bsdextrautils, not "
+                "coreutils) and ps ('You need to install ps' — procps). Its dependency check "
+                "cascades, so fixing one only reveals the next. Also needs bash (it is not "
+                "POSIX sh) and runs from its checkout, which carries the etc/ cipher mappings "
+                "and the bundled OpenSSL builds — a lone copied testssl.sh loses them. "
+                "Upstream moved from drwetter/testssl.sh to testssl/testssl.sh; the old URL "
+                "still redirects, but the new one is used here."
+            )))
+_add(Recipe(tool="wapiti", method="pipx", package="wapiti3", category="http",
+            license="GPL-2.0", python_max="3.14",
+            caveat=(
+                "PyPI name is 'wapiti3'; the command is 'wapiti'. Release 3.3.1 needs "
+                "Python >=3.12,<3.15 — the recipe can only express the ceiling, so on a host "
+                "whose newest interpreter is older than 3.12 the install fails at resolution "
+                "with an unhelpful message. Its browser-driven modules additionally need "
+                "'wapiti-install-headless-browser'. A full crawl is slow and noisy; scope it "
+                "with -m and a module list rather than running the default set."
+            )))
+_add(Recipe(tool="graphql-cop", method="git", category="http", license="MIT",
+            package="https://github.com/dolevf/graphql-cop",
+            clone_to="/opt/graphql-cop",
+            post_install=_python_repo_setup("graphql-cop", "graphql-cop.py"),
+            caveat=(
+                "Pins requests==2.25.1 and simplejson==3.17.6, both of which predate "
+                "Python 3.12 — the private venv keeps that off everything else, but "
+                "simplejson may have to compile, so build-essential must be present. "
+                "Several of its checks (batch queries, alias overloading, field duplication) "
+                "are denial-of-service probes by construction: they are testing whether the "
+                "endpoint can be made to do too much work. Treat as load-generating."
+            )))
+_add(Recipe(tool="corscanner", method="pipx", package="corscanner", category="http",
+            license="MIT",
+            caveat=(
+                "Unmaintained — 0.9.7, last touched 2021. The wheel's console script is "
+                "'corscanner'; a source install from the git repo names the same entry point "
+                "'cors' instead, so the binary that appears depends on how it was installed. "
+                "Pulls in gevent, which needs a C toolchain wherever no wheel is published. "
+                "Reports misconfiguration, not exploitability — a permissive ACAO is only a "
+                "finding once you show it reaches authenticated data."
+            )))
+_add(Recipe(tool="jwt_tool", method="git", category="http", license="GPL-3.0",
+            package="https://github.com/ticarpi/jwt_tool",
+            clone_to="/opt/jwt_tool",
+            post_install=_python_repo_setup("jwt_tool", "jwt_tool.py"),
+            caveat=(
+                "The first invocation ALWAYS exits 1. It creates ~/.jwt_tool/jwtconf.ini, "
+                "prints 'Configuration file built', and stops — so any check that reads a "
+                "non-zero exit as broken will misreport a healthy install, and HOME must be "
+                "writable. Run it once after installing. That generated config also defaults "
+                "'jwksdynamic' to a httpbin.org URL carrying your JWKS; leave it unset unless "
+                "sending key material to a third party is intended. Its -X exploit modes "
+                "forge tokens — exploitation, not scanning."
+            )))
+_add(Recipe(tool="websocat", method="release", category="http", license="MIT",
+            package="vi/websocat", asset_match="{arch}-unknown-linux-musl",
+            caveat=(
+                "The release asset is a bare static musl binary, not an archive, and only "
+                "x86_64 and aarch64 Linux are published — anywhere else needs 'cargo install "
+                "websocat'. Tracks whatever the latest release is (v1.14.1 at time of "
+                "writing) rather than a pinned version. A raw WebSocket client, not a "
+                "scanner: it has no scope or rate awareness of its own, so anything driving "
+                "it has to supply both."
+            )))
+
+# --------------------------------------------------------------------------- #
 # LLM red-team
 # --------------------------------------------------------------------------- #
 

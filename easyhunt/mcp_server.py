@@ -63,6 +63,8 @@ CAPABILITY_MODULES = [
     "easyhunt.tools.contracts",
     "easyhunt.tools.cloud",
     "easyhunt.tools.exploitation",
+    "easyhunt.tools.injection",
+    "easyhunt.tools.webscan",
     "easyhunt.tools.llmsec",
     "easyhunt.tools.triage_tools",
     "easyhunt.tools.report_tools",

@@ -123,7 +123,9 @@ RUN git clone -q https://github.com/iamsecure1920/NetSanitizer.git /tmp/ns && \
     cd /tmp/ns && go build -o /go/bin/netsanitizer NetSanitizer.go && rm -rf /tmp/ns || \
     echo "!!! FAILED: netsanitizer"
 
-# nosqli publishes no module path usable by `go install`; build from source.
+# nosqli: `go install github.com/Charlie-belmer/nosqli@latest` resolves to
+# v0.5.4 and builds. It is in the loop above; this source build is the
+# fallback if the module path ever stops resolving.
 RUN git clone --depth 1 https://github.com/Charlie-belmer/nosqli.git /tmp/nosqli && \
     cd /tmp/nosqli && go build -o /go/bin/nosqli . && rm -rf /tmp/nosqli || \
     echo "!!! FAILED: nosqli"
@@ -242,7 +244,7 @@ RUN git clone --depth 1 https://github.com/sullo/nikto.git /opt/nikto && \
     rm -rf /opt/nikto/.git && \
     ln -sf /opt/nikto/program/nikto.pl /usr/local/bin/nikto && \
     chmod +x /opt/nikto/program/nikto.pl
-RUN git clone --depth 1 https://github.com/drwetter/testssl.sh.git /opt/testssl.sh && \
+RUN git clone --depth 1 https://github.com/testssl/testssl.sh.git /opt/testssl.sh && \
     rm -rf /opt/testssl.sh/.git && \
     ln -sf /opt/testssl.sh/testssl.sh /usr/local/bin/testssl
 RUN git clone --depth 1 https://github.com/urbanadventurer/WhatWeb.git /opt/whatweb && \
@@ -252,9 +254,20 @@ RUN git clone --depth 1 https://github.com/urbanadventurer/WhatWeb.git /opt/what
     chmod +x /opt/whatweb/whatweb
 
 # Python tools that publish to PyPI, each isolated by uv.
-RUN uv tool install --python 3.12 commix && \
-    uv tool install --python 3.12 wapiti3 && \
-    uv tool install --python 3.12 corscanner || true
+# NOT `uv tool install commix`. The PyPI package named "commix" is not commix:
+# version 0.1 (2022), author "Parixit Sutariya", homepage github.com/Bhai4You,
+# containing no commix code at all — only a 3.8KB bash script that claims
+# author="Commix Project", runs `pip install lolcat`, and `git clone`s the real
+# repository at invocation time. Fetching and executing code mid-scan is not
+# something a scanner should do, and the name alone gave no hint. Installed from
+# the real project instead; the ToolSpec carries an identity_marker so a
+# substitution is caught rather than assumed.
+#
+# Installed one per RUN. `a && b && c || true` means a failure in the first
+# silently skips the rest while the layer still succeeds — wapiti3 and
+# corscanner would have been quietly absent.
+RUN uv tool install --python 3.12 wapiti3 || echo "!!! FAILED: wapiti3"
+RUN uv tool install --python 3.12 corscanner || echo "!!! FAILED: corscanner"
 
 # Python tools that do not publish usable wheels: cloned, with their own venv so
 # nothing lands in EasyHunt's interpreter.
@@ -263,7 +276,8 @@ RUN for repo in \
       "https://github.com/vladko312/SSTImap.git|sstimap|sstimap.py" \
       "https://github.com/ticarpi/jwt_tool.git|jwt_tool|jwt_tool.py" \
       "https://github.com/dolevf/graphql-cop.git|graphql-cop|graphql-cop.py" \
-      "https://github.com/defparam/smuggler.git|smuggler|smuggler.py" ; do \
+      "https://github.com/defparam/smuggler.git|smuggler|smuggler.py" \
+      "https://github.com/commixproject/commix.git|commix|commix.py" ; do \
       url="${repo%%|*}"; rest="${repo#*|}"; name="${rest%%|*}"; entry="${rest#*|}"; \
       git clone --depth 1 "$url" "/opt/$name" 2>/dev/null || continue; \
       rm -rf "/opt/$name/.git"; \

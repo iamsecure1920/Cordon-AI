@@ -20,6 +20,7 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from easyhunt.errors import SanitizeError
 
@@ -141,6 +142,32 @@ def known_policies() -> list[str]:
 # --------------------------------------------------------------------------- #
 
 
+#: A query string separator is not a shell operator here. Tool argv goes to
+#: ``create_subprocess_exec`` — execve, never a shell — so "&" in an argument is
+#: passed through as a literal byte with nothing to interpret it. Denying it
+#: outright cost the ability to test any multi-parameter URL, which is most of
+#: them: ``sqlmap -u 'https://x/?id=1&token=abc'`` was refused, and so was every
+#: equivalent for dalfox, ffuf and the rest. That is a large hole in coverage
+#: bought against a threat that does not exist on this path.
+#:
+#: The relaxation is deliberately narrow. "&" is permitted only inside the query
+#: string of a value that parses as an http(s) URL with a host. Everywhere else
+#: — bare arguments, file paths, regexes — it stays denied, and "&&" remains in
+#: HARD_DENY_SUBSTRINGS regardless.
+def _ampersand_is_query_separator(value: str) -> bool:
+    """True when every "&" in *value* sits in the query of a real http(s) URL."""
+    if "&" not in value:
+        return True
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return False
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        return False
+    # Only the query may carry it. A "&" in the host or path is not a separator.
+    return "&" not in (parts.scheme + parts.netloc + parts.path + parts.fragment)
+
+
 def sanitize_value(
     value: Any,
     *,
@@ -170,7 +197,11 @@ def sanitize_value(
             f"{name}: value exceeds {max_length} characters", tool=tool, arg=name, length=len(value)
         )
 
-    bad = sorted(set(value) & HARD_DENY_CHARS)
+    hard = HARD_DENY_CHARS
+    if "&" in value and _ampersand_is_query_separator(value):
+        hard = hard - {"&"}
+
+    bad = sorted(set(value) & hard)
     if bad:
         raise SanitizeError(
             f"{name}: shell control character(s) {bad!r} are never permitted",
