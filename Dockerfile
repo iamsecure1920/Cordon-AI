@@ -223,6 +223,19 @@ WORKDIR /opt/easyhunt
 COPY pyproject.toml README.md ./
 COPY easyhunt/ ./easyhunt/
 
+# Application data, not engagement data. These belong in the image: the
+# engagement workspace is what gets mounted at /work.
+#   rules/      custom nuclei templates and rule packs — the nuclei engine adds
+#               these to the upstream library rather than replacing it
+#   taskflows/  adversarial triage flows
+#   knowledge/  the OWASP WSTG index (CC BY-SA 4.0, attribution in the index)
+#   scripts/    rebuild the payload store and WSTG index inside a running container
+COPY rules/ ./rules/
+COPY taskflows/ ./taskflows/
+COPY knowledge/ ./knowledge/
+COPY scripts/ ./scripts/
+COPY config.example.yaml scope.example.yaml ./
+
 # bbot is imported by the recon engine, so it goes in the environment rather
 # than an isolated tool install — a pipx-style install would give a working CLI
 # and an ImportError.
@@ -241,6 +254,28 @@ RUN cp /tmp/cargo-bin/aderyn /usr/local/bin/ 2>/dev/null || true; rm -rf /tmp/ca
 # host as dead, which reads as an estate with nothing on it.
 RUN httpx -version 2>&1 | grep -qi projectdiscovery \
     || { echo "FATAL: /usr/local/bin/httpx is not ProjectDiscovery's"; httpx -version 2>&1 | head -2; exit 1; }
+
+# Assert the application data is present. A missing WSTG index or rules directory
+# does not crash anything — the tools simply return "nothing here", which is the
+# failure mode this project keeps having to design against.
+RUN test -s /opt/easyhunt/knowledge/wstg/index.json \
+      || { echo "FATAL: WSTG index missing — run scripts/fetch_wstg.py before building"; exit 1; } && \
+    test -d /opt/easyhunt/rules \
+      || { echo "FATAL: rules/ missing"; exit 1; } && \
+    python3 -c "import json,sys; d=json.load(open('/opt/easyhunt/knowledge/wstg/index.json')); n=len(d['tests']); print(f'WSTG index: {n} tests'); sys.exit(0 if n > 100 else 1)"
+
+
+# Foundry (forge/cast/anvil/chisel) — the PoC engine for contract work. The
+# upstream foundryup installer writes a shim that did not resolve on a clean
+# host, so the release tarball is used directly.
+RUN ARCH=$(dpkg --print-architecture) && \
+    URL=$(curl -s https://api.github.com/repos/foundry-rs/foundry/releases/latest \
+          | grep -oE '"browser_download_url": "[^"]*linux_'"$ARCH"'\.tar\.gz"' \
+          | head -1 | cut -d'"' -f4) && \
+    if [ -n "$URL" ]; then \
+      curl -sL "$URL" -o /tmp/foundry.tgz && \
+      tar -xzf /tmp/foundry.tgz -C /usr/local/bin && rm -f /tmp/foundry.tgz; \
+    else echo "!!! FAILED: foundry"; fi
 
 # Nuclei's template library IS the tool. Without it nuclei exits "no templates
 # provided for scan", which reads as a clean estate.

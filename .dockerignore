@@ -9,3 +9,5 @@ __pycache__/
 scope.yaml
 scope.*.yaml
 tests/_lab_root/
+# scope.*.yaml above excludes per-engagement scopes, but the template must ship.
+!scope.example.yaml
