@@ -42,7 +42,7 @@ Vetting the actual contents found real problems:
 ```
 payloads/
 ├── A/            38 files, 65 MB   discovery wordlists
-├── B/            20 files, 5.9 MB  injection payloads
+├── B/            20 files, 5.9 MB  injection payloads (3 currently consumed)
 ├── _quarantine/   4 files, 200 KB  never auto-run
 └── manifest.json                   provenance, hashes, tool mapping
 ```
@@ -51,7 +51,8 @@ payloads/
 Normal scope and rate limits apply, no extra gate. 38 files.
 
 **Tier B — injection payloads.** These are attacks. Aggressive mode plus the
-approval gate, same as any other aggressive tool. 20 files.
+approval gate, same as any other aggressive tool. 20 files, of which **3 have a
+consumer today** — see §4.
 
 **Tier C — quarantined.** Destructive or exfiltrating. Copied intact so a human
 can inspect them, never wired into any tool. 4 files:
@@ -126,8 +127,20 @@ see §6.
 
 Injection payloads (`xss`, `allsqli`, `ssti`, …) have **no aliases**. They are not
 discovery wordlists, and `content_discovery` must not be able to reach them by
-naming one. They belong to the approval-gated exploitation tools, which pass
-them to dalfox and sqlmap directly via `allow_tier_b=True`.
+naming one.
+
+Tier B lists reach exactly one consumer: `xss_validate` passes three of them
+(`xsspollygots`, `xsswafbypss`, `vulJs`) to dalfox via `--custom-payload`, behind
+the approval gate that every exploit-mode tool sits behind. That is the only
+`allow_tier_b=True` in the server.
+
+The remaining 17 have **no consumer**. This document previously claimed sqlmap
+was the second one; it is not, and it cannot be made one — sqlmap accepts no
+payload-wordlist flag at all, `--tamper` is in the tool's `denied_flags` because
+it loads executable Python, and `-v` is verbosity. So 17 tier B lists are
+fetched, vetted, hashed and unreachable. Recorded here rather than implied away:
+either a consumer gets added deliberately, or they should be dropped from the
+fetch.
 
 ### The GET-only constraint is structural
 
@@ -147,6 +160,72 @@ EasyHunt is not.
 So `payloads/*` is gitignored except the manifest. On a new machine, one command
 rebuilds the store from the pinned commit. Nothing is lost and nothing is
 redistributed.
+
+---
+
+## 5a. The store in the Docker image
+
+A container image is a *distributed copy*: it gets tagged, pushed and pulled. The
+licence argument applies to it exactly as it applies to a git clone, so
+**`easyhunt:latest` does not contain the payload store.**
+
+What it does contain is a loud, actionable absence. The earlier `.dockerignore`
+excluded `payloads/` and said nothing anywhere else, so a container reached
+`payload_catalog` and got nothing back — the failure this project keeps designing
+against. Now:
+
+| | |
+|---|---|
+| **On every container start** | the entrypoint prints a notice to **stderr** naming what is missing and the two commands that fix it. Nothing is printed when the store is present. Suppress with `EASYHUNT_QUIET=1`. Never printed to stdout — `easyhunt serve` speaks MCP there. |
+| **`payload_catalog`** | `{"ok": false, "error": "store_not_built"}` with the rebuild command. |
+| **`content_discovery`** | refuses list *names*; wordlist *paths* inside the engagement workspace still work, so the tool is degraded, not dead. |
+| **`/opt/easyhunt/payloads.manifest.json`** | ships — names, tiers, line counts, SHA-256s and the upstream pin, so the store can be inspected and verified without its contents. |
+| **Build-time assertion** | the build fails if the store is half-built, if tier C is present, or if the store root does not resolve to the directory the operator mounts. |
+
+### Three ways to give a container the store
+
+```bash
+# 1. Build once on the host, mount read-only. Survives container replacement.
+python3 scripts/vet_payloads.py --fetch
+docker run --rm -it -v "$PWD:/work" -w /work \
+           -v "$PWD/payloads:/opt/easyhunt/payloads:ro" easyhunt easyhunt doctor
+
+# 2. Build inside a running container. Needs network; lost with the container.
+docker run --rm -it easyhunt python3 /opt/easyhunt/scripts/vet_payloads.py --fetch
+
+# 3. Bake it into a PRIVATE image you will not distribute.
+docker build --build-arg FETCH_PAYLOADS=1 -t easyhunt:payloads .
+```
+
+Option 3 fetches from the pinned commit and deletes `_quarantine` **in the same
+layer**, so tier C never exists in the image — deleting it in a later step would
+leave every byte of it in the layer underneath, still pullable. The image is
+stamped `com.easyhunt.payloads.bundled=1`, so whether an image is safe to push is
+answerable with `docker inspect` instead of from memory.
+
+### Why the manifest is not copied into the store root
+
+`PayloadStore.available` is true when a manifest is readable in the store root,
+and every caller reads that as "the store exists". A manifest sitting in an empty
+store root would make `payload_catalog` list 34 wordlists that cannot be opened —
+trading an accurate absence for a confident lie. It ships one directory up, as
+reference only.
+
+### Where the store lives at runtime
+
+`store: ./payloads` is resolved **relative to the installed package**, not to the
+current directory:
+
+```
+knowledge/payloads.py:  Path(__file__).parent.parent.parent / "payloads"
+```
+
+On a checkout that is the repo root. In the image the wheel is installed into
+`site-packages`, so the image symlinks `site-packages/payloads` (and
+`site-packages/knowledge`, which `wstg.py` resolves the same way) at
+`/opt/easyhunt/`. That is why the mount target above is `/opt/easyhunt/payloads`
+and why `scripts/vet_payloads.py --fetch` run inside the container lands
+somewhere the tools actually read.
 
 ---
 

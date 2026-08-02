@@ -150,14 +150,26 @@ TOOL_MAP: dict[str, dict[str, str]] = {
     "xss_validate": {
         "tools": "dalfox",
         "flag": "--custom-payload",
-        "files": "xss, xsspollygots, xsswafbypss",
-        "tier": "B — approval gated",
+        # xss.txt is deliberately absent: it carries a GH0ST.xss.ht callback and
+        # is quarantined as tier C. vulJs covers JS-framework payloads instead.
+        "files": "xsspollygots, xsswafbypss, vulJs",
+        "tier": "B — approval gated, reached via exploitation.XSS_PAYLOAD_LISTS",
     },
-    "sqli_validate": {
-        "tools": "sqlmap",
-        "flag": "--tamper / -v",
-        "files": "allsqli, blindsqli, sqli2",
-        "tier": "B — approval gated",
+    # sqlmap has NO consumer for these lists and the earlier entry claiming
+    # "--tamper / -v" was wrong three ways: --tamper is denied (it loads
+    # executable Python), -v is verbosity, and sqlmap accepts no payload
+    # wordlist at all. sqli2.txt is quarantined tier C besides. Recorded as
+    # unconsumed rather than left implying a capability that does not exist.
+    "_unconsumed_tier_b": {
+        "tools": "none",
+        "flag": "n/a",
+        "files": "allsqli, blindsqli, ssti, ssrf, lfi, crlf, xml, jwt-secrets, "
+                 "403_*, bambda, htaccess, xor, pl, sqldb, github-dork, "
+                 "android_all_permissions",
+        "tier": "B — fetched and vetted, but no tool in the server accepts a "
+                "payload file for these. Either add a consumer deliberately or "
+                "drop them from the fetch; leaving them reachable-looking is "
+                "what produced this defect.",
     },
 }
 

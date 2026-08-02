@@ -324,6 +324,19 @@ def sanitize_argv(tool: str, argv: list[str], *, policy: ArgPolicy | None = None
             raise SanitizeError(
                 f"positional argument {item!r} not permitted for {tool}", tool=tool, value=item
             )
+
+        # denied_flags also covers bare subcommands. Without this the entry is
+        # inert for anything that is not flag-shaped: `forge script`, `forge
+        # create` and `cast send` all send real transactions, were listed as
+        # denied, and were in fact blocked only by a narrow positional_pattern.
+        # Widening that pattern — to accept a repo path, say — would silently
+        # re-enable broadcasting with no test failing. A denial must not depend
+        # on an unrelated allowlist staying narrow.
+        if item in policy.denied_flags:
+            raise SanitizeError(
+                f"{item!r} is denied for {tool}", tool=tool, value=item
+            )
+
         value = sanitize_value(
             item, name=f"argv[{index}]", tool=tool, relaxed_chars=policy.relaxed_chars
         )

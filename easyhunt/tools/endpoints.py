@@ -119,6 +119,22 @@ PARAMSPIDER = register_spec(
     )
 )
 
+NETSANITIZER = register_spec(
+    ToolSpec(
+        name="netsanitizer", binary="netsanitizer", license="MIT",
+        homepage="https://github.com/iamsecure1920/NetSanitizer",
+        version_args=["-h"],
+        arg_policy=ArgPolicy(
+            tool="netsanitizer",
+            allowed_flags={"-keep-assets", "-keep-scripts", "-q"},
+            boolean_flags={"-keep-assets", "-keep-scripts", "-q"},
+            allow_positional=True,
+            positional_pattern=re.compile(r"[A-Za-z0-9._/-]{1,300}"),
+            max_argv=8,
+        ),
+    )
+)
+
 FFUF = register_spec(
     ToolSpec(
         name="ffuf", binary="ffuf", license="MIT", homepage="https://github.com/ffuf/ffuf",
@@ -196,7 +212,28 @@ async def endpoint_discovery(target: str, include_crawl: bool = False) -> dict[s
 
     runs = await run_many(tasks)
     merged = [u for u in merge_runs(runs) if u.startswith("http")]
-    kept, dropped = in_scope_only(merged, phase="endpoints", tool="endpoint_discovery")
+
+    # Archives return the same endpoint hundreds of times with different values
+    # in the same parameters. What matters for testing is the set of distinct
+    # *injection points*, not distinct URLs: measured on a real engagement,
+    # 5,065 archived URLs held 61 of them, and the difference is scan budget
+    # spent re-testing one endpoint. netsanitizer collapses on
+    # scheme+host+path+parameter-NAMES, keeping the variant with the most
+    # parameters. Absence is not fatal — the raw list is still correct, just
+    # longer — so this degrades rather than fails.
+    collapsed: list[str] | None = None
+    if merged:
+        raw_urls = engagement.raw_path("endpoint-urls", "txt")
+        raw_urls.write_text("\n".join(merged) + "\n", encoding="utf-8")
+        dedupe = await run_one(
+            "netsanitizer", ["-q", "-keep-scripts", str(raw_urls)], timeout=120
+        )
+        if dedupe.ran and dedupe.values:
+            collapsed = [u for u in dedupe.values if u.startswith("http")]
+
+    kept, dropped = in_scope_only(
+        collapsed or merged, phase="endpoints", tool="endpoint_discovery"
+    )
     store_assets(kept, kind="url", source="archives", tags=["archived"])
 
     # Parameter names are the most useful thing in an archive dump.
@@ -217,6 +254,9 @@ async def endpoint_discovery(target: str, include_crawl: bool = False) -> dict[s
         values=kept[:5000],
         dropped=dropped,
         extra={
+            "archived_urls": len(merged),
+            "distinct_injection_points": len(collapsed) if collapsed else None,
+            "deduplicated_by": "netsanitizer" if collapsed else "none (tool absent)",
             "unique_parameters": dict(sorted(parameters.items(), key=lambda kv: -kv[1])[:100]),
             "extensions": dict(sorted(extensions.items(), key=lambda kv: -kv[1])[:30]),
             "total_urls": len(kept),

@@ -1,7 +1,6 @@
 .venv/
 .git/
 engagements/
-payloads/
 knowledge/wstg/_src/
 __pycache__/
 *.pyc
@@ -11,3 +10,24 @@ scope.*.yaml
 tests/_lab_root/
 # scope.*.yaml above excludes per-engagement scopes, but the template must ship.
 !scope.example.yaml
+
+# setuptools writes these into the source tree during `uv pip install .`, and a
+# stale copy from a host build would be layered straight into /opt/easyhunt.
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# The vetted payload store: ~71 MB fetched from a repo that declares NO LICENSE,
+# i.e. all rights reserved. Using it locally is fine; baking it into an image
+# that gets pushed to a registry is redistribution, so the default build does
+# not carry it. See docs/PAYLOADS.md §5 and the payload stanza in the Dockerfile.
+#
+# manifest.json is ours — names, tiers, SHA-256s and the upstream pin. It ships
+# as a *reference* copy at /opt/easyhunt/payloads.manifest.json, deliberately
+# NOT inside the store root: PayloadStore treats a manifest in the store root as
+# proof the store exists, so putting one there without the files it describes
+# would make payload_catalog list 34 wordlists that cannot be opened.
+payloads/*
+!payloads/manifest.json

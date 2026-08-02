@@ -325,6 +325,13 @@ _add(Recipe(tool="gitdorker", method="git", category="secrets", license="MIT",
 # Smart contracts
 # --------------------------------------------------------------------------- #
 
+_add(Recipe(tool="netsanitizer", method="git", category="endpoints", license="MIT",
+            package="https://github.com/iamsecure1920/NetSanitizer.git",
+            clone_to="/opt/netsanitizer",
+            post_install="cd /opt/netsanitizer && go mod init netsanitizer 2>/dev/null; "
+                         "go build -o /usr/local/bin/netsanitizer NetSanitizer.go",
+            caveat="Collapses archive URL dumps to distinct injection points. "
+                   "Absence is non-fatal: endpoint_discovery returns the raw list."))
 _add(Recipe(tool="slither", method="pipx", package="slither-analyzer",
             category="contracts", license="AGPL-3.0",
             caveat="AGPL-3.0 — matters if an EasyHunt bundle is redistributed. "

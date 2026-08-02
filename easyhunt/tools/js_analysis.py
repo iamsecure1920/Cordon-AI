@@ -11,6 +11,7 @@ tested against a live service from here. Validation is a separate, gated step.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -47,7 +48,18 @@ RETIREJS = register_spec(
         arg_policy=ArgPolicy(
             tool="retire",
             allowed_flags={"--js", "--path", "--outputformat", "--outputpath", "--exitwith"},
-            value_patterns={"--outputformat": re.compile(r"json|text|cyclonedx")},
+            # --js is a mode switch, not a value-taking flag. Undeclared, the
+            # sanitizer treated it as taking a value, so it swallowed "--path"
+            # and the directory that followed arrived as a bare positional and
+            # was refused. retire therefore never ran on any engagement: the
+            # failure surfaced as ran=False in the result rather than as a crash,
+            # so JS library CVE detection has been quietly absent throughout.
+            boolean_flags={"--js"},
+            value_patterns={
+                "--outputformat": re.compile(r"json|text|cyclonedx"),
+                "--path": re.compile(r"[A-Za-z0-9._/-]{1,300}"),
+                "--outputpath": re.compile(r"[A-Za-z0-9._/-]{1,300}"),
+            },
             numeric_caps={"--exitwith": 1},
         ),
     )
@@ -128,8 +140,10 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     """Fetch JavaScript bundles and extract endpoints, secrets, and libraries.
 
     Fetches each URL once (a normal browser request), then runs native pattern
-    matching plus jsluice/retire.js when installed. Credential candidates are
-    masked in the output and are never tested against a live service here.
+    matching, jsluice (grammar-based URL extraction) and retire.js (known-vulnerable
+    library detection). Either external tool being absent is reported per-tool in
+    ``tools``; it never turns into a quiet zero. Credential candidates are masked
+    in the output and are never tested against a live service here.
     """
     engagement = get_engagement()
     urls = [u for u in split_targets(target) if u.startswith("http")][:max_files]
@@ -197,6 +211,28 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
 
     relative = sorted(e for e in all_endpoints if e.startswith("/"))
     store_assets(relative, kind="endpoint", source="js_analyze", tags=["from-js"])
+
+    # jsluice parses JavaScript with a real grammar rather than regexes, so it
+    # recovers routes the native pattern pass cannot. It had a ToolSpec, an
+    # installed binary and a docstring promising it ran — and no call site. On a
+    # live target the native pass alone returned "/./", "/a/b", "/_next/":
+    # minifier noise rather than routes.
+    jsluice_endpoints: list[str] = []
+    js_files = sorted(str(p) for p in engagement.raw_dir.glob("js-*.js"))
+    if js_files:
+        jsluice_run = await run_one(
+            "jsluice", ["urls", *js_files[:max_files]], timeout=180
+        )
+        if jsluice_run.ran:
+            for line in jsluice_run.values:
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                found = record.get("url")
+                if found:
+                    jsluice_endpoints.append(str(found))
+            all_endpoints.update(jsluice_endpoints)
 
     library_run = await run_one(
         "retire", ["--js", "--path", str(engagement.raw_dir), "--outputformat", "json"],

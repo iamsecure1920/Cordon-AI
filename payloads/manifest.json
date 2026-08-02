@@ -34,14 +34,14 @@
     "xss_validate": {
       "tools": "dalfox",
       "flag": "--custom-payload",
-      "files": "xss, xsspollygots, xsswafbypss",
-      "tier": "B \u2014 approval gated"
+      "files": "xsspollygots, xsswafbypss, vulJs",
+      "tier": "B \u2014 approval gated, reached via exploitation.XSS_PAYLOAD_LISTS"
     },
-    "sqli_validate": {
-      "tools": "sqlmap",
-      "flag": "--tamper / -v",
-      "files": "allsqli, blindsqli, sqli2",
-      "tier": "B \u2014 approval gated"
+    "_unconsumed_tier_b": {
+      "tools": "none",
+      "flag": "n/a",
+      "files": "allsqli, blindsqli, ssti, ssrf, lfi, crlf, xml, jwt-secrets, 403_*, bambda, htaccess, xor, pl, sqldb, github-dork, android_all_permissions",
+      "tier": "B \u2014 fetched and vetted, but no tool in the server accepts a payload file for these. Either add a consumer deliberately or drop them from the fetch; leaving them reachable-looking is what produced this defect."
     }
   },
   "files": [
