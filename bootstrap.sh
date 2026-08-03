@@ -91,6 +91,59 @@ fi
 
 have pipx && pipx ensurepath >/dev/null 2>&1
 
+# Debian's golang-go is too old for this toolchain and it is not close.
+#
+# bookworm ships Go 1.19. Every ProjectDiscovery tool, dalfox, gitleaks and
+# medusa need 1.21+, and on a clean bookworm box every single `go install`
+# fails — measured, not assumed:
+#
+#   go.mod:5: unknown directive: toolchain
+#   invalid go version '1.25.5': must match format 1.23
+#   package slices is not in GOROOT (/usr/lib/go-1.19/src/slices)
+#
+# 16 tools, including nuclei, httpx, subfinder, dnsx, naabu and katana — which
+# is most of the pipeline. It went unnoticed because Kali ships a current Go, so
+# the machine this was written on never reproduced it.
+#
+# GOTOOLCHAIN=auto does not rescue 1.19: the toolchain directive it would need to
+# read is itself the thing 1.19 cannot parse.
+GO_MINIMUM_MINOR=21
+GO_FALLBACK_VERSION=1.25.5
+
+go_minor() {
+    have go || { echo 0; return; }
+    go version 2>/dev/null | sed -nE 's/.*go1\.([0-9]+).*/\1/p' | head -1 | grep -E '^[0-9]+$' || echo 0
+}
+
+CURRENT_GO_MINOR=$(go_minor)
+if [ "${CURRENT_GO_MINOR:-0}" -lt "$GO_MINIMUM_MINOR" ]; then
+    if [ "${CURRENT_GO_MINOR:-0}" -eq 0 ]; then
+        warn "no Go found — installing ${GO_FALLBACK_VERSION} from go.dev"
+    else
+        warn "Go 1.${CURRENT_GO_MINOR} is too old for this toolchain (need 1.${GO_MINIMUM_MINOR}+);
+    installing ${GO_FALLBACK_VERSION} from go.dev alongside it"
+    fi
+    GO_ARCH=$(dpkg --print-architecture 2>/dev/null || echo amd64)
+    GO_TARBALL="go${GO_FALLBACK_VERSION}.linux-${GO_ARCH}.tar.gz"
+    if curl -fsSL "https://go.dev/dl/${GO_TARBALL}" -o "/tmp/${GO_TARBALL}"; then
+        $SUDO rm -rf /usr/local/go
+        $SUDO tar -C /usr/local -xzf "/tmp/${GO_TARBALL}" && rm -f "/tmp/${GO_TARBALL}"
+        # Ahead of /usr/bin, so `go` means the new one for this run and for the
+        # `go install` calls the tool installer is about to make.
+        PATH="/usr/local/go/bin:$PATH"
+        export PATH
+        if ! grep -q '/usr/local/go/bin' "$HOME/.profile" 2>/dev/null; then
+            printf '\nexport PATH="/usr/local/go/bin:$PATH"\n' >> "$HOME/.profile"
+        fi
+        ok "Go $(go version 2>/dev/null | awk '{print $3}') installed to /usr/local/go"
+    else
+        warn "could not download Go ${GO_FALLBACK_VERSION} — the Go-based tools will fail to build.
+    Install Go 1.${GO_MINIMUM_MINOR}+ manually from https://go.dev/dl/ and re-run."
+    fi
+else
+    ok "Go 1.${CURRENT_GO_MINOR} is new enough"
+fi
+
 # PATH ordering matters: wrapper scripts live in these directories.
 case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;
