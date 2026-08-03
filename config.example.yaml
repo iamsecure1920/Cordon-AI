@@ -227,6 +227,14 @@ sandbox:
     sqlmap: ["/root/.local/share/sqlmap"]
     wapiti: ["/root/.wapiti"]
     noseyparker: ["/root/.cache"]
+    # Both crash on import under a read-only root: sstimap's utils/config.py
+    # calls os.makedirs("~/.sstimap") at module scope, and commix writes its
+    # session and output there. sstimap's failure was invisible — exit 1 is in
+    # its allow_codes, so a 15-line Python traceback was parsed as a scan and
+    # reported "No template evaluation detected" against an endpoint that
+    # renders {{7*7}} as 49.
+    sstimap: ["/root/.sstimap"]
+    commix: ["/root/.commix"]
 
   memory: 2g
   cpus: "2.0"

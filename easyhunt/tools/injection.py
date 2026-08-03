@@ -261,12 +261,15 @@ COMMIX = register_spec(
                 "--smart", "--flush-session", "--ignore-session", "--no-logging",
                 "--time-limit", "-p", "--skip", "-d", "--data", "--cookie",
                 "-H", "--header", "--method", "--skip-calc",
+                # See the wrapper: without this commix silently ignores -u.
+                "--ignore-stdin",
             },
             # Every one of these takes no value. commix parses with optparse, so
             # a flag omitted here would swallow the following argument — the bug
             # that left `retire` un-runnable for the life of this project.
             boolean_flags={
                 "--batch", "--skip-waf", "--disable-coloring", "--skip-empty",
+                "--ignore-stdin",
                 "--smart", "--flush-session", "--ignore-session", "--no-logging",
                 "--skip-calc",
             },
@@ -300,7 +303,10 @@ COMMIX = register_spec(
                 "-p": PARAM_NAME,
                 "--skip": re.compile(r"[A-Za-z0-9_.,\[\]-]{1,200}"),
                 "--method": HTTP_METHOD,
-                "--answers": re.compile(r"[A-Za-z=,]{1,120}"),
+                # Hyphens matter: the only answer this wrapper sends is
+                # "pseudo-terminal=n", and commix matches it as a substring of
+                # its own question text.
+                "--answers": re.compile(r"[A-Za-z=,-]{1,120}"),
                 "--output-dir": WORKSPACE_PATH,
                 # commix's --data is a whole body upstream, but '&' is hard-denied
                 # project-wide, so one pair is all that can be expressed.
@@ -421,6 +427,63 @@ def _clean(text: str, *, limit: int = 4000) -> list[str]:
 
 def _merged(result: ProcResult) -> list[str]:
     return _clean(f"{result.stdout}\n{result.stderr}")
+
+
+#: Output that means the tool died on its own feet rather than finishing a scan.
+#:
+#: Every wrapper here passes ``allow_codes=(0, 1)``, because these scanners exit
+#: 1 both for "found nothing" and for "found something". That is a reasonable
+#: accommodation and it has a hole in it: a tool that crashes also exits 1, and
+#: its stack trace then goes through the same parse as a completed scan. No hit
+#: pattern matches a traceback, so the wrapper concludes the target is clean.
+#:
+#: Measured: sstimap in the sandbox crashes at import — utils/config.py calls
+#: os.makedirs("~/.sstimap") at module scope and the container root is read-only
+#: — and ssti_probe reported "No template evaluation detected" in 0.6 seconds
+#: against an endpoint that renders {{7*7}} as 49. Fifteen lines of Python
+#: traceback, parsed as a security result.
+#:
+#: The scratch mount fixes that instance. This exists so the next one is loud.
+_CRASH_MARKERS = (
+    "Traceback (most recent call last)",
+    "ModuleNotFoundError",
+    "ImportError",
+    "Read-only file system",
+    "Permission denied",
+    "command not found",
+    "No such file or directory",
+    "Killed",
+    "MemoryError",
+    "OSError: [Errno",
+)
+
+
+def _crashed(text: str) -> str | None:
+    """The marker showing this output is a crash, not a scan. None if it is a scan."""
+    for marker in _CRASH_MARKERS:
+        if marker in text:
+            return marker
+    return None
+
+
+def _crash_result(tool: str, run: ToolRun, target: str, marker: str, text: str) -> dict[str, Any]:
+    """A crash is UNTESTED. It is emphatically not a clean scan."""
+    return {
+        "ok": False,
+        "status": "UNTESTED",
+        "complete": False,
+        "error": "tool_crashed",
+        "target": target,
+        "findings": [],
+        "message": (
+            f"{tool} crashed instead of scanning — its output contains {marker!r}. "
+            f"This target is UNTESTED, not clean. Exit code {run.exit_code} is "
+            "indistinguishable from 'found nothing' for this tool, which is why "
+            "the output is inspected rather than trusted."
+        ),
+        "tools": [run.to_dict()],
+        "output": text[-2000:],
+    }
 
 
 def _untested(tool: str, run: ToolRun, target: str, *, install: str) -> dict[str, Any]:
@@ -676,6 +739,9 @@ async def ssrf_probe(target: str, parameter: str = "url") -> dict[str, Any]:
         )
 
     text = "\n".join(run.values)
+    crash = _crashed(text)
+    if crash:
+        return _crash_result("ssrfmap", run, url, crash, text)
     open_ports = sorted({f"{ip}:{port}" for ip, port in _SSRF_OPEN.findall(text)})
     checked = len(set(_SSRF_CHECKED.findall(text)))
     saturated = _oracle_saturated(len(open_ports), checked)
@@ -826,6 +892,9 @@ async def ssti_probe(
         )
 
     text = "\n".join(run.values)
+    crash = _crashed(text)
+    if crash:
+        return _crash_result("sstimap", run, url, crash, text)
     findings: list[Finding] = []
     details: dict[str, str] = {}
     if _SSTI_HIT.search(text):
@@ -931,6 +1000,25 @@ async def cmdi_probe(target: str, parameter: str | None = None, level: int = 1) 
     argv = [
         "-u", url,
         "--batch",
+        # Not optional, and not cosmetic. commix's main.py:635 checks
+        # `os.isatty(sys.stdin.fileno())`; when stdin is not a terminal — which
+        # it never is for a subprocess — it parses stdin as the target list and
+        # DISCARDS -u. Every EasyHunt run therefore scanned nothing: commix
+        # printed its banner, read an empty pipe, exited 0 in 0.1 seconds, and
+        # this wrapper reported "no injectable parameter found". A clean result
+        # from a tool that never made a request.
+        "--ignore-stdin",
+        # --batch answers every prompt with its default, and the default for
+        # "is likely vulnerable. Do you want to spawn a pseudo-terminal shell?"
+        # is Y (checks.py:895). So a successful detection walked straight into
+        # os_shell — the exploitation half this module denies by argument policy,
+        # entered by the tool on its own initiative rather than through a flag.
+        # Denying --os-shell never had a chance to matter.
+        #
+        # Observed against the local lab: commix found the injection, opened
+        # os_shell, and looped on "EOF when reading a line" until something
+        # killed it. A denied flag is not a denied behaviour.
+        "--answers", "pseudo-terminal=n",
         "--technique", "cet",
         "--level", str(max(1, min(int(level), 2))),
         "--time-sec", "5",
@@ -956,6 +1044,9 @@ async def cmdi_probe(target: str, parameter: str | None = None, level: int = 1) 
         )
 
     text = "\n".join(run.values)
+    crash = _crashed(text)
+    if crash:
+        return _crash_result("commix", run, url, crash, text)
     findings: list[Finding] = []
     hit = _CMDI_HIT.search(text)
     if hit:
@@ -1063,6 +1154,9 @@ async def smuggling_probe(target: str, method: str = "POST") -> dict[str, Any]:
         )
 
     text = "\n".join(run.values)
+    crash = _crashed(text)
+    if crash:
+        return _crash_result("smuggler", run, url, crash, text)
     kinds = sorted({m.group(1).upper() for m in _SMUGGLE_HIT.finditer(text)})
     findings: list[Finding] = []
     if kinds:
@@ -1175,6 +1269,9 @@ async def nosqli_probe(target: str, data: str | None = None) -> dict[str, Any]:
         )
 
     text = "\n".join(run.values)
+    crash = _crashed(text)
+    if crash:
+        return _crash_result("nosqli", run, url, crash, text)
     findings: list[Finding] = []
     kinds = sorted({m.group(0) for m in _NOSQL_TYPE.finditer(text)})
     if _NOSQL_HIT.search(text):

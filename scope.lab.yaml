@@ -38,6 +38,10 @@ in_scope:
   wildcards: []
   cidrs:
     - 127.0.0.1/32
+    # The Docker bridge gateway. Tools run in the sandbox with --network bridge,
+    # where 127.0.0.1 is the container itself — without this the containerised
+    # tools would scan themselves, find nothing, and report it as a clean lab.
+    - 172.17.0.1/32
   ip_ranges: []
   regex: []
   urls: []

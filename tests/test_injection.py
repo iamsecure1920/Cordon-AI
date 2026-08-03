@@ -340,6 +340,55 @@ class TestDangerousFlagsAreRefused:
         policy = SPECS[tool].arg_policy
         assert not (policy.allowed_flags & set(GLOBAL_DENIED_FLAGS))
 
+    async def test_a_traceback_is_not_a_clean_scan(self, engagement, monkeypatch) -> None:
+        """sstimap crashed at import and the wrapper called the target clean.
+
+        The container root is read-only and sstimap's utils/config.py calls
+        os.makedirs("~/.sstimap") at module scope. It exited 1 — which is inside
+        allow_codes, because these tools exit 1 for "found nothing" too — and
+        fifteen lines of Python traceback went through the hit-pattern parse. No
+        pattern matches a traceback, so ssti_probe reported "No template
+        evaluation detected" in 0.6 seconds against an endpoint that renders
+        {{7*7}} as 49.
+        """
+        approve(engagement, "ssti_probe")
+        capture(monkeypatch, values=[
+            "Traceback (most recent call last):",
+            'File "/opt/sstimap/utils/config.py", line 58, in <module>',
+            "OSError: [Errno 30] Read-only file system: '/root/.sstimap/'",
+        ])
+        result = await inj.ssti_probe(target="https://www.example.com/ssti?q=1")
+
+        assert result["ok"] is False
+        assert result["status"] == "UNTESTED"
+        assert result["error"] == "tool_crashed"
+        assert result["complete"] is False
+        assert result["findings"] == []
+        assert "UNTESTED, not clean" in result["message"]
+
+    @pytest.mark.parametrize(
+        "probe,kwargs",
+        [
+            ("ssrf_probe", {"target": "https://www.example.com/?url=1"}),
+            ("ssti_probe", {"target": "https://www.example.com/?q=1"}),
+            ("cmdi_probe", {"target": "https://www.example.com/?cmd=1"}),
+            ("smuggling_probe", {"target": "https://www.example.com/"}),
+            ("nosqli_probe", {"target": "https://www.example.com/"}),
+        ],
+    )
+    async def test_every_probe_detects_a_crash(
+        self, engagement, monkeypatch, probe: str, kwargs: dict
+    ) -> None:
+        """One wrapper being careful is not the fix; the class is."""
+        approve(engagement, probe)
+        capture(monkeypatch, values=[
+            "Traceback (most recent call last):",
+            "ModuleNotFoundError: No module named 'requests'",
+        ])
+        result = await getattr(inj, probe)(**kwargs)
+        assert result["error"] == "tool_crashed", probe
+        assert result["findings"] == [], probe
+
     async def test_ssrf_saturated_oracle_raises_no_finding(
         self, engagement, monkeypatch
     ) -> None:

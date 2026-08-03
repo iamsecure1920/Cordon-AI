@@ -12,10 +12,17 @@ Binds 127.0.0.1 only. Never expose this.
   GET /ssti?q=       renders q as a Jinja2 template
   GET /cmd?cmd=      concatenates cmd into a shell string
   GET /fetch?url=    fetches url server-side and returns the body
+
+Binds 127.0.0.1 *and* the Docker bridge gateway (172.17.0.1 by default). Tools
+that run in the sandbox get `--network bridge`, where 127.0.0.1 is the container
+itself — a lab reachable only on host loopback would be invisible to exactly the
+tools most worth testing, and each would report a clean scan of nothing. Both
+addresses are host-local; neither is reachable from outside this machine.
 """
 from __future__ import annotations
 
 import subprocess
+import threading
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -88,7 +95,37 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+def _bridge_gateway() -> str | None:
+    """The docker0 address, or None when there is no bridge to bind to."""
+    try:
+        out = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show", "docker0"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+    except Exception:  # noqa: BLE001
+        return None
+    for token in out.split():
+        if "/" in token and token.count(".") == 3:
+            return token.split("/")[0]
+    return None
+
+
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"lab on http://127.0.0.1:{PORT}/", flush=True)
-    server.serve_forever()
+    addresses = ["127.0.0.1"]
+    gateway = _bridge_gateway()
+    if gateway and gateway not in addresses:
+        addresses.append(gateway)
+
+    servers = []
+    for address in addresses:
+        try:
+            servers.append(ThreadingHTTPServer((address, PORT), Handler))
+            print(f"lab on http://{address}:{PORT}/", flush=True)
+        except OSError as exc:
+            print(f"could not bind {address}:{PORT} - {exc}", flush=True)
+    if not servers:
+        raise SystemExit(1)
+
+    for server in servers[1:]:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    servers[0].serve_forever()

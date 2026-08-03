@@ -10,7 +10,7 @@ look identical.
 
 ---
 
-## 1. Live-validate the 12 new tools  ← IN PROGRESS
+## 1. Live-validate the 12 new tools  ✅ DONE
 
 They pass unit tests. Most have never executed against a real host. Unit tests
 mock the subprocess, so they prove the wrapper's shape, not that the binary
@@ -30,13 +30,13 @@ accepted by the real binary / result parsed**.
 | `websocket_probe` | passive | ☑ | ran 1.6s; misdiagnosed a 200 OK as a transport failure — fixed |
 | `nikto_scan` | aggressive | ☑ | was auto-denied; now ran 50s, 18 items, tuning `123be` verified |
 | `wapiti_scan` | aggressive | ☑ | was auto-denied; now ran 221s, crawled 142 pages, safe profile |
-| `ssrf_probe` | exploit | ☐ | |
-| `ssti_probe` | exploit | ☐ | |
-| `cmdi_probe` | exploit | ☐ | |
-| `smuggling_probe` | exploit | ☐ | |
-| `nosqli_probe` | exploit | ☐ | |
+| `ssrf_probe` | exploit | ☑ | ran 305s; reported 1,989 open loopback ports as HIGH — saturation guard added |
+| `ssti_probe` | exploit | ☑ | crashed in-sandbox, read as clean; scratch mount + crash guard → 167s, 1 HIGH on the lab |
+| `cmdi_probe` | exploit | ☑ | commix discarded -u without `--ignore-stdin`; now 15s, 1 CRITICAL on the lab |
+| `smuggling_probe` | exploit | ☑ | ran 30s, 416 lines, 0 desync — correct for a single-origin host |
+| `nosqli_probe` | exploit | ☑ | ran 3.6s, 0 findings — no Mongo behind the validation target |
 
-## 2. Doctor accuracy
+## 2. Doctor accuracy  ← NEXT
 
 `doctor` marks a tool installed on PATH presence alone for ~60 specs. That is
 exactly how nikto and testssl shipped broken. `identity_marker` exists and works
