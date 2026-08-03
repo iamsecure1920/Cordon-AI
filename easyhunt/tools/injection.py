@@ -110,6 +110,27 @@ UA_CHARS = frozenset("()")
 # Tool specifications
 # --------------------------------------------------------------------------- #
 
+#: What one ssrf_probe call actually costs the target: 8,282 ports from
+#: SSRFmap's ``data/ports``, plus the baseline request its portscan module sends
+#: first. Not a guess — ``wc -l`` on the file in the pinned upstream tree.
+#:
+#: This number is load-bearing rather than documentation. ``estimated_requests``
+#: is checked against the remaining request budget *before* the call is issued
+#: (``base.py`` -> ``budget.check``) and charged to it afterwards, so an
+#: engagement with 2,000 requests left refuses this tool instead of quietly
+#: spending 8,283. Reducing it to make a run "fit" would restore exactly the
+#: silent overspend it prevents.
+#:
+#: There is no way to make it smaller. ssrfmap exposes no flag that bounds the
+#: port list, the thread pool, or the rate — verified against its argparse
+#: definition, which is the complete list in ``risk_notes`` below. Staging a
+#: shorter ``data/ports`` next to the process does not work either: ``core/ssrf``
+#: calls ``os.chdir`` to its own install directory before loading any module, so
+#: the path always resolves inside the tool's own tree. ``--level`` is already
+#: capped at 1 by the argument policy, which holds the host range to a single
+#: address; without that cap the same list is walked once per generated host.
+SSRFMAP_REQUEST_COST = 8283
+
 SSRFMAP = register_spec(
     ToolSpec(
         name="ssrfmap",
@@ -703,11 +724,16 @@ def _oracle_saturated(open_count: int, checked: int) -> bool:
     name="ssrf_probe",
     spec=SSRFMAP,
     tags={"exploitation", "ssrf"},
-    estimated_requests=8400,
+    estimated_requests=SSRFMAP_REQUEST_COST,
     risk_notes=[
         "Asks the target to fetch internal addresses on our behalf — this is an SSRF attempt.",
-        "ssrfmap's portscan module walks an 8,282-entry port list with its own thread pool "
-        "and honours no rate limit of ours. Budget for roughly 8,400 requests to the target.",
+        "UNGOVERNABLE RATE. ssrfmap has no rate, delay, thread or concurrency flag — its "
+        "entire CLI is -r -p -m -l -v --lhost --lport --ldomain --rfiles --uagent --ssl "
+        "--proxy --level --logfile. portscan walks an 8,282-entry port list through "
+        "ThreadPoolExecutor(max_workers=None) and the engagement's limiter sees ONE call. "
+        "Whatever max_rps the program published, this tool will exceed it.",
+        "Budget for ~8,283 requests to the target, and expect roughly five minutes: one "
+        "measured call took 305 seconds.",
         "Detection only: the modules that read cloud credentials (aws/gce/alibaba), write to "
         "internal services (redis/mysql/zabbix), read files, or pivot (socksproxy) are denied.",
     ],
@@ -818,6 +844,15 @@ async def ssrf_probe(target: str, parameter: str = "url") -> dict[str, Any]:
         findings=findings,
         note=note,
         extra={
+            # The limiter charged one token for this call. The target received
+            # thousands of requests. A report that does not say so is a report
+            # that claims the engagement stayed inside its rate ceiling.
+            "rate_note": (
+                f"ssrfmap sent roughly {SSRFMAP_REQUEST_COST} requests through its own "
+                "thread pool. It has no rate, delay or concurrency flag, so the "
+                "engagement's limiter counted this as a single call and could not "
+                "throttle any of it."
+            ),
             # `status` rather than a silent ok=True. A saturated oracle means the
             # parameter is UNTESTED, and this codebase has been bitten too often
             # by results that read as clean because nothing said otherwise.

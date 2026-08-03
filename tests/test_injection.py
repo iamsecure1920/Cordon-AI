@@ -644,3 +644,75 @@ class TestFindingsAreCandidates:
         finding = engagement.findings.all()[0]
         assert finding.status is not Status.CONFIRMED
         assert any("Candidate only" in note for note in finding.triage_notes)
+
+
+class TestSsrfmapIsUngovernable:
+    """ssrfmap cannot be rate-limited, and must not look as though it can.
+
+    The engagement limiter charges one token per *tool call*. ssrfmap then walks
+    an 8,282-entry port list through `ThreadPoolExecutor(max_workers=None)`. A
+    measured call took 305 seconds and the limiter saw a single request.
+
+    Bounding it was considered and is not possible through any supported
+    interface. Its complete argparse definition is
+    `-r -p -m -l -v --lhost --lport --ldomain --rfiles --uagent --ssl --proxy
+    --level --logfile` — no rate, delay, thread or concurrency flag exists.
+    Staging a shorter `data/ports` beside the process does not work either:
+    `core/ssrf` calls `os.chdir` to its own install directory before loading a
+    module, so the path resolves inside the tool's own tree regardless of cwd.
+
+    So the honest response is to make the cost visible everywhere it matters,
+    and these tests are what stop that quietly eroding.
+    """
+
+    async def test_estimated_requests_is_the_real_port_count(self) -> None:
+        """8,282 ports plus the baseline request. Not a round number, on purpose.
+
+        `estimated_requests` is not documentation: `budget.check` refuses the
+        call when that many requests do not remain, and charges them afterwards.
+        Trimming it to make a run "fit" restores the silent overspend it exists
+        to prevent.
+        """
+        from easyhunt.tools.base import REGISTRY
+
+        assert inj.SSRFMAP_REQUEST_COST == 8283
+        assert REGISTRY["ssrf_probe"].estimated_requests == inj.SSRFMAP_REQUEST_COST
+
+    async def test_the_budget_refuses_a_call_it_cannot_afford(self, engagement) -> None:
+        """The number has to bite, or it is a comment with extra steps."""
+        from easyhunt.errors import BudgetExceeded
+
+        engagement.budget.limits.max_requests = 2000
+        with pytest.raises(BudgetExceeded):
+            engagement.budget.check(need_requests=inj.SSRFMAP_REQUEST_COST)
+
+    async def test_risk_notes_say_it_cannot_be_throttled(self) -> None:
+        """An operator approving this must be told before, not after."""
+        from easyhunt.tools.base import REGISTRY
+
+        notes = " ".join(REGISTRY["ssrf_probe"].risk_notes).lower()
+        assert "no rate" in notes
+        assert "one call" in notes or "single call" in notes
+
+    async def test_the_result_reports_traffic_the_limiter_never_saw(
+        self, engagement, monkeypatch
+    ) -> None:
+        """A report that omits this claims the run stayed inside its ceiling."""
+        approve(engagement, "ssrf_probe")
+        capture(monkeypatch, values=["[13:03:43] Checking port n°80"])
+        result = await inj.ssrf_probe(target="https://www.example.com/?url=1", parameter="url")
+
+        assert "rate_note" in result
+        assert str(inj.SSRFMAP_REQUEST_COST) in result["rate_note"]
+        assert "could not throttle" in result["rate_note"]
+
+    async def test_level_stays_capped_so_the_port_list_is_walked_once(self) -> None:
+        """--level is the one multiplier that IS bounded.
+
+        ssrfmap generates a host range from the level, and walks the whole port
+        list per host. Level 1 is one host; level 5 would be 8,282 requests
+        several times over.
+        """
+        from easyhunt.control_plane.sanitize import get_policy
+
+        assert get_policy("ssrfmap").numeric_caps["--level"] == 1
