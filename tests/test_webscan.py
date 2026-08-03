@@ -209,11 +209,21 @@ class TestBooleanFlags:
 
 
 class TestPolicyRefusals:
-    def test_nikto_tuning_always_excludes_denial_of_service(self) -> None:
+    def test_nikto_tuning_excludes_dos_and_every_attack_category(self) -> None:
         spec = CATALOG["nikto"]
-        sanitize_argv("nikto", ["-Tuning", "x6"], policy=spec.arg_policy)
-        sanitize_argv("nikto", ["-Tuning", "x6b"], policy=spec.arg_policy)
-        for bad in ("6", "123456789", "x1", "x"):
+        # The old policy required nikto's reversed selection with 6 present, so
+        # denial of service was always excluded — correct as far as it went, but
+        # "everything except DoS" also meant injection, command execution and SQL
+        # injection were always ON, from a tool declared mode="aggressive".
+        # Explicit selection now, with the attack categories absent from the
+        # character class entirely.
+        sanitize_argv("nikto", ["-Tuning", "123be"], policy=spec.arg_policy)
+        for attack in ("x6", "x", "4", "8", "9", "0", "a", "c", "1234"):
+            with pytest.raises(SanitizeError):
+                sanitize_argv("nikto", ["-Tuning", attack], policy=spec.arg_policy)
+        # Denial of service is unreachable in either spelling: 6 is not in the
+        # character class, and the reversed form that used to carry it is gone.
+        for bad in ("6", "x6b", "123456789", "x1", "123be6", ""):
             with pytest.raises(SanitizeError):
                 sanitize_argv("nikto", ["-Tuning", bad], policy=spec.arg_policy)
 
@@ -371,7 +381,7 @@ class TestConstructedArgv:
 
         argv = calls[0]["argv"]
         assert argv[argv.index("-maxtime") + 1] == "300s"
-        assert argv[argv.index("-Tuning") + 1] == "x6"
+        assert argv[argv.index("-Tuning") + 1] == "123be"
         # The outer process timeout must sit above nikto's own bound, or nikto is
         # killed before it can flush the report it already built.
         assert calls[0]["timeout"] > 300

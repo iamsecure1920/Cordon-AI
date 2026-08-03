@@ -91,7 +91,22 @@ TESTSSL_URI_PATTERN = re.compile(
 #: contain ``6`` — nikto's Denial of Service test group. Expressing "no DoS" as a
 #: regex rather than as a default string means it cannot be argued away later:
 #: any tuning value that would enable the DoS group fails the sanitizer.
-NIKTO_TUNING_PATTERN = re.compile(r"x[0-9abcde]{0,6}6[0-9abcde]{0,6}")
+#: Discovery categories only: 1 interesting files, 2 misconfiguration,
+#: 3 information disclosure, b software identification, e administrative
+#: consoles.
+#:
+#: The previous pattern was ``x[0-9abcde]{0,6}6[0-9abcde]{0,6}`` — it required
+#: nikto's *reversed* selection and required 6 to appear in it, which guaranteed
+#: denial of service was excluded. That much was right. But reversed selection
+#: means "everything except", so it also guaranteed 4 injection, 8 command
+#: execution, 9 SQL injection, 0 file upload, a authentication bypass and
+#: c remote source inclusion were always ON. A mode="aggressive" tool cannot be
+#: allowed to send exploit payloads, and with only the reverse form permitted
+#: there was no way to express anything else.
+#:
+#: Explicit selection, and the attack categories are simply not in the character
+#: class — they are unreachable rather than merely unused.
+NIKTO_TUNING_PATTERN = re.compile(r"[123be]{1,5}")
 
 #: A comma-separated list of wapiti module names.
 WAPITI_MODULES_PATTERN = re.compile(r"[a-z_0-9]{2,24}(,[a-z_0-9]{2,24}){0,30}")
@@ -1145,7 +1160,22 @@ async def nikto_scan(target: str, max_minutes: int = 10) -> dict[str, Any]:
         "-h", url,
         "-maxtime", f"{bound_s}s",
         # 'x6' = everything except test group 6, Denial of Service.
-        "-Tuning", "x6",
+        # Discovery categories only: 1 interesting files, 2 misconfiguration,
+        # 3 information disclosure, b software identification, e admin consoles.
+        #
+        # NOT "x6" (everything except DoS), which was the previous setting. That
+        # reversed selection also enables 4 injection, 8 command execution,
+        # 9 SQL injection, 0 file upload, a authentication bypass and c remote
+        # source inclusion — nikto then sends real exploit payloads from a tool
+        # declared mode="aggressive". An engagement running with
+        # allow_exploitation=False, which is the correct setting when a program
+        # authorized scanning but not exploitation, would have had exploit
+        # traffic sent under the aggressive gate. The mode system exists to stop
+        # exactly that.
+        #
+        # The injection categories are reachable through the exploit-mode tools
+        # in injection.py, which check allow_exploitation before running.
+        "-Tuning", "123be",
         "-Pause", f"{pause:.2f}",
         "-timeout", "10",
         "-Format", "json",
