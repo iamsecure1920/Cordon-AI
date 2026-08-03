@@ -372,6 +372,83 @@ class TestHealthIsNotPathPresence:
         catalogued(name="phantomslowfail", binary="phantomslowfail")
         assert probe_tool("phantomslowfail", budget=2.0).status == "broken"
 
+    def test_a_container_tool_is_judged_in_its_container(
+        self, fake_path, catalogued
+    ) -> None:
+        """The host copy is not the program that runs.
+
+        sstimap and semgrep both worked on the reference host and crashed on
+        every invocation inside their images — read-only container root, and both
+        write to ~ at import. `binary_in_image` said yes, because it asks
+        `command -v`, which is the same question `shutil.which` asks and gets
+        wrong the same way. Doctor and the wrapper agreed with each other for
+        exactly as long as nobody executed anything.
+        """
+        _fake_tool(fake_path, "phantomcontainer", "echo 'phantomcontainer 9.9'")
+        catalogued(name="phantomcontainer", binary="phantomcontainer")
+
+        class FakeSandbox:
+            def image_for(self, tool):
+                return "example/image:latest"
+
+            def _why_not_sandboxed(self, *, tool, binary, image):
+                return ""
+
+            def run_in_image(self, image, binary, args, *, tool=None):
+                return 1, "Traceback (most recent call last):\nOSError: [Errno 30] Read-only file system"
+
+        health = probe_tool("phantomcontainer", sandbox=FakeSandbox())
+        assert health.status == "broken", "a working host copy must not mask a broken image"
+        assert health.where == "example/image:latest"
+        assert not health.confirmed_working
+
+    def test_a_binary_absent_from_its_image_is_missing_there(
+        self, fake_path, catalogued
+    ) -> None:
+        """dalfox: mapped to hahwul/dalfox:latest, which keeps it at /app/dalfox.
+
+        Nothing named dalfox was on PATH in that image, so every sandboxed run
+        exited 127 — and xss_validate is auto-approved, so XSS could be found and
+        never proven.
+        """
+        _fake_tool(fake_path, "phantomelsewhere", "echo 'phantomelsewhere 1.0'")
+        catalogued(name="phantomelsewhere", binary="phantomelsewhere")
+
+        class FakeSandbox:
+            def image_for(self, tool):
+                return "example/wrong-layout:latest"
+
+            def _why_not_sandboxed(self, *, tool, binary, image):
+                return ""
+
+            def run_in_image(self, image, binary, args, *, tool=None):
+                return 127, "exec: phantomelsewhere: not found"
+
+        health = probe_tool("phantomelsewhere", sandbox=FakeSandbox())
+        assert health.status == "missing"
+        assert "example/wrong-layout:latest" in health.detail
+
+    def test_a_host_only_tool_still_reports_from_the_host(
+        self, fake_path, catalogued
+    ) -> None:
+        """No container home means the host answer is the right answer."""
+        _fake_tool(fake_path, "phantomhostonly", "echo 'phantomhostonly 3.1'")
+        catalogued(name="phantomhostonly", binary="phantomhostonly")
+
+        class FakeSandbox:
+            def image_for(self, tool):
+                return None
+
+            def _why_not_sandboxed(self, *, tool, binary, image):
+                return "no image"
+
+            def run_in_image(self, image, binary, args, *, tool=None):
+                raise AssertionError("must not probe a container for a host-only tool")
+
+        health = probe_tool("phantomhostonly", sandbox=FakeSandbox())
+        assert health.status == "working"
+        assert health.where == "host"
+
     def test_an_impostor_reads_as_wrong_tool_not_missing(self, fake_path, catalogued) -> None:
         # A name collision needs different words from an absence: absence is
         # fixed by installing, an impostor by looking at your PATH.

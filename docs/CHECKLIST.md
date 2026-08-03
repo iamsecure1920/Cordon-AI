@@ -36,17 +36,21 @@ accepted by the real binary / result parsed**.
 | `smuggling_probe` | exploit | ☑ | ran 30s, 416 lines, 0 desync — correct for a single-origin host |
 | `nosqli_probe` | exploit | ☑ | ran 3.6s, 0 findings — no Mongo behind the validation target |
 
-## 2. Doctor accuracy  ← NEXT
+## 2. Doctor accuracy  — partly done
 
-`doctor` marks a tool installed on PATH presence alone for ~60 specs. That is
-exactly how nikto and testssl shipped broken. `identity_marker` exists and works
-(`resolve_binary()` executes candidates) but is set on only a handful of specs.
+Execution-by-default already landed earlier. The remaining hole was *where*:
+doctor probed the host while the engagement ran the tool in a container. Both
+answers were about a file named `sstimap`; only one of them was the program.
 
-- [ ] List every spec whose binary name is ambiguous or whose presence does not
-      imply it runs
-- [ ] Add `identity_marker` to each
-- [ ] Make `doctor` report `installed` vs `runnable` as separate columns
-- [ ] Re-run `make verify-tools`, record before/after counts
+- [x] Probe each tool in its container home, under the real run's constraints
+      (read-only root, dropped caps, same user, same per-tool tmpfs)
+- [x] Report the image in the tool line, so a green tick names what it is about
+- [x] Found on the first run: `dalfox` absent from `hahwul/dalfox:latest`
+      (binary at `/app/dalfox`, nothing on PATH — every sandboxed run exited
+      127, and `xss_validate` is auto-approved), `semgrep` crashing on a
+      read-only `/root/.semgrep`
+- [ ] `identity_marker` still missing on 64 of 81 specs. Execution proves *a*
+      binary of that name responds, not that it is the right program
 
 ## 3. Carried over, not started
 

@@ -44,7 +44,12 @@ SPEC = register_spec(
         image="semgrep/semgrep:latest",
         license="LGPL-2.1",
         homepage="https://github.com/semgrep/semgrep",
-        version_args=["--version"],
+        # --version alone takes ~2 minutes in the container: semgrep phones home
+        # for a version check and a metrics ping, and with `--network none` it
+        # retries until it gives up. A health probe that times out reports
+        # "unresponsive", which is honest but useless — and an operator who sees
+        # it every run stops reading the column.
+        version_args=["--version", "--disable-version-check", "--metrics", "off"],
         arg_policy=ArgPolicy(
             tool="semgrep",
             allowed_flags={

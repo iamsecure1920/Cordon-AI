@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from easyhunt.control_plane.sandbox import PROBE_TIMEOUT
 from easyhunt.install.recipes import RECIPES, SYSTEM_PACKAGES, Recipe, install_order
 
 log = logging.getLogger("easyhunt.install")
@@ -131,6 +132,12 @@ class ToolHealth:
     #: Without one, "working" means a binary of that name responded — it does
     #: not mean it is the right program.
     identity_verified: bool = False
+    #: Where this result came from, and therefore what it is a claim about:
+    #: "host", or the image name when the engagement will run it in a container.
+    #: A green tick for the host copy says nothing about a tool that executes
+    #: somewhere else — sstimap worked on the host and crashed on every
+    #: invocation inside the image, which is where it actually ran.
+    where: str = "host"
 
     @property
     def ok(self) -> bool:
@@ -210,12 +217,70 @@ def _probe_library(spec: Any) -> ToolHealth:
     return ToolHealth(spec.name, "working", "python package (import succeeded)", "python package")
 
 
-def probe_tool(name: str, *, execute: bool = True, budget: float = PROBE_BUDGET_S) -> ToolHealth:
+def _probe_in_container(name: str, spec: Any, sandbox: Any, budget: float) -> ToolHealth | None:
+    """Health of the tool as the engagement will actually invoke it, or None.
+
+    Returns None when this tool has no container home, so the caller falls
+    through to the host probe. Anything else is the authoritative answer: when a
+    tool runs in a container, the host copy is not the program under test.
+
+    Why this exists: `binary_in_image` asks `command -v`, which is the same
+    question `shutil.which` asks, and gets it wrong the same way. sstimap is on
+    PATH inside the image and has never once run there — it calls
+    `os.makedirs("~/.sstimap")` at import and the container root is read-only.
+    Doctor reported it fine, ssti_probe reported the target clean, and the two
+    agreed with each other for exactly as long as nobody executed anything.
+    """
+    binary = spec.binary or name
+    image = sandbox.image_for(name)
+    if not image:
+        return None
+    if sandbox._why_not_sandboxed(tool=name, binary=binary, image=image):
+        return None
+
+    code, output = sandbox.run_in_image(image, binary, list(spec.version_args), tool=name)
+    cleaned = _clean(output)
+    failure = _classify_output(cleaned)
+    if failure is not None:
+        return ToolHealth(
+            name, "broken",
+            f"present in {image} but fails at startup: {(_last_line(cleaned) or failure)[:140]}",
+            binary=binary, where=image,
+        )
+    if code is None:
+        return ToolHealth(
+            name, "unresponsive",
+            f"no answer from {image} within {int(PROBE_TIMEOUT)}s",
+            binary=binary, where=image,
+        )
+    if code == 127:
+        # The container started and could not find the binary. Not an absence on
+        # this host — an absence where it counts.
+        return ToolHealth(
+            name, "missing", f"not present in {image}", binary=binary, where=image
+        )
+    if not cleaned.strip():
+        return ToolHealth(
+            name, "unresponsive", f"ran in {image} and printed nothing",
+            binary=binary, where=image,
+        )
+    return ToolHealth(
+        name, "working", f"executed in {image}", _first_informative_line(cleaned),
+        binary=binary, identity_verified=False, where=image,
+    )
+
+
+def probe_tool(
+    name: str, *, execute: bool = True, budget: float = PROBE_BUDGET_S, sandbox: Any = None
+) -> ToolHealth:
     """Determine the health of one catalogued tool.
 
     With ``execute=False`` this degrades to the old PATH-presence check and says
     so in the status (``on-path``), so a caller that trades truth for speed
     cannot accidentally report the result as verification.
+
+    With a ``sandbox``, a tool whose engagement home is a container is probed
+    *there* — the host copy is not the program that will run.
     """
     from easyhunt.tools.common import CATALOG, installed, resolve_binary, verify_identity
 
@@ -227,6 +292,11 @@ def probe_tool(name: str, *, execute: bool = True, budget: float = PROBE_BUDGET_
     # those need different words: an absence is fixed by installing, an impostor
     # by looking at your PATH — and running it would fire the wrong program at a
     # host (Kali's `medusa` is a credential brute-forcer, not the fuzzer).
+    if execute and sandbox is not None:
+        containerised = _probe_in_container(name, spec, sandbox, budget)
+        if containerised is not None:
+            return containerised
+
     identity_ok, identity_detail = verify_identity(name)
     if not identity_ok and identity_detail != "not installed":
         return ToolHealth(name, "wrong-tool", identity_detail)
@@ -309,6 +379,7 @@ def health_check(
     execute: bool = True,
     workers: int = 32,
     budget: float = PROBE_BUDGET_S,
+    sandbox: Any = None,
 ) -> list[ToolHealth]:
     """Health of every catalogued tool, probed concurrently.
 
@@ -329,7 +400,10 @@ def health_check(
         return []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         return list(
-            pool.map(lambda n: probe_tool(n, execute=execute, budget=budget), selected)
+            pool.map(
+                lambda n: probe_tool(n, execute=execute, budget=budget, sandbox=sandbox),
+                selected,
+            )
         )
 
 

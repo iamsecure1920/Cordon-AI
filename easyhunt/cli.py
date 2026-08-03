@@ -57,12 +57,38 @@ def _print_tool_health(args: argparse.Namespace, palette: tuple[str, ...]) -> di
     """
     green, yellow, red, dim, reset = palette
 
+    from easyhunt.config import Config
     from easyhunt.install.installer import health_check
     from easyhunt.tools.common import CATALOG
 
     execute = not args.fast
+
+    # Probe each tool where the engagement will actually invoke it. A tool with a
+    # container home is a container program; the host copy is a different file
+    # that happens to share a name, and reporting on it is how sstimap passed
+    # every check while crashing on every call.
+    sandbox = None
+    if execute:
+        try:
+            config = Config.load(args.config)
+            if config.get("sandbox.mode", "none") == "docker":
+                import tempfile
+
+                from easyhunt.control_plane.sandbox import Sandbox, SandboxConfig
+
+                # A throwaway workspace: nothing is mounted for a version probe,
+                # and doctor must not create or touch an engagement directory.
+                sandbox = Sandbox(
+                    SandboxConfig.from_dict(config.section("sandbox")),
+                    workspace=Path(tempfile.mkdtemp(prefix="easyhunt-doctor-")),
+                )
+                if not sandbox.runtime_available():
+                    sandbox = None
+        except EasyHuntError:
+            sandbox = None
+
     started = time.monotonic()
-    report = health_check(execute=execute)
+    report = health_check(execute=execute, sandbox=sandbox)
     elapsed = time.monotonic() - started
 
     print("External tools")
@@ -83,7 +109,11 @@ def _print_tool_health(args: argparse.Namespace, palette: tuple[str, ...]) -> di
             # usage banner, and a column of truncated help text is worse than a
             # plain statement that the thing ran.
             note = health.version if args.versions else _terse_version(health.version)
-            print(f"  {green}✓{reset} {health.tool:18} {dim}{note}{reset}  {dim}[{license_name}]{reset}")
+            home = "" if health.where == "host" else f" {dim}@{health.where}{reset}"
+            print(
+                f"  {green}✓{reset} {health.tool:18} {dim}{note}{reset}{home}"
+                f"  {dim}[{license_name}]{reset}"
+            )
         elif health.status == "on-path":
             print(
                 f"  {yellow}?{reset} {health.tool:18} {yellow}on PATH, NOT VERIFIED{reset}"

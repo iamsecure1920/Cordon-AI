@@ -270,6 +270,61 @@ class Sandbox:
         self._probe_cache[key] = found
         return found
 
+    def run_in_image(
+        self, image: str, binary: str, args: list[str], *, tool: str | None = None
+    ) -> tuple[int | None, str]:
+        """Execute ``binary args`` inside ``image`` under the real run's constraints.
+
+        ``binary_in_image`` answers "is it on PATH", which is the same question
+        ``shutil.which`` answers on the host — and this project has now been
+        bitten by that answer four times. sstimap is on PATH inside the image and
+        crashes on every invocation: ``utils/config.py`` calls
+        ``os.makedirs("~/.sstimap")`` at module scope and the container root is
+        read-only. ``command -v`` says yes; the tool has never once run.
+
+        So this starts it. Same read-only root, same dropped capabilities, same
+        user, and — importantly — the same per-tool tmpfs mounts, because a probe
+        that runs with scratch the real invocation lacks (or without scratch the
+        real invocation has) is answering about a different program.
+
+        Returns (exit code or None on timeout, combined output).
+        """
+        runtime = shutil.which(self.config.runtime)
+        if not runtime:
+            return None, "container runtime not installed"
+
+        command = [
+            runtime, "run", "--rm", "--init",
+            "--network", "none",
+            "--security-opt", "no-new-privileges",
+            "--cap-drop", "ALL",
+            "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m",
+        ]
+        for scratch in self.config.tmpfs.get(tool or binary, []):
+            command += ["--tmpfs", f"{scratch}:rw,nosuid,size=64m"]
+        if self.config.read_only_rootfs:
+            command.append("--read-only")
+        user = self._container_user()
+        if user:
+            command += ["--user", user]
+        command += ["--entrypoint", binary, image, *args]
+
+        try:
+            proc = subprocess.run(  # noqa: S603
+                command, capture_output=True, text=True,
+                timeout=PROBE_TIMEOUT, check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            out = (exc.stdout or b"", exc.stderr or b"")
+            decoded = "".join(
+                part.decode("utf-8", "replace") if isinstance(part, bytes) else str(part)
+                for part in out
+            )
+            return None, decoded
+        except OSError as exc:
+            return None, str(exc)
+        return proc.returncode, f"{proc.stdout}\n{proc.stderr}"
+
     def image_for(self, tool: str) -> str | None:
         """The image this tool runs in, or None when it has no container home."""
         return self.config.images.get(tool) or (self.config.default_image or None)

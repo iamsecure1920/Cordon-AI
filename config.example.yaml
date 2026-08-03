@@ -235,6 +235,9 @@ sandbox:
     # renders {{7*7}} as 49.
     sstimap: ["/root/.sstimap"]
     commix: ["/root/.commix"]
+    # Same crash, found by doctor rather than by an engagement this time:
+    # "OSError: [Errno 30] Read-only file system: '/root/.semgrep/settings*.yml'"
+    semgrep: ["/root/.semgrep", "/root/.cache"]
 
   memory: 2g
   cpus: "2.0"
@@ -250,7 +253,11 @@ sandbox:
     httpx: projectdiscovery/httpx:latest
     katana: projectdiscovery/katana:latest
     naabu: projectdiscovery/naabu:latest
-    dalfox: hahwul/dalfox:latest
+    # dalfox: hahwul/dalfox:latest — REMOVED. That image puts the binary at
+    # /app/dalfox with WORKDIR /app and CMD ./dalfox; nothing named dalfox is on
+    # PATH, so every sandboxed run exited 127. `xss_validate` is one of the
+    # auto-approved PoC tools, which means XSS could be found and never proven.
+    # It falls through to default_image, where dalfox is on PATH and works.
     trufflehog: trufflesecurity/trufflehog:latest
     prowler: toniblyx/prowler:latest
     semgrep: semgrep/semgrep:latest
