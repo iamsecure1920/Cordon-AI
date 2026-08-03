@@ -70,7 +70,7 @@ takeover detection.
       container first
 - [x] Rebuilt and re-probed: **73 -> 77 working, 4 broken -> 0**
 
-### 3b. 24 tools run on the host, outside the sandbox
+### 3b. 24 tools run on the host, outside the sandbox  — Dockerfile done, verifying
 46 of 81 catalogued tools are in `easyhunt:latest`; 48 have a container home once
 the dedicated images are counted. The other 24 fall back to the host and run with
 no read-only root, no dropped capabilities, no memory ceiling:
@@ -84,8 +84,14 @@ The sandbox is the isolation boundary, and a quarter of the toolchain is outside
 it. `fallback_to_host: true` makes that silent by design — each fallback is
 logged, but nobody reads the log.
 
-- [ ] Add the ones that build cleanly to the image
-- [ ] Decide explicitly, in config, which are allowed to run on the host
+- [x] All 24 added, each verified in a clean builder first: 7 Go installs,
+      6 uv tools, 4 script repos, 5 prebuilt binaries, retire via npm
+- [x] Three "known upstream failures" were nothing of the sort — subzy was a
+      rename, jsluice builds fine, aderyn publishes the binary it would not
+      compile. A stale note is why nobody retried them.
+- [x] `subdominator` needed libpango/libgobject: it installs cleanly and raises
+      OSError on every call without them. Caught by running --help in a builder.
+- [ ] Rebuild finishing; confirm all 24 report `working @easyhunt:latest`
 
 ### 3c. Rate flags that ignore the engagement ceiling  ✅ DONE
 Verified still hardcoded:

@@ -197,6 +197,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         jq \
         unzip \
+        # subdominator imports weasyprint at module scope, which dlopens pango
+        # and gobject. Without these it installs cleanly and raises OSError on
+        # every invocation — the tool would be present, catalogued, and dead.
+        # Found by running --help in a builder rather than by trusting the
+        # install to have meant anything.
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libharfbuzz0b \
+        libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
 
 # uv: lock-based and markedly faster than pip for this dependency set.
