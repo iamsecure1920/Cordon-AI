@@ -217,6 +217,24 @@ def _probe_library(spec: Any) -> ToolHealth:
     return ToolHealth(spec.name, "working", "python package (import succeeded)", "python package")
 
 
+#: Output shapes that mean "this did not start", beyond the import-time failures
+#: in _STARTUP_FAILURE. Tools that parse a config file at startup fail here.
+_RUNTIME_STARTUP_FAILURE = (
+    "could not read flags",
+    "could not parse flags",
+    "no such file or directory",
+    "permission denied",
+    "read-only file system",
+)
+
+
+def _looks_like_a_startup_failure(output: str) -> bool:
+    if _classify_output(output) is not None:
+        return True
+    lowered = output.lower()
+    return any(marker in lowered for marker in _RUNTIME_STARTUP_FAILURE)
+
+
 def _probe_in_container(name: str, spec: Any, sandbox: Any, budget: float) -> ToolHealth | None:
     """Health of the tool as the engagement will actually invoke it, or None.
 
@@ -264,9 +282,58 @@ def _probe_in_container(name: str, spec: Any, sandbox: Any, budget: float) -> To
             name, "unresponsive", f"ran in {image} and printed nothing",
             binary=binary, where=image,
         )
+    # Match the marker against the output we already have.
+    #
+    # This was `identity_verified=False`, hardcoded — so every containerised tool
+    # counted as unverified whatever its spec said, and `doctor` reported 76
+    # unmarked when the true number was 62. The miscount was the visible half.
+    #
+    # The invisible half was worse: the impostor check ran only on the host path,
+    # and 75 of 81 tools resolve to a container. The markers added for nuclei,
+    # slither, katana, kingfisher, amass and forge — the six names with real
+    # installable impostors — were inert exactly where those tools actually run.
+    # The output was captured, the marker was available, and nothing compared
+    # them. Machinery present, catalogued, and doing nothing: the same defect
+    # this module exists to detect in other people's tools.
+    # A tool that failed to start has not been shown to be the wrong tool — it has
+    # been shown not to run. Calling it "wrong-tool" sends the operator to inspect
+    # their PATH for an impostor that does not exist, while the real cause (no
+    # writable HOME under the read-only root) goes unexamined. katana was
+    # mislabelled this way the moment the marker check was added: it exits 1 with
+    # "Could not read flags" and never prints its banner, so the marker could not
+    # possibly appear.
+    #
+    # An identity claim requires the tool to have spoken. If it did not, say so.
+    if _looks_like_a_startup_failure(cleaned):
+        return ToolHealth(
+            name, "broken",
+            f"present in {image} but fails at startup: {_last_line(cleaned)[:140]}",
+            binary=binary, where=image,
+        )
+
+    marker = (spec.identity_marker or "").lower()
+    if marker and marker not in cleaned.lower():
+        # A second look with the fallback forms, matching what `_identifies_as`
+        # does on the host: several tools answer --version with a bare number and
+        # only name themselves under -h.
+        for args in (["--version"], ["-version"], ["version"], ["-h"]):
+            if list(args) == list(spec.version_args):
+                continue
+            _, extra = sandbox.run_in_image(image, binary, list(args), tool=name)
+            if marker in _clean(extra or "").lower():
+                cleaned = f"{cleaned}\n{_clean(extra or '')}"
+                break
+        else:
+            return ToolHealth(
+                name, "wrong-tool",
+                f"a binary named {binary!r} runs in {image} but does not identify as "
+                f"{name} (expected {marker!r} in its output)",
+                binary=binary, identity_verified=False, where=image,
+            )
+
     return ToolHealth(
         name, "working", f"executed in {image}", _first_informative_line(cleaned),
-        binary=binary, identity_verified=False, where=image,
+        binary=binary, identity_verified=bool(marker), where=image,
     )
 
 

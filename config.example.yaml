@@ -248,6 +248,32 @@ sandbox:
     # "not present in the image". A scratch mount that makes the tool vanish is
     # a worse failure than the one it was fixing.
     theHarvester: ["/root/.theHarvester", "/root/.local/share/theHarvester"]
+    # Every ProjectDiscovery tool reads and writes ~/.config/<tool> at startup,
+    # and the read-only root denies it. This was invisible because most of them
+    # print their version anyway and **nuclei exits 0** while saying
+    #
+    #     [ERR] failed to create config directory at /root/.config/nuclei
+    #           got: mkdir /root/.config: read-only file system
+    #
+    # A zero exit and a version string is exactly what a health check reads as
+    # healthy. subfinder is blunter — "open /root/.config/subfinder/config.yaml:
+    # no such file or directory", exit 1 — and its provider config is where API
+    # keys live, so it was running with no sources configured.
+    nuclei: ["/root/.config"]
+    subfinder: ["/root/.config"]
+    dnsx: ["/root/.config"]
+    naabu: ["/root/.config"]
+    alterx: ["/root/.config"]
+    asnmap: ["/root/.config"]
+    cdncheck: ["/root/.config"]
+    tlsx: ["/root/.config"]
+    interactsh-client: ["/root/.config"]
+    shuffledns: ["/root/.config"]
+    uncover: ["/root/.config"]
+    httpx: ["/root/.config"]
+    katana: ["/root/.config"]
+    # cloudfox additionally writes an error log into the working directory.
+    cloudfox: ["/root/.config", "/root/.aws", "/root/.cloudfox"]
 
   memory: 2g
   cpus: "2.0"

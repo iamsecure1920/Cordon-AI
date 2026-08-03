@@ -202,3 +202,69 @@ class TestConfirmation:
     async def test_confirm_is_the_only_route_to_confirmed(self) -> None:
         assert REGISTRY["takeover_confirm"].mode == "exploit"
         assert REGISTRY["takeover_verify"].mode == "passive"
+
+
+class TestDetectorArgvMatchesTheRealBinaries:
+    """Every takeover detector was passing a flag its binary does not have.
+
+    All three found by running them against the loopback lab, not by reading
+    code. `easyhunt doctor` was green for all three: it proves a binary answers
+    --version inside the image, which says nothing about whether the argv a
+    wrapper builds is one that binary accepts.
+
+    Measured:
+      dnsreaper     "unrecognized arguments: --domain-csv", exit 2
+      subdominator  "[WRN]: Please use the command for more infromation", exit 1
+      (retire, same class, is covered in test_js_analysis)
+
+    takeover_detect runs three detectors and reports agreement between them.
+    Two of the three produced nothing on every run, so "no detector flagged
+    this host" meant one detector did not flag it.
+    """
+
+    def test_dnsreaper_uses_the_flag_its_file_provider_actually_has(self) -> None:
+        import easyhunt.tools.takeover  # noqa: F401  registers the policy
+        from easyhunt.control_plane.sanitize import get_policy
+
+        policy = get_policy("dnsreaper")
+        assert "--filename" in policy.allowed_flags, "dnsReaper's file provider takes --filename"
+        assert "--domain-csv" not in policy.allowed_flags, (
+            "--domain-csv belongs to no dnsReaper provider; it exited 2 every call"
+        )
+
+    def test_subdominator_uses_domain_list_and_no_validate(self) -> None:
+        import easyhunt.tools.extra_specs  # noqa: F401  registers the policy
+        from easyhunt.control_plane.sanitize import get_policy
+
+        policy = get_policy("subdominator")
+        assert "--domain-list" in policy.allowed_flags
+        assert "-l" not in policy.allowed_flags, "-l is not a subdominator flag"
+        assert "--validate" not in policy.allowed_flags, (
+            "subdominator has no --validate at any spelling"
+        )
+
+    async def test_detector_argv_passes_its_own_sanitizer(self, engagement, monkeypatch) -> None:
+        """The argv each detector builds must survive its own policy.
+
+        A policy that rejects the command line its wrapper builds is the same
+        failure as a wrong flag: the tool never runs and the surface reads clean.
+        """
+        from easyhunt.control_plane.sanitize import sanitize_argv
+        from easyhunt.tools import takeover as tk
+
+        seen: list[tuple[str, list[str]]] = []
+
+        async def spy(name: str, argv: list[str], **kwargs):
+            seen.append((name, list(argv)))
+            from easyhunt.tools.common import ToolRun
+
+            return ToolRun(tool=name, ran=True, values=[], exit_code=0)
+
+        engagement.approval.backend = PolicyBackend(auto_approve={"takeover_detect"})
+        monkeypatch.setattr(tk, "run_one", spy)
+        monkeypatch.setattr(tk, "_dig", lambda *a, **k: [])
+        await REGISTRY["takeover_detect"].fn(target="www.example.com")
+
+        assert seen, "takeover_detect invoked no detector at all"
+        for name, argv in seen:
+            sanitize_argv(name, argv)

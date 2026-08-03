@@ -299,6 +299,14 @@ class Sandbox:
             "--security-opt", "no-new-privileges",
             "--cap-drop", "ALL",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m",
+            # A writable working directory, because the real invocation has one:
+            # `_docker_plan` sets --workdir to the engagement workspace, which is
+            # bind-mounted rw. Probing with the image's own WORKDIR under a
+            # read-only root is stricter than the real run, and a probe that is
+            # stricter than the thing it models reports failures that will not
+            # happen. cloudfox opens ./cloudfox-error.log at init and panicked
+            # here while working fine in an engagement.
+            "--workdir", "/tmp",
         ]
         for scratch in self.config.tmpfs.get(tool or binary, []):
             command += ["--tmpfs", f"{scratch}:rw,nosuid,size=64m"]

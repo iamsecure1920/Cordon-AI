@@ -124,9 +124,19 @@ SUBDOMINATOR = register_spec(
         homepage="https://github.com/Stratus-Security/Subdominator", version_args=["--version"],
         arg_policy=ArgPolicy(
             tool="subdominator",
-            allowed_flags={"-l", "-o", "-t", "--validate", "-d"},
-            boolean_flags={"--validate"},
-            value_patterns={"-l": PATH_PATTERN, "-d": HOST_PATTERN},
+            # --domain-list, not -l, and there is no --validate at any spelling.
+            # takeover.py was calling `subdominator -l <file> --validate`;
+            # subdominator answered "[WRN]: Please use the command for more
+            # infromation" and exited, so the third takeover detector produced
+            # nothing on every run. Measured against the lab, not inferred.
+            allowed_flags={"--domain-list", "-dL", "-o", "-t", "-d", "--domain"},
+            boolean_flags=set(),
+            value_patterns={
+                "--domain-list": PATH_PATTERN,
+                "-dL": PATH_PATTERN,
+                "-d": HOST_PATTERN,
+                "--domain": HOST_PATTERN,
+            },
             numeric_caps={"-t": 50},
         ),
     )

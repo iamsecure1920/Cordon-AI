@@ -80,7 +80,11 @@ DNSREAPER = register_spec(
         homepage="https://github.com/punk-security/dnsReaper", version_args=["--help"],
         arg_policy=ArgPolicy(
             tool="dnsreaper",
-            allowed_flags={"--domain", "--domain-csv", "--out", "--out-format", "--parallelism", "--signature"},
+            # --filename, not --domain-csv. dnsReaper's `file` provider names its
+            # input --filename; --domain-csv belongs to no provider at all, so
+            # every call exited 2 with "unrecognized arguments" and the wrapper
+            # read it as a scan that found nothing. Measured against the lab.
+            allowed_flags={"--domain", "--filename", "--out", "--out-format", "--parallelism", "--signature"},
             value_patterns={
                 "--domain": HOST_PATTERN,
                 "--out-format": re.compile(r"json|csv"),
@@ -224,7 +228,7 @@ async def takeover_detect(target: str) -> dict[str, Any]:
         run_one(
             "dnsreaper",
             [
-                "file", "--domain-csv", str(targets_file),
+                "file", "--filename", str(targets_file),
                 "--out", str(dnsreaper_out), "--out-format", "json",
                 # dnsReaper defaults to 200 domains in parallel (an asyncio
                 # semaphore); it was previously left at that default.
@@ -247,7 +251,7 @@ async def takeover_detect(target: str) -> dict[str, Any]:
             # policy from here is exactly the kind of quiet drift the policies
             # exist to prevent.
             "subdominator",
-            ["-l", str(targets_file), "--validate"],
+            ["--domain-list", str(targets_file)],
             timeout=900,
             allow_codes=(0, 1),
         ),

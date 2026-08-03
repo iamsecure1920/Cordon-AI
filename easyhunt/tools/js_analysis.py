@@ -47,7 +47,18 @@ RETIREJS = register_spec(
         identity_marker="retire",
         arg_policy=ArgPolicy(
             tool="retire",
-            allowed_flags={"--js", "--path", "--outputformat", "--outputpath", "--exitwith"},
+            # No --js. retire 5.x removed it entirely — `retire --help` lists
+            # --path and --jspath and nothing else for scanning JavaScript.
+            #
+            # This flag has a history worth keeping. It was first declared
+            # value-taking, so the sanitizer swallowed the following --path and
+            # the directory arrived as a bare positional and was refused. That
+            # was fixed by declaring it boolean, which made the sanitizer accept
+            # it — and retire then rejected it with "unknown option '--js'",
+            # exit 1, zero output. Two fixes, both to the argument policy,
+            # neither to the thing that actually runs. retire has never once
+            # scanned anything in this project.
+            allowed_flags={"--path", "--outputformat", "--outputpath", "--exitwith"},
             # --js is a mode switch, not a value-taking flag. Undeclared, the
             # sanitizer treated it as taking a value, so it swallowed "--path"
             # and the directory that followed arrived as a bare positional and
@@ -235,7 +246,7 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
             all_endpoints.update(jsluice_endpoints)
 
     library_run = await run_one(
-        "retire", ["--js", "--path", str(engagement.raw_dir), "--outputformat", "json"],
+        "retire", ["--path", str(engagement.raw_dir), "--outputformat", "json"],
         timeout=300, allow_codes=(0, 13),
     )
 
