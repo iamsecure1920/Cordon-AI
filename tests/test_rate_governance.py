@@ -478,7 +478,7 @@ class TestInProcessRequestsAreCharged:
     async def test_takeover_verify_charges_each_http_request(
         self, engagement, monkeypatch
     ) -> None:
-        granted_before = engagement.limiter.stats()["requests_granted"]
+        granted_before = engagement.limiter.stats()["calls_granted"]
         _spy(monkeypatch, "takeover")
 
         class _Response:
@@ -498,7 +498,7 @@ class TestInProcessRequestsAreCharged:
         monkeypatch.setattr("httpx.AsyncClient", lambda **kw: _Client())
         await REGISTRY["takeover_verify"].fn(target="a.example.com")
 
-        granted = engagement.limiter.stats()["requests_granted"] - granted_before
+        granted = engagement.limiter.stats()["calls_granted"] - granted_before
         # One for the tool call itself, at least one for the fetch.
         assert granted >= 2, "takeover_verify's HTTP fetch was not charged"
 
@@ -514,10 +514,10 @@ class TestInProcessRequestsAreCharged:
         from easyhunt.tools.recon import _detect_wildcard
 
         calls = _spy(monkeypatch, "recon")
-        granted_before = engagement.limiter.stats()["requests_granted"]
+        granted_before = engagement.limiter.stats()["calls_granted"]
         result = await _detect_wildcard("example.com", probes=3)
 
-        granted = engagement.limiter.stats()["requests_granted"] - granted_before
+        granted = engagement.limiter.stats()["calls_granted"] - granted_before
         assert granted >= 3, "wildcard DNS probes were not charged to the limiter"
         assert [c["tool"] for c in calls] == ["dig"] * 3
         assert result["checked"] is True
@@ -622,3 +622,123 @@ class TestArchiveAndInjectionFlagsTrackTheEngagement:
 
         argv = _argv_for(calls, tool)
         assert float(_value(argv, "--delay")) == pytest.approx(min(round(1 / rps, 2), 5))
+
+
+class TestCostIsChargedPerRequest:
+    """The limiter charges what a call costs, not one token per call.
+
+    `RateLimiter.slot()` has accepted a `cost` parameter since it was written and
+    no caller ever passed one. Every tool was billed a single token: `ssrf_probe`,
+    which sends 8,283 requests, cost exactly what one `dig` cost, and the limiter
+    then reported a compliant engagement on traffic three orders of magnitude past
+    the published ceiling. The machinery was present, documented, and inert — the
+    same defect as a tool with a spec and no call site.
+    """
+
+    async def test_the_charge_tracks_the_declared_request_count(
+        self, engagement, monkeypatch
+    ) -> None:
+        from easyhunt.control_plane.ratelimit import RateLimiter
+
+        limiter = RateLimiter(rps=1000, concurrency=5)
+        engagement.limiter = limiter
+        _spy(monkeypatch, "dns")
+        await REGISTRY["dns_resolve"].fn(target="a.example.com")
+
+        spec = REGISTRY["dns_resolve"]
+        declared = getattr(spec, "estimated_requests", None) or 1
+        assert limiter.stats()["requests_charged"] >= declared, (
+            "the call was billed less than it declared it would send"
+        )
+
+    @pytest.mark.parametrize("cost", [1, 50, 400])
+    async def test_charge_is_the_cost_not_the_call_count(self, cost: int) -> None:
+        """Vary the cost; the charge must follow it, not stay at 1."""
+        from easyhunt.control_plane.ratelimit import RateLimiter
+
+        limiter = RateLimiter(rps=10_000, concurrency=5)
+        async with limiter.slot(host="example.com", cost=cost, tool="t"):
+            pass
+        stats = limiter.stats()
+        assert stats["calls_granted"] == 1
+        assert stats["requests_charged"] == pytest.approx(float(cost))
+
+    async def test_a_tool_declaring_nothing_still_costs_one(self) -> None:
+        """The honest floor: a call was made, so a call is charged."""
+        from easyhunt.control_plane.ratelimit import RateLimiter
+
+        limiter = RateLimiter(rps=10_000, concurrency=5)
+        async with limiter.slot(host="example.com"):
+            pass
+        assert limiter.stats()["requests_charged"] == pytest.approx(1.0)
+
+    @pytest.mark.parametrize("rps,cost", [(1, 100_000), (5, 50_000), (0.5, 10_000)])
+    async def test_an_unaffordable_call_is_refused_loudly(
+        self, rps: float, cost: int
+    ) -> None:
+        """Not clamped into false compliance — refused, with the numbers.
+
+        The clamp this replaces reduced any cost to `capacity` and returned
+        success. Silently charging 5 for 8,283 requests is the same lie as a
+        killed scan reporting zero findings: the number that comes back is
+        indistinguishable from a compliant one.
+        """
+        from easyhunt.control_plane.ratelimit import RateLimiter
+        from easyhunt.errors import RateLimited
+
+        limiter = RateLimiter(rps=rps, concurrency=5)
+        with pytest.raises(RateLimited) as err:
+            async with limiter.slot(host="example.com", cost=cost, tool="huge_tool"):
+                pass
+        message = str(err.value)
+        assert "huge_tool" in message
+        assert str(cost) in message, "the refusal must name the cost it refused"
+        assert "rps" in message.lower()
+
+    async def test_a_refused_call_never_takes_a_concurrency_slot(self) -> None:
+        """A call that cannot run must not occupy a slot other work could use."""
+        from easyhunt.control_plane.ratelimit import RateLimiter
+        from easyhunt.errors import RateLimited
+
+        limiter = RateLimiter(rps=1, concurrency=1)
+        for _ in range(3):
+            with pytest.raises(RateLimited):
+                async with limiter.slot(cost=1_000_000, tool="huge_tool"):
+                    pass
+        # If the semaphore leaked, this would block forever.
+        async with limiter.slot(cost=1, tool="small"):
+            pass
+
+    async def test_overcharge_beyond_the_bucket_is_reported_not_hidden(self) -> None:
+        """Enforcement is bounded; accounting is not.
+
+        Debt is capped at one burst so a compliant long-running tool is not
+        penalised for a cost taken up front. That bound means the ceiling did not
+        fully bind, and `requests_unenforced` says so — a report claiming
+        compliance while silently absorbing the excess would be wrong.
+        """
+        from easyhunt.control_plane.ratelimit import RateLimiter
+
+        limiter = RateLimiter(rps=10, concurrency=5)
+        async with limiter.slot(host="example.com", cost=5_000, tool="heavy"):
+            pass
+        stats = limiter.stats()
+        assert stats["requests_charged"] == pytest.approx(5_000.0)
+        assert stats["requests_unenforced"] > 0, (
+            "the ceiling could not claw this back and the report must admit it"
+        )
+
+    @pytest.mark.parametrize("rps", [2, 20])
+    async def test_the_engagement_ceiling_still_binds(self, rps: float) -> None:
+        """max_rps remains the thing that actually governs throughput."""
+        import time
+
+        from easyhunt.control_plane.ratelimit import RateLimiter
+
+        limiter = RateLimiter(rps=rps, concurrency=10)
+        started = time.monotonic()
+        for _ in range(int(rps) + 4):
+            await limiter.acquire(cost=1)
+        elapsed = time.monotonic() - started
+        # Burst covers `rps`; the remaining 4 must be paced by the ceiling.
+        assert elapsed >= (4 / rps) * 0.5, f"throughput was not paced at {rps} rps"

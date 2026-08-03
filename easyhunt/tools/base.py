@@ -281,8 +281,21 @@ def easyhunt_tool(
             # 4/5. Rate limit, then approval. Approval is inside the concurrency
             #      slot so a queue of pending prompts cannot bypass the ceiling.
             host = targets[0] if targets else None
+            # The declared request count is the price of the call. `slot()` has
+            # accepted a `cost` since it was written and no caller ever passed
+            # one, so every tool was charged a single token: `ssrf_probe`, which
+            # sends 8,283 requests, cost exactly what one `dig` cost. The limiter
+            # then reported a compliant engagement on traffic three orders of
+            # magnitude past the ceiling.
+            #
+            # Tools that declare nothing still cost 1. That is the honest floor —
+            # a call was made — and it keeps every existing wrapper working while
+            # the estimates are filled in.
+            cost = float(estimated_requests or 1)
             try:
-                async with engagement.limiter.slot(host=host) as waited:
+                async with engagement.limiter.slot(
+                    host=host, cost=cost, tool=tool_name
+                ) as waited:
                     approval_record: dict[str, Any] | None = None
                     if mode != "passive":
                         why = rationale or (description.splitlines()[0] if description else "")

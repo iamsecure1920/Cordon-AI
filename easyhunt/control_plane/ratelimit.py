@@ -21,6 +21,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
+from easyhunt.errors import RateLimited
+
 __all__ = ["RateLimiter", "TokenBucket"]
 
 
@@ -36,6 +38,12 @@ class TokenBucket:
         self._updated = time.monotonic()
         self._lock = asyncio.Lock()
         self.granted = 0
+        #: Tokens actually charged, as distinct from calls admitted. The gap
+        #: between the two is the whole point of costing a call by its requests.
+        self.charged = 0.0
+        #: Charged but not enforceable — see :meth:`acquire`. Non-zero means the
+        #: ceiling did not actually bind for at least one call.
+        self.unenforced = 0.0
         self.total_wait = 0.0
 
     def _refill(self) -> None:
@@ -56,28 +64,78 @@ class TokenBucket:
         if self._tokens >= tokens:
             self._tokens -= tokens
             self.granted += 1
+            self.charged += tokens
             return True
         return False
 
     async def acquire(self, tokens: float = 1.0) -> float:
-        """Block until ``tokens`` are available. Returns seconds spent waiting."""
-        if tokens > self.capacity:
-            # Asking for more than the bucket can ever hold would deadlock;
-            # clamp so a large batch call degrades to "as fast as allowed".
-            tokens = self.capacity
+        """Block until the charge can be made. Returns seconds spent waiting.
+
+        Costs larger than ``capacity`` are charged in full and allowed to drive
+        the bucket **negative**, rather than being clamped down to what fits.
+
+        The clamp this replaces was the more dangerous of the two options. A tool
+        declaring 8,283 requests was charged ``capacity`` — typically 5 — and the
+        limiter then reported a compliant engagement while the traffic ran three
+        orders of magnitude past the published ceiling. Truncating the price of
+        something does not make it cheaper; it only stops you seeing the bill.
+
+        Raising ``capacity`` instead is not the fix either: a bucket starts full,
+        so a capacity big enough to hold the largest cost would hand out that
+        many free tokens on the very first call, and the ceiling would mean
+        nothing at t=0. Burst stays small; debt makes the cost honest.
+
+        What this guarantees is *amortized* compliance. A subprocess's own
+        request loop is beyond reach — what the limiter can enforce is that the
+        engagement issues no more work than ``rate`` allows over time. A call
+        that spends 8,283 requests proceeds once a burst is on hand, and the
+        engagement then waits out the debt before issuing the next one.
+        """
+        tokens = max(0.0, float(tokens))
+        # Enough on hand to start; the full cost is recorded either way.
+        threshold = min(tokens, self.capacity)
         waited = 0.0
         while True:
             async with self._lock:
                 self._refill()
-                if self._tokens >= tokens:
-                    self._tokens -= tokens
+                if self._tokens >= threshold:
                     self.granted += 1
+                    self.charged += tokens
+                    # Debt is bounded at one burst. Beyond that the arrears are
+                    # recorded but not enforced, and the two are deliberately
+                    # different numbers.
+                    #
+                    # Enforcing unbounded debt is defensible in theory and wrong
+                    # in practice: the charge is taken up front, when the call's
+                    # duration is unknown, so a tool that spends 2,000 requests
+                    # politely over fifteen minutes is billed as though it sent
+                    # them all at once and blocks the engagement for the next
+                    # four hundred seconds. That penalises compliant tools.
+                    #
+                    # So enforcement stays bounded and the *accounting* stays
+                    # exact: `charged` is the true figure, `unenforced` is what
+                    # the ceiling could not claw back, and a report that shows a
+                    # non-zero `unenforced` is telling the operator the ceiling
+                    # was a wish for that call. The egregious case never reaches
+                    # here — RateLimiter refuses it outright.
+                    floor = -self.capacity
+                    after = self._tokens - tokens
+                    if after < floor:
+                        self.unenforced += floor - after
+                        after = floor
+                    self._tokens = after
                     self.total_wait += waited
                     return waited
-                deficit = tokens - self._tokens
+                deficit = threshold - self._tokens
                 delay = deficit / self.rate
             await asyncio.sleep(delay)
             waited += delay
+
+    @property
+    def debt(self) -> float:
+        """Tokens owed — how far past its allowance this bucket has been charged."""
+        self._refill()
+        return max(0.0, -self._tokens)
 
 
 @dataclass
@@ -88,6 +146,14 @@ class RateLimiter:
     concurrency: int = 5
     per_host_rps: float | None = None
     burst: float | None = None
+    #: Refuse a single call whose declared cost would take longer than this to
+    #: pay for at ``rps``. One hour, not fifteen minutes: with debt enforcement
+    #: bounded there is no stall to prevent, so this guards only against a
+    #: declaration that no engagement could honour. Fifteen minutes refused
+    #: ssrf_probe (8,283 requests) on any program publishing under 10 rps, which
+    #: is a real judgement about that tool rather than a rate-limiter concern —
+    #: and one already recorded in its risk_notes.
+    max_wait_seconds: float = 3600.0
 
     _global: TokenBucket = field(init=False)
     _hosts: dict[str, TokenBucket] = field(init=False, default_factory=dict)
@@ -120,8 +186,43 @@ class RateLimiter:
             self._hosts[host] = bucket
         return bucket
 
-    async def acquire(self, *, host: str | None = None, cost: float = 1.0) -> float:
-        """Charge one unit of work. Returns total seconds spent waiting."""
+    def affordable(self, cost: float) -> float:
+        """Seconds this cost implies at the engagement's ceiling."""
+        return max(0.0, float(cost)) / self.rps
+
+    def _refuse_if_unaffordable(self, cost: float, tool: str | None) -> None:
+        """Refuse loudly rather than stall for hours.
+
+        Debt accounting means no cost is impossible — every cost is merely slow.
+        That removes the deadlock the old clamp was avoiding, and introduces a
+        subtler failure: a tool declaring 8,283 requests against a 5 rps program
+        implies a 28-minute wait before the *next* call can be issued. Silently
+        absorbing that is not rate limiting, it is a hang with a good excuse.
+
+        A program publishing a ceiling this tool cannot respect is a fact the
+        operator needs at the point of the call, in the words of the numbers
+        involved — not one to discover from a stalled engagement.
+        """
+        implied = self.affordable(cost)
+        if implied <= self.max_wait_seconds:
+            return
+        raise RateLimited(
+            f"{tool or 'this tool'} declares {int(cost)} requests, which needs "
+            f"{implied / 60:.0f} minutes at the engagement's {self.rps:g} rps ceiling "
+            f"(limit {self.max_wait_seconds / 60:.0f} minutes). It cannot be run "
+            "compliantly against this program. Narrow the target, pick a tool that "
+            "sends less, or raise max_rps only if the program's policy permits it.",
+            tool=tool,
+            cost=int(cost),
+            implied_wait_seconds=round(implied, 1),
+            rps_ceiling=self.rps,
+        )
+
+    async def acquire(
+        self, *, host: str | None = None, cost: float = 1.0, tool: str | None = None
+    ) -> float:
+        """Charge ``cost`` units of work. Returns total seconds spent waiting."""
+        self._refuse_if_unaffordable(cost, tool)
         waited = await self._global.acquire(cost)
         bucket = self._bucket_for(host)
         if bucket is not None:
@@ -129,16 +230,26 @@ class RateLimiter:
         return waited
 
     @asynccontextmanager
-    async def slot(self, *, host: str | None = None, cost: float = 1.0) -> AsyncIterator[float]:
+    async def slot(
+        self, *, host: str | None = None, cost: float = 1.0, tool: str | None = None
+    ) -> AsyncIterator[float]:
         """Acquire a concurrency slot *and* rate-limit tokens for one call.
+
+        ``cost`` is the number of requests the call is expected to make, not the
+        number of calls. Charging one token per invocation — which is what every
+        caller did before this parameter was wired up — priced a 8,283-request
+        SSRF sweep identically to a single ``dig``.
 
         Yields the time spent waiting so the audit line can record throttling.
         """
+        # Refuse before taking the concurrency slot: an unaffordable call should
+        # not occupy a slot other work could use while it fails.
+        self._refuse_if_unaffordable(cost, tool)
         async with self._sem:
             self._in_flight += 1
             self._peak_in_flight = max(self._peak_in_flight, self._in_flight)
             try:
-                waited = await self.acquire(host=host, cost=cost)
+                waited = await self.acquire(host=host, cost=cost, tool=tool)
                 yield waited
             finally:
                 self._in_flight -= 1
@@ -148,7 +259,17 @@ class RateLimiter:
             "rps_ceiling": self.rps,
             "concurrency_ceiling": self.concurrency,
             "per_host_rps": self.per_host_rps,
-            "requests_granted": self._global.granted,
+            # Calls admitted. NOT requests — a call may declare thousands.
+            "calls_granted": self._global.granted,
+            "requests_charged": round(self._global.charged, 1),
+            # Outstanding debt: requests already charged that the ceiling has not
+            # yet paid off. Non-zero means the next call will wait, and a report
+            # that omitted it would imply the engagement was idle by choice.
+            "requests_owed": round(self._global.debt, 1),
+            # Charged but beyond what the bucket could hold against. Non-zero
+            # means the published ceiling did not bind for at least one call,
+            # and a report claiming compliance without saying so would be wrong.
+            "requests_unenforced": round(self._global.unenforced, 1),
             "total_wait_seconds": round(self._global.total_wait, 3),
             "peak_in_flight": self._peak_in_flight,
             "tracked_hosts": len(self._hosts),
