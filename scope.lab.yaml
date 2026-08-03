@@ -1,0 +1,73 @@
+# EasyHunt AI — engagement scope: the local validation lab (127.0.0.1)
+#
+# This is not an engagement. It is a scope for a deliberately vulnerable app
+# bound to loopback on the machine EasyHunt is running on, and it exists to
+# exercise the paths a real target cannot.
+#
+# Why it is needed: a live third-party target proves a wrapper builds an argv
+# the binary accepts and that a *negative* result is reported honestly. It
+# cannot prove the wrapper parses a positive one, because there is no positive
+# one to parse. Every exploit probe's finding-construction path was therefore
+# unexercised — and an unexercised parse path fails exactly like an unrun tool:
+# it produces nothing, and nothing distinguishes that from a clean target. That
+# is the defect this project keeps finding in itself.
+#
+# Loopback is authorized here in the only way the scope engine permits: named
+# explicitly under `cidrs`. `deny_reserved_ips` stays true, so a wildcard or
+# regex typo still cannot reach 127.0.0.1 — see rules.deny_reserved_ips and
+# `reserved_ip_not_explicitly_scoped` in control_plane/scope.py.
+#
+# Start the app first:  python3 scripts/lab_target.py
+version: 1
+
+engagement:
+  name: easyhunt-lab
+  authorization: owned
+  program_url: null
+  approval_ref: null
+  fetched_at: "2026-08-03T00:00:00Z"
+  max_age_days: 3650
+  refuse_when_stale: false
+  researcher_handle: your-handle
+  vdp_note: >-
+    Loopback-only validation target on the operator's own machine. Nothing here
+    leaves the host and there is no third party to disclose to.
+
+in_scope:
+  domains: []
+  wildcards: []
+  cidrs:
+    - 127.0.0.1/32
+  ip_ranges: []
+  regex: []
+  urls: []
+
+out_of_scope:
+  domains: []
+  wildcards: []
+  # Everything else on loopback. The lab is one port; the rest of this machine
+  # is not a target, and a probe that wanders is a bug worth catching here.
+  cidrs: []
+  ip_ranges: []
+  regex: []
+
+rules:
+  wildcard_includes_apex: false
+  # Left ON deliberately. The cidr above is what authorizes loopback; this rule
+  # is what makes that the *only* thing that can.
+  deny_reserved_ips: true
+  # No reason to be gentle with our own process, but the limiter itself is under
+  # test here, so keep a number it can actually enforce.
+  max_rps: 20
+  max_concurrency: 5
+  allow_aggressive: true
+  allow_exploitation: true
+  no_dos: true
+  user_agent: "EasyHunt-AI/2.0 (local-validation-lab; contact=your-handle)"
+  forbidden_paths: []
+
+budget:
+  llm_usd: 0
+  wall_clock_minutes: 120
+  max_requests: 50000
+  max_tool_seconds: 7200

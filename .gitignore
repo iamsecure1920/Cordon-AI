@@ -13,6 +13,10 @@ scope.yaml
 # targets, contacts, and authorization references.
 scope.*.yaml
 !scope.example.yaml
+# The loopback validation lab names no real target — it is 127.0.0.1/32 and a
+# script in this repo. It has to ship, or nobody else can reproduce the runs
+# that prove the exploit probes parse a finding.
+!scope.lab.yaml
 config.yaml
 .easyhunt-pins.json
 *.jsonl
@@ -36,3 +40,7 @@ scope.yaml
 # targets, contacts, and authorization references.
 scope.*.yaml
 !scope.example.yaml
+# The loopback validation lab names no real target — it is 127.0.0.1/32 and a
+# script in this repo. It has to ship, or nobody else can reproduce the runs
+# that prove the exploit probes parse a finding.
+!scope.lab.yaml
