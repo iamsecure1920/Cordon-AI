@@ -196,3 +196,68 @@ class TestHandoff:
 
     def test_load_from_file(self, scope_file) -> None:
         assert Scope.load(scope_file).check("example.com").in_scope
+
+
+class TestUneditedTemplateIsLoud:
+    """A copied-but-unedited scope must not pass quietly.
+
+    install.sh used to create scope.yaml by copying scope.example.yaml. The
+    operator got a file declaring `authorization: bug-bounty`, a program_url and
+    a fetched_at date — none of which they wrote — and every check downstream
+    reported a green tick, because a template is syntactically perfect. `doctor`
+    printed "✓ scope: scope.yaml (example-bbp, bug-bounty)" and meant nothing.
+
+    The installer no longer does it. This covers the operator who copies it by
+    hand and forgets to finish, which is the same file with no one to blame.
+    """
+
+    def test_the_shipped_example_warns_that_it_is_a_template(self) -> None:
+        from pathlib import Path
+
+        scope = Scope.load(Path("scope.example.yaml"))
+        warnings = " ".join(scope.validate()).lower()
+        assert "template" in warnings
+        assert "your-handle" in warnings
+        assert "example.com" in warnings
+
+    def test_a_real_scope_produces_no_template_warning(self, tmp_path) -> None:
+        """The control: the warning must not fire on a filled-in scope."""
+        from pathlib import Path
+
+        import yaml
+
+        raw = yaml.safe_load(Path("scope.example.yaml").read_text(encoding="utf-8"))
+        raw["engagement"]["name"] = "acme-bbp"
+        raw["engagement"]["program_url"] = "https://hackerone.com/acme/policy"
+        raw["engagement"]["researcher_handle"] = "a-real-handle"
+        raw["rules"]["user_agent"] = "EasyHunt-AI/2.0 (authorized; contact=a-real-handle)"
+        raw["in_scope"]["domains"] = ["acme.test"]
+        raw["in_scope"]["wildcards"] = ["*.acme.test"]
+        raw["in_scope"]["regex"] = []
+        raw["in_scope"]["urls"] = []
+        raw["out_of_scope"]["domains"] = []
+        raw["out_of_scope"]["wildcards"] = []
+        raw["out_of_scope"]["regex"] = []
+        path = tmp_path / "scope.yaml"
+        path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+        warnings = " ".join(Scope.load(path).validate()).lower()
+        assert "template" not in warnings
+        assert "your-handle" not in warnings
+
+    def test_documentation_domains_are_flagged(self, tmp_path) -> None:
+        """example.com is IANA-reserved. A scope naming it authorizes nothing."""
+        from pathlib import Path
+
+        import yaml
+
+        raw = yaml.safe_load(Path("scope.example.yaml").read_text(encoding="utf-8"))
+        raw["engagement"]["name"] = "looks-real"
+        raw["engagement"]["researcher_handle"] = "someone"
+        raw["rules"]["user_agent"] = "EasyHunt-AI/2.0 (authorized; contact=someone)"
+        path = tmp_path / "scope.yaml"
+        path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+        warnings = " ".join(Scope.load(path).validate()).lower()
+        assert "example.com" in warnings
+        assert "reserved" in warnings

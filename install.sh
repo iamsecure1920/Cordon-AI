@@ -124,15 +124,47 @@ fi
 # --------------------------------------------------------------------------- #
 step "Configuration"
 
-for pair in "config.example.yaml:config.yaml" "scope.example.yaml:scope.yaml"; do
-    src="${EASYHUNT_DIR}/${pair%%:*}"; dst="${EASYHUNT_DIR}/${pair##*:}"
-    if [ -f "${dst}" ]; then
-        ok "$(basename "${dst}") already exists (not overwritten)"
-    else
-        cp "${src}" "${dst}" && ok "created $(basename "${dst}") from the example"
-    fi
-done
-warn "scope.yaml is a TEMPLATE. Fill it in from the program's policy before running."
+# config.yaml only. It is a preference file and copying it is harmless.
+src="${EASYHUNT_DIR}/config.example.yaml"; dst="${EASYHUNT_DIR}/config.yaml"
+if [ -f "${dst}" ]; then
+    ok "config.yaml already exists (not overwritten)"
+else
+    cp "${src}" "${dst}" && ok "created config.yaml from the example"
+fi
+
+# scope.yaml is DELIBERATELY NOT CREATED.
+#
+# This used to copy scope.example.yaml into place with a warning. The warning was
+# not enough. What the operator got was a file declaring
+#
+#     authorization: bug-bounty
+#     program_url: https://hackerone.com/example/policy
+#     fetched_at:  <whenever the template was written>
+#
+# and every check downstream then reported a green tick: `easyhunt doctor` says
+# "✓ scope: scope.yaml (example-bbp, bug-bounty)", and bootstrap.sh's closing
+# section says "✓ scope.yaml present" instead of the refusal it prints when the
+# file is absent.
+#
+# scope.yaml is not configuration. It is the record of an authorization, and it
+# has to be transcribed from a program's published policy — that text is the
+# legal basis for the engagement. A pre-made one inherits an authorization claim
+# and a fetched_at date the operator never made, and the staleness check
+# (max_age_days) then measures against a date that means nothing.
+#
+# CLAUDE.md forbids the agent from doing exactly this: "Do not invent, infer, or
+# reconstruct a scope file. Do not copy scope.example.yaml and fill in a target."
+# The installer was doing it on the agent's behalf, silently, before anyone
+# looked. An absent scope.yaml is a correct state; a fabricated one is not.
+if [ -f "${EASYHUNT_DIR}/scope.yaml" ]; then
+    ok "scope.yaml present"
+else
+    warn "scope.yaml NOT created — that is deliberate.
+    It is an authorization record, not a config file, and must be transcribed
+    from the target program's published policy page. Start from the template:
+      cp scope.example.yaml scope.yaml && \$EDITOR scope.yaml
+    Then: easyhunt scope validate"
+fi
 
 # --------------------------------------------------------------------------- #
 if [ "${INSTALL_SKILLS}" = "yes" ]; then

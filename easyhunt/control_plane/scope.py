@@ -506,7 +506,53 @@ class Scope:
         stale = self.check_freshness()
         if stale:
             warnings.append(stale)
+        warnings.extend(self._template_warnings())
         return warnings
+
+    #: Values that only appear in the shipped scope.example.yaml. A scope still
+    #: carrying them was copied and not filled in.
+    _TEMPLATE_MARKERS = (
+        ("engagement.name", "example-bbp"),
+        ("engagement.program_url", "https://hackerone.com/example/policy"),
+        ("engagement.researcher_handle", "your-handle"),
+    )
+
+    def _template_warnings(self) -> list[str]:
+        """Loud warnings when this scope is the unedited example.
+
+        The installer used to create scope.yaml by copying the template. It no
+        longer does, but an operator can still copy it by hand and forget to
+        finish — and every check downstream reports a green tick, because a
+        template is syntactically perfect. `doctor` says
+        "✓ scope: scope.yaml (example-bbp, bug-bounty)" and means nothing by it.
+
+        What makes this worth a warning rather than a nicety: the template
+        declares `authorization: bug-bounty` and a `fetched_at` date. Both are
+        claims about a policy someone read. Inherited from a template, they are
+        claims nobody made, and `max_age_days` then measures staleness against a
+        date with no meaning behind it.
+        """
+        found: list[str] = []
+        if self.name == "example-bbp":
+            found.append(
+                "scope.yaml is still the shipped TEMPLATE (engagement.name is "
+                "'example-bbp'). Its authorization and fetched_at were not written "
+                "by you — transcribe the program's published policy before running "
+                "anything against a real target."
+            )
+        if self.rules.user_agent and "your-handle" in self.rules.user_agent:
+            found.append(
+                "rules.user_agent still contains the placeholder 'your-handle' — "
+                "the program cannot identify your traffic."
+            )
+        for domain in ("example.com", "example.org", "example.net"):
+            if domain in self._allow.domains:
+                found.append(
+                    f"in_scope.domains contains '{domain}', which is IANA's reserved "
+                    "documentation domain. This scope authorizes nothing real."
+                )
+                break
+        return found
 
     # -- the check --------------------------------------------------------- #
 
