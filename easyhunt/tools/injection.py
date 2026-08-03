@@ -584,6 +584,37 @@ def _stage_request(engagement: Any, url: str, parameter: str) -> Path:
 
 
 _SSRF_OPEN = re.compile(r"IP:\s*(\S+)\s*,\s*Found\s+open\s+port n.(\d+)")
+_SSRF_CHECKED = re.compile(r"Checking port n.(\d+)")
+
+#: SSRFmap's portscan module has no oracle of its own: it calls a port "open"
+#: when the response differs from a baseline. Against anything whose responses
+#: already vary — a CDN, a load balancer, a cache, a page with a request id in
+#: it — every port differs, and the module reports the whole scan as open.
+#:
+#: Measured on the validation target (Next.js behind Vercel and Cloudflare, no `url` parameter
+#: at all): 1,989 "open" loopback ports out of 8,280 checked, emitted as a HIGH
+#: severity SSRF candidate. No host listens on 1,989 loopback ports. The result
+#: was not a finding about the target, it was a finding about the oracle.
+#:
+#: Reporting that to a program costs more than the missed bug would have: it is
+#: unreproducible, it reads as an unfiltered scanner dump, and it is the kind of
+#: submission that gets a researcher's later reports skimmed.
+#:
+#: Real loopback SSRF surfaces a handful of services — 22, 3306, 6379, 8080,
+#: 9200. Past a couple of dozen the differ-oracle is saturated, and the honest
+#: answer is that this parameter is UNTESTED, not that it is vulnerable.
+_SSRF_MAX_CREDIBLE_PORTS = 24
+_SSRF_MAX_CREDIBLE_RATIO = 0.05
+
+
+def _oracle_saturated(open_count: int, checked: int) -> bool:
+    """True when so many ports "answered" that the differ-oracle cannot be trusted."""
+    if open_count == 0:
+        return False
+    if open_count > _SSRF_MAX_CREDIBLE_PORTS:
+        return True
+    return checked > 0 and (open_count / checked) > _SSRF_MAX_CREDIBLE_RATIO
+
 
 
 @easyhunt_tool(
@@ -646,8 +677,10 @@ async def ssrf_probe(target: str, parameter: str = "url") -> dict[str, Any]:
 
     text = "\n".join(run.values)
     open_ports = sorted({f"{ip}:{port}" for ip, port in _SSRF_OPEN.findall(text)})
+    checked = len(set(_SSRF_CHECKED.findall(text)))
+    saturated = _oracle_saturated(len(open_ports), checked)
     findings: list[Finding] = []
-    if open_ports:
+    if open_ports and not saturated:
         findings.append(
             _candidate(
                 asset=url,
@@ -676,19 +709,46 @@ async def ssrf_probe(target: str, parameter: str = "url") -> dict[str, Any]:
         )
     _store(findings)
 
+    if saturated:
+        note = (
+            f"INCONCLUSIVE — not clean. ssrfmap called {len(open_ports)} of {checked or 'the'} "
+            "loopback ports open, which no host is. Its portscan module has no oracle beyond "
+            "'the response differed from the baseline', so a target whose responses already "
+            "vary — a CDN, a cache, a load balancer, any page carrying a request id — "
+            "saturates it and every port reads as open. No finding was raised from this. "
+            "To actually test the parameter, use oob_listener() and inject the callback URL: "
+            "an out-of-band hit is unambiguous where a response diff is not."
+        )
+    elif open_ports:
+        note = (
+            "Differential port responses are evidence of a fetch, not proof of impact. "
+            "Establish what the reachable service is, and record the proof with poc_record(). "
+            "Do not read cloud credentials to demonstrate severity."
+        )
+    else:
+        note = (
+            "No internal port responded differently. SSRF may still exist blind — "
+            "run oob_listener() and inject the callback URL into this parameter."
+        )
+
     return _result(
         target=url,
         run=run,
         findings=findings,
-        note=(
-            "Differential port responses are evidence of a fetch, not proof of impact. "
-            "Establish what the reachable service is, and record the proof with poc_record(). "
-            "Do not read cloud credentials to demonstrate severity."
-            if open_ports
-            else "No internal port responded differently. SSRF may still exist blind — "
-            "run oob_listener() and inject the callback URL into this parameter."
-        ),
-        extra={"parameter": parameter, "open_ports": open_ports, "request_file": str(request_file)},
+        note=note,
+        extra={
+            # `status` rather than a silent ok=True. A saturated oracle means the
+            # parameter is UNTESTED, and this codebase has been bitten too often
+            # by results that read as clean because nothing said otherwise.
+            "status": "INCONCLUSIVE" if saturated else "COMPLETE",
+            "complete": not saturated,
+            "parameter": parameter,
+            "open_ports": [] if saturated else open_ports,
+            "ports_checked": checked,
+            "oracle_saturated": saturated,
+            "ports_reported_open": len(open_ports),
+            "request_file": str(request_file),
+        },
     )
 
 

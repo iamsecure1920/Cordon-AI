@@ -340,6 +340,50 @@ class TestDangerousFlagsAreRefused:
         policy = SPECS[tool].arg_policy
         assert not (policy.allowed_flags & set(GLOBAL_DENIED_FLAGS))
 
+    async def test_ssrf_saturated_oracle_raises_no_finding(
+        self, engagement, monkeypatch
+    ) -> None:
+        """1,989 open loopback ports is a fact about the scanner, not the target.
+
+        Measured against the validation target — a Next.js site behind Vercel and Cloudflare
+        with no `url` parameter at all. ssrfmap's portscan module calls a port
+        open when the response differs from a baseline, so a target whose
+        responses already vary saturates it and every port reads as open. It was
+        emitted as a HIGH severity SSRF candidate.
+        """
+        approve(engagement, "ssrf_probe")
+        noise = [
+            f"[13:03:43] IP:127.0.0.1   , Found open      port n\u00b0{port}"
+            for port in range(9000, 9200)
+        ] + [f"[13:03:43] Checking port n\u00b0{port}" for port in range(9000, 9400)]
+        capture(monkeypatch, values=noise)
+        result = await inj.ssrf_probe(target="https://www.example.com/?url=1", parameter="url")
+
+        assert result["findings"] == []
+        assert result["oracle_saturated"] is True
+        assert result["complete"] is False
+        assert result["status"] == "INCONCLUSIVE"
+        assert result["ports_reported_open"] == 200
+        # And it must not read as clean either.
+        assert "INCONCLUSIVE" in result["note"]
+        assert "oob_listener" in result["note"]
+
+    async def test_ssrf_a_credible_port_count_still_reports(
+        self, engagement, monkeypatch
+    ) -> None:
+        """The guard must not swallow the bug it exists to make legible."""
+        approve(engagement, "ssrf_probe")
+        capture(monkeypatch, values=[
+            "[13:03:43] IP:127.0.0.1   , Found open      port n\u00b06379",
+            "[13:03:43] IP:127.0.0.1   , Found open      port n\u00b08080",
+        ] + [f"[13:03:43] Checking port n\u00b0{port}" for port in range(1, 400)])
+        result = await inj.ssrf_probe(target="https://www.example.com/?url=1", parameter="url")
+
+        assert len(result["findings"]) == 1
+        assert result["oracle_saturated"] is False
+        assert result["complete"] is True
+        assert result["findings"][0]["severity"] == "high"
+
     async def test_ssrfmap_exploitation_modules_are_refused(self) -> None:
         """The module is the payload: redis writes a key, aws reads IAM creds."""
         policy = inj.SSRFMAP.arg_policy
