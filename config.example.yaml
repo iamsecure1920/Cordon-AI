@@ -238,6 +238,17 @@ sandbox:
     # Same crash, found by doctor rather than by an engagement this time:
     # "OSError: [Errno 30] Read-only file system: '/root/.semgrep/settings*.yml'"
     semgrep: ["/root/.semgrep", "/root/.cache"]
+    # Both write into $HOME at startup and die on the read-only root. Found by
+    # doctor probing inside the image, which is the only place the failure
+    # exists — both work fine on a host, which is exactly why nobody noticed.
+    #
+    # Mount the leaf, never the parent. /root/.local/share holds uv's tool store,
+    # and every uv-installed binary in /root/.local/bin points into it — so a
+    # tmpfs on that directory hides about a dozen tools at once and they read as
+    # "not present in the image". A scratch mount that makes the tool vanish is
+    # a worse failure than the one it was fixing.
+    garak: ["/root/.config/garak", "/root/.local/share/garak", "/root/.cache/garak"]
+    theHarvester: ["/root/.theHarvester", "/root/.local/share/theHarvester"]
 
   memory: 2g
   cpus: "2.0"
