@@ -55,11 +55,13 @@ Docker (enabled at boot), the EasyHunt package, the tool suite, **builds the
 `easyhunt doctor` and prints what is still missing.
 
 Budget **30–45 minutes** for the first run; almost all of it is the image build.
-Needs ~15 GB free and Python ≥ 3.11.
+Needs ~30 GB free, Python ≥ 3.11, and **Go ≥ 1.21** — Debian's `golang-go` is
+1.19 and every Go tool refuses to build against it. `bootstrap.sh` detects this
+and installs a current toolchain from go.dev.
 
 | Flag | Effect |
 | --- | --- |
-| `--no-build` | skip the `easyhunt:latest` build (46 tools then run on the host) |
+| `--no-build` | skip the `easyhunt:latest` build (73 tools then run on the host) |
 | `--no-images` | skip images entirely — no container isolation |
 | `--no-tools` | package only |
 
@@ -122,6 +124,14 @@ $EDITOR scope.yaml              # fill in from the program's policy page
 easyhunt doctor                 # what is installed, configured, and missing
 easyhunt scope example.com      # confirm a target resolves the way you expect
 ```
+
+> **The installer will not do this for you, deliberately.** `install.sh` used to
+> copy the template into place; the operator ended up with a file declaring
+> `authorization: bug-bounty`, a `program_url` and a `fetched_at` date they never
+> wrote — and `easyhunt doctor` then printed a green tick for it. `scope.yaml` is
+> not configuration, it is the record of an authorization. `easyhunt scope
+> validate` warns if it is still the unedited template.
+
 
 In Claude Code: `/easyhunt`.
 
@@ -331,7 +341,7 @@ New machine? `./bootstrap.sh` — idempotent, safe to re-run.
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 601 tests
+.venv/bin/python -m pytest tests/ -q          # 1,240 tests
 .venv/bin/python -m pytest tests/test_security.py -q   # adversarial suite
 .venv/bin/ruff check easyhunt/ tests/
 ```

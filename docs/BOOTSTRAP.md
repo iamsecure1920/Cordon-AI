@@ -72,6 +72,14 @@ $EDITOR scope.yaml
 easyhunt scope validate
 ```
 
+> **The installer will not do this for you, deliberately.** `install.sh` used to
+> copy the template into place; the operator ended up with a file declaring
+> `authorization: bug-bounty`, a `program_url` and a `fetched_at` date they never
+> wrote — and `easyhunt doctor` then printed a green tick for it. `scope.yaml` is
+> not configuration, it is the record of an authorization. `easyhunt scope
+> validate` warns if it is still the unedited template.
+
+
 ### Optional
 
 ```bash
