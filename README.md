@@ -332,7 +332,6 @@ invariants — read it first. Full index in [`docs/README.md`](docs/README.md).
 |---|---|
 | [`CLAUDE.md`](CLAUDE.md) | The invariants, working rhythm, and known traps. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Mind map, control-plane sequence, engagement flow, module map. |
-| [`docs/BUILD_STATUS.md`](docs/BUILD_STATUS.md) | What works, what does not, what is left. |
 | [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md) | New-machine setup and troubleshooting. |
 | [`docs/PAYLOADS.md`](docs/PAYLOADS.md) | Vetted payload store: tiers, quarantine, tool mapping. |
 

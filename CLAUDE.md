@@ -124,7 +124,6 @@ produce a partial report when you run out — do that rather than stopping silen
 | Question | File |
 |---|---|
 | How is it built, what's the flow? | `docs/ARCHITECTURE.md` |
-| How much is done, what's left? | `docs/BUILD_STATUS.md` |
 | Fresh machine setup | `docs/BOOTSTRAP.md`, `./bootstrap.sh` |
 | Every tool, flags, when to use | `tools.md` |
 | Day-to-day operation | `USER_GUIDE.md` |

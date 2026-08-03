@@ -305,4 +305,4 @@ fi
     || warn "OPENROUTER_API_KEY unset — AI triage and report synthesis disabled
     (passive recon, scanning, and rule-based detection still work)"
 
-printf "\n${GREEN}Bootstrap complete.${NC} Read CLAUDE.md, then docs/BUILD_STATUS.md\n\n"
+printf "\n${GREEN}Bootstrap complete.${NC} Read CLAUDE.md, then run: easyhunt doctor\n\n"
