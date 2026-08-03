@@ -75,7 +75,6 @@ RUN set -u; \
         github.com/lc/gau/v2/cmd/gau@latest \
         github.com/tomnomnom/assetfinder@latest \
         github.com/tomnomnom/waybackurls@latest \
-        github.com/BishopFox/jsluice/cmd/jsluice@latest \
         github.com/zricethezav/gitleaks/v8@latest \
         github.com/crytic/medusa@latest \
         github.com/PentestPad/subzy@latest \
@@ -97,6 +96,19 @@ RUN set -u; \
 RUN CGO_ENABLED=1 go install -v github.com/projectdiscovery/katana/cmd/katana@latest || \
     echo "!!! FAILED: katana"
 
+# jsluice needs CGO for the same reason: it binds go-tree-sitter, which is a C
+# library. It was in the bulk list above, where this stage sets CGO_ENABLED=0,
+# so it could never have built there — and the recorded explanation, "build
+# failure upstream", was wrong for two years.
+#
+# It was verified before being trusted, in a plain golang:1.25 container where
+# CGO defaults to on. That is the wrong environment: this stage disables CGO,
+# so the check passed under conditions the build does not use. Verifying in the
+# wrong place is the same error as probing a tool on the host when it runs in a
+# container — which this project fixed in `doctor` earlier the same day.
+RUN CGO_ENABLED=1 go install -v github.com/BishopFox/jsluice/cmd/jsluice@latest || \
+    echo "!!! FAILED: jsluice"
+
 # Six tools added to the list above after being measured, not assumed. They were
 # running on the *host*, outside the sandbox — no read-only root, no dropped
 # capabilities, no memory ceiling — because nothing had ever tried to build them
@@ -106,9 +118,9 @@ RUN CGO_ENABLED=1 go install -v github.com/projectdiscovery/katana/cmd/katana@la
 # as:" module path mismatch) and the maintained fork is PentestPad/subzy. The old
 # path was recorded below as an upstream failure for months; it was a rename.
 #
-# jsluice builds fine on golang:1.25 — verified in a clean builder. The note
-# below claiming an upstream build failure was stale, and the stale note is why
-# nobody re-tried it.
+# jsluice was not an upstream failure either — it needs CGO, and this stage sets
+# CGO_ENABLED=0. It now has its own build line above. The note claiming an
+# upstream failure was wrong, and being written down is why nobody re-tried it.
 #
 # Each is still attempted rather than required; failures are printed and
 # `easyhunt doctor` reports which are absent, so a missing tool is a known gap
