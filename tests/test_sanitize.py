@@ -132,3 +132,75 @@ class TestPaths:
 
     def test_inside_workspace_allowed(self, tmp_path: Path) -> None:
         assert sanitize_path("out/results.json", workspace=tmp_path).is_relative_to(tmp_path)
+
+
+class TestHeaderValues:
+    """A header field-value is not a shell fragment.
+
+    This class exists because the sanitizer once refused every conventional
+    user-agent. `EasyHunt-AI/2.0 (owner-authorized-testing; contact=handle)`
+    carries a semicolon, ";" is in HARD_DENY_CHARS, and so testssl, corscanner
+    and every other tool that identifies itself refused to start — reporting
+    UNTESTED and blaming a missing binary. The project tells the operator to
+    transcribe the program's mandated identifiers; it then has to send them.
+    """
+
+    @pytest.fixture(autouse=True)
+    def header_policy(self) -> ArgPolicy:
+        return register_policy(
+            ArgPolicy(
+                tool="hdr",
+                allowed_flags={"-H", "--user-agent", "-u"},
+                header_flags={"-H", "--user-agent"},
+            )
+        )
+
+    def test_semicolon_permitted_in_a_user_agent(self) -> None:
+        ua = "EasyHunt-AI/2.0 (owner-authorized-testing; contact=your-handle)"
+        assert sanitize_argv("hdr", ["--user-agent", ua]) == ["--user-agent", ua]
+
+    def test_browser_shaped_user_agent_permitted(self) -> None:
+        ua = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+        sanitize_argv("hdr", ["-H", f"User-Agent: {ua}"])
+
+    @pytest.mark.parametrize("bad", ["\r", "\n", "\x00", "\x1b", "\v"])
+    def test_control_characters_still_refused(self, bad: str) -> None:
+        """Response splitting is the actual threat in this position."""
+        with pytest.raises(SanitizeError):
+            sanitize_argv("hdr", ["-H", f"X-Test: a{bad}X-Injected: b"])
+
+    def test_crlf_header_split_refused(self) -> None:
+        with pytest.raises(SanitizeError) as err:
+            sanitize_argv("hdr", ["-H", "X-A: 1\r\nX-B: 2"])
+        assert "control character" in str(err.value).lower()
+
+    def test_non_ascii_refused(self) -> None:
+        """Encoding surprises must not smuggle a newline past the check."""
+        with pytest.raises(SanitizeError):
+            sanitize_argv("hdr", ["--user-agent", "EasyHunt AI"])
+
+    def test_relaxation_does_not_leak_to_other_flags(self) -> None:
+        """-u is not a header flag, so it keeps the shell rules."""
+        with pytest.raises(SanitizeError):
+            sanitize_argv("hdr", ["-u", "https://x/;id"])
+
+    def test_denied_value_markers_still_apply(self) -> None:
+        with pytest.raises(SanitizeError):
+            sanitize_argv("hdr", ["-H", "X-Read: /etc/passwd"])
+
+    def test_user_agent_flag_is_declared_as_a_header_flag_automatically(self) -> None:
+        """The flag that carries a header is, by construction, checked as one.
+
+        `guarded_run` injects the user-agent through `spec.user_agent_flag`. If
+        that registration were left to each policy by hand it would drift, and
+        the drift is silent: the tool simply stops running.
+        """
+        from easyhunt.tools.base import ToolSpec
+
+        spec = ToolSpec(
+            name="uatool",
+            user_agent_flag="--agent",
+            arg_policy=ArgPolicy(tool="uatool", allowed_flags={"--agent"}),
+        )
+        assert "--agent" in spec.arg_policy.header_flags
+        sanitize_argv("uatool", ["--agent", "Tool/1.0 (a; b)"])

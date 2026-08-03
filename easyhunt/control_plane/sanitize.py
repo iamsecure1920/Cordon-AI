@@ -31,6 +31,7 @@ __all__ = [
     "sanitize_argv",
     "sanitize_path",
     "sanitize_text",
+    "sanitize_header_value",
     "sanitize_value",
 ]
 
@@ -109,6 +110,10 @@ class ArgPolicy:
     max_argv: int = 64
     # Soft-deny characters this tool genuinely needs (e.g. regex parentheses).
     relaxed_chars: frozenset[str] = frozenset()
+    # Flags whose value is an HTTP header field-value or user-agent. Checked by
+    # :func:`sanitize_header_value` instead of the shell-character rules — see
+    # that function for why the two are different problems.
+    header_flags: set[str] = field(default_factory=set)
 
     def describe(self) -> dict[str, Any]:
         return {
@@ -166,6 +171,61 @@ def _ampersand_is_query_separator(value: str) -> bool:
         return False
     # Only the query may carry it. A "&" in the host or path is not a separator.
     return "&" not in (parts.scheme + parts.netloc + parts.path + parts.fragment)
+
+
+#: An HTTP header field-value is not a shell fragment, and validating it as one
+#: costs the ability to identify ourselves. Semicolons are ordinary in this
+#: position — every conventional user-agent carries them
+#: (``Mozilla/5.0 (X11; Linux x86_64)``), and so do the attribution headers bug
+#: bounty programs mandate. Denying ";" outright meant that transcribing a
+#: program's required user-agent — the thing this project insists the operator
+#: do, because the policy text is the authorization — made every tool that sends
+#: one refuse to start. testssl, corscanner and the rest reported UNTESTED and
+#: blamed a missing binary.
+#:
+#: The real threat in a header value is response splitting: CR, LF and NUL, which
+#: end the field and start something else. Those stay banned absolutely, along
+#: with every other control character. The permitted set is RFC 7230's
+#: field-value — VCHAR, SP, HTAB — and nothing outside ASCII, so an encoding
+#: surprise cannot smuggle a newline past this check.
+_HEADER_VALUE_RE = re.compile(r"^[\x20\x09\x21-\x7e]*$")
+
+
+def sanitize_header_value(
+    value: Any, *, name: str = "header", tool: str | None = None, max_length: int = 1024
+) -> str:
+    """Validate an HTTP header field-value or user-agent. Returns it unchanged.
+
+    Deliberately narrower than :func:`sanitize_value` in the ways that matter for
+    a header, and wider in the ways that do not. argv reaches ``execve``, never a
+    shell, so ";" here is a literal byte with nothing to interpret it.
+    """
+    if not isinstance(value, str):
+        raise SanitizeError(
+            f"{name}: expected a string, got {type(value).__name__}", tool=tool, arg=name
+        )
+    if len(value) > max_length:
+        raise SanitizeError(
+            f"{name}: header value exceeds {max_length} characters",
+            tool=tool,
+            arg=name,
+            length=len(value),
+        )
+    if not _HEADER_VALUE_RE.fullmatch(value):
+        offenders = sorted({c for c in value if not _HEADER_VALUE_RE.fullmatch(c)})
+        raise SanitizeError(
+            f"{name}: header value may only contain visible ASCII, space and tab; "
+            f"found {[hex(ord(c)) for c in offenders]!r}. Control characters are "
+            "refused because they split the header and start another one.",
+            tool=tool,
+            arg=name,
+            chars=offenders,
+        )
+    lowered = value.lower()
+    for marker, why in DENIED_VALUE_MARKERS.items():
+        if marker in lowered:
+            raise SanitizeError(f"{name}: {why}", tool=tool, arg=name, marker=marker)
+    return value
 
 
 def sanitize_value(
@@ -343,9 +403,12 @@ def sanitize_argv(tool: str, argv: list[str], *, policy: ArgPolicy | None = None
             if index + 1 >= len(argv):
                 raise SanitizeError(f"{flag} requires a value", tool=tool, flag=flag)
             raw_value = argv[index + 1]
-            value = sanitize_value(
-                raw_value, name=flag, tool=tool, relaxed_chars=policy.relaxed_chars
-            )
+            if flag in policy.header_flags:
+                value = sanitize_header_value(raw_value, name=flag, tool=tool)
+            else:
+                value = sanitize_value(
+                    raw_value, name=flag, tool=tool, relaxed_chars=policy.relaxed_chars
+                )
             _check_flag_value(tool, policy, flag, value)
             index += 2
             continue

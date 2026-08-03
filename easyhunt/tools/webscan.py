@@ -179,6 +179,7 @@ TESTSSL = register_spec(
         user_agent_flag=None,
         arg_policy=ArgPolicy(
             tool="testssl",
+            header_flags={"--user-agent"},
             allowed_flags={
                 "--quiet", "--color", "--warnings", "--severity", "--protocols",
                 "--server-defaults", "--server-preference", "--headers", "--fs",
@@ -295,6 +296,7 @@ GRAPHQL_COP = register_spec(
         user_agent_flag=None,
         arg_policy=ArgPolicy(
             tool="graphql-cop",
+            header_flags={"-H"},
             allowed_flags={"-t", "-o", "-e", "-H", "-w"},
             boolean_flags=set(),
             denied_flags={
@@ -325,6 +327,7 @@ CORSCANNER = register_spec(
         user_agent_flag=None,
         arg_policy=ArgPolicy(
             tool="corscanner",
+            header_flags={"-d"},
             allowed_flags={"-u", "-t", "-o", "-d"},
             # -v takes an *optional* value, which the sanitizer cannot express;
             # it is simply not reachable.
@@ -376,6 +379,7 @@ WEBSOCAT = register_spec(
         user_agent_flag="--ua",
         arg_policy=ArgPolicy(
             tool="websocat",
+            header_flags={"-H"},
             allowed_flags={"-v", "-q", "-u", "-1", "-n", "-E", "--origin", "--ua",
                            "-H", "--protocol", "--ping-timeout"},
             boolean_flags={"-v", "-q", "-u", "-1", "-n", "-E"},

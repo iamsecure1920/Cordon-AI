@@ -79,6 +79,13 @@ class ToolSpec:
 
     def __post_init__(self) -> None:
         if self.arg_policy is not None:
+            # `guarded_run` injects the engagement user-agent through this flag,
+            # so the policy must expect a header value there. Declaring it here
+            # rather than in ~20 individual policies means the rule cannot drift
+            # from the code that actually builds the argument: the flag that
+            # carries a header is, by construction, the flag checked as one.
+            if self.user_agent_flag:
+                self.arg_policy.header_flags.add(self.user_agent_flag)
             register_policy(self.arg_policy)
 
 

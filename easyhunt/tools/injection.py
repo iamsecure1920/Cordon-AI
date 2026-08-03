@@ -173,6 +173,7 @@ SSTIMAP = register_spec(
         user_agent_flag="--user-agent",
         arg_policy=ArgPolicy(
             tool="sstimap",
+            header_flags={"--header", "-H"},
             allowed_flags={
                 "-u", "--url", "--no-color", "-l", "--level", "-e", "--engine",
                 "-r", "--technique", "--delay", "-a", "--user-agent", "-H", "--header",
@@ -252,6 +253,7 @@ COMMIX = register_spec(
         user_agent_flag="--user-agent",
         arg_policy=ArgPolicy(
             tool="commix",
+            header_flags={"--header", "-H"},
             allowed_flags={
                 "-u", "--url", "--batch", "--level", "--technique", "--time-sec",
                 "--delay", "--timeout", "--retries", "--skip-waf", "--user-agent",
