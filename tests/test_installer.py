@@ -8,13 +8,18 @@ support — the installer broke the application running it.
 
 from __future__ import annotations
 
+import os
+import shutil
+import stat
 import sys
 
 import pytest
 
 from easyhunt.install import RECIPES, Installer, install_order, recipes_for
+from easyhunt.install.installer import ToolHealth, health_check, probe_tool
 from easyhunt.install.recipes import SYSTEM_PACKAGES, Recipe
 from easyhunt.mcp_server import load_capabilities
+from easyhunt.tools.base import ToolSpec
 from easyhunt.tools.common import CATALOG
 
 load_capabilities()
@@ -186,17 +191,26 @@ class TestCommands:
         assert Installer(dry_run=True)._command_for(RECIPES["strix"]) == ""
 
 
-class TestStatusAndRepair:
-    def test_status_reports_coverage(self) -> None:
-        status = Installer.status()
-        assert status["total"] == len(CATALOG)
-        assert 0 <= status["coverage"] <= 100
-        assert isinstance(status["core_missing"], list)
+@pytest.fixture(scope="module")
+def machine_status() -> dict:
+    """One real, executing probe of this machine, shared by every test below.
 
-    def test_status_separates_broken_from_missing(self) -> None:
-        status = Installer.status()
+    ``status(execute=True)`` runs ~80 binaries. Doing that once per assertion
+    turned a two-second file into a minute-long one.
+    """
+    return Installer.status(execute=True)
+
+
+class TestStatusAndRepair:
+    def test_status_reports_coverage(self, machine_status) -> None:
+        assert machine_status["total"] == len(CATALOG)
+        assert 0 <= machine_status["coverage"] <= 100
+        assert isinstance(machine_status["core_missing"], list)
+
+    def test_status_separates_broken_from_missing(self, machine_status) -> None:
         # A tool cannot be both absent and present-but-wrong.
-        assert not (set(status["missing"]) & {b.split(":")[0] for b in status["broken"]})
+        broken = {entry.split(":")[0] for entry in machine_status["broken"]}
+        assert not (set(machine_status["missing"]) & broken)
 
     def test_repair_is_safe_to_run_repeatedly(self) -> None:
         installer = Installer(dry_run=True)
@@ -228,3 +242,186 @@ class TestStatusAndRepair:
 
     def test_system_packages_cover_the_build_essentials(self) -> None:
         assert {"build-essential", "libpcap-dev", "git", "curl"} <= set(SYSTEM_PACKAGES)
+
+
+# --------------------------------------------------------------------------- #
+# Health: PATH presence is not working
+# --------------------------------------------------------------------------- #
+
+
+def _fake_tool(directory, name: str, script: str) -> str:
+    """Put an executable of ``name`` on PATH and return its path."""
+    path = directory / name
+    path.write_text(f"#!/bin/sh\n{script}\n", encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    return str(path)
+
+
+@pytest.fixture
+def fake_path(tmp_path, monkeypatch):
+    """A directory at the front of PATH, with the identity caches cleared."""
+    from easyhunt.tools.common import resolve_binary, verify_identity
+
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    resolve_binary.cache_clear()
+    verify_identity.cache_clear()
+    yield tmp_path
+    resolve_binary.cache_clear()
+    verify_identity.cache_clear()
+
+
+@pytest.fixture
+def catalogued(monkeypatch):
+    """Register a throwaway ToolSpec in the catalog for the duration of a test."""
+
+    def register(**kwargs) -> ToolSpec:
+        spec = ToolSpec(**kwargs)
+        monkeypatch.setitem(CATALOG, spec.name, spec)
+        return spec
+
+    return register
+
+
+class TestHealthIsNotPathPresence:
+    """The regression that let nikto and testssl ship 100% non-functional.
+
+    Both resolved with ``shutil.which()`` and died on every invocation, and
+    ``easyhunt doctor`` printed a green tick for each. These tests fail if
+    anything ever again reports "working" on the strength of a filename.
+    """
+
+    def test_a_binary_that_fails_on_every_invocation_is_not_working(
+        self, fake_path, catalogued
+    ) -> None:
+        # Exactly the shape of the four broken tools found in the wild: it is on
+        # PATH, it is executable, and it dies at import every single time.
+        _fake_tool(
+            fake_path, "phantomscan",
+            "echo 'Traceback (most recent call last):' >&2\n"
+            "echo \"ModuleNotFoundError: No module named 'pkg_resources'\" >&2\n"
+            "exit 1",
+        )
+        catalogued(name="phantomscan", binary="phantomscan")
+
+        # The old check would have passed: it is unambiguously on PATH.
+        assert shutil.which("phantomscan") is not None
+
+        health = probe_tool("phantomscan")
+        assert health.status == "broken", f"reported {health.status!r}: {health.detail}"
+        assert not health.confirmed_working
+        assert "pkg_resources" in health.detail, "the tool's own error must reach the operator"
+
+    def test_nikto_style_perl_failure_is_not_working(self, fake_path, catalogued) -> None:
+        # nikto with no XML::Writer: exits non-zero on EVERY invocation, -Version
+        # included, because it builds its XML report object unconditionally.
+        _fake_tool(
+            fake_path, "phantomnikto",
+            "echo '- ERROR: Required module not found: XML::Writer' >&2\nexit 1",
+        )
+        catalogued(name="phantomnikto", binary="phantomnikto")
+        assert probe_tool("phantomnikto").status == "broken"
+
+    def test_testssl_style_dependency_failure_is_not_working(
+        self, fake_path, catalogued
+    ) -> None:
+        # testssl without hexdump: prints its dependency complaint and stops.
+        _fake_tool(
+            fake_path, "phantomtestssl",
+            "echo 'You need to install hexdump for this program to work' >&2\nexit 245",
+        )
+        catalogued(name="phantomtestssl", binary="phantomtestssl")
+        assert probe_tool("phantomtestssl").status == "broken"
+
+    def test_a_silent_binary_is_unverified_not_working(self, fake_path, catalogued) -> None:
+        # Produces nothing to any form. We do not know whether it works, so we
+        # must not say that it does — and equally must not call it broken.
+        _fake_tool(fake_path, "phantomquiet", "exit 0")
+        catalogued(name="phantomquiet", binary="phantomquiet")
+
+        health = probe_tool("phantomquiet", budget=4.0)
+        assert health.status == "unresponsive"
+        assert not health.confirmed_working
+
+    def test_a_working_binary_is_reported_working(self, fake_path, catalogued) -> None:
+        # The control: without this, "never say working" would pass trivially.
+        _fake_tool(fake_path, "phantomgood", "echo 'phantomgood 4.2.0'")
+        catalogued(name="phantomgood", binary="phantomgood")
+
+        health = probe_tool("phantomgood")
+        assert health.status == "working" and health.confirmed_working
+        assert "4.2.0" in health.version
+
+    def test_a_hung_binary_does_not_count_as_working(self, fake_path, catalogued) -> None:
+        _fake_tool(fake_path, "phantomhang", "sleep 30")
+        catalogued(name="phantomhang", binary="phantomhang")
+
+        health = probe_tool("phantomhang", budget=2.0)
+        assert health.status == "unresponsive"
+        assert not health.confirmed_working
+
+    def test_a_binary_that_prints_then_hangs_is_still_broken(
+        self, fake_path, catalogued
+    ) -> None:
+        # The partial output from a timed-out call is the only evidence of why;
+        # discarding it would downgrade a definite failure to "unknown".
+        _fake_tool(
+            fake_path, "phantomslowfail",
+            "echo 'ImportError: attempted relative import with no known parent package' >&2\n"
+            "sleep 30",
+        )
+        catalogued(name="phantomslowfail", binary="phantomslowfail")
+        assert probe_tool("phantomslowfail", budget=2.0).status == "broken"
+
+    def test_an_impostor_reads_as_wrong_tool_not_missing(self, fake_path, catalogued) -> None:
+        # A name collision needs different words from an absence: absence is
+        # fixed by installing, an impostor by looking at your PATH.
+        _fake_tool(fake_path, "phantomdusa", "echo 'phantomdusa v2.2 by someone else'")
+        catalogued(
+            name="phantomdusa", binary="phantomdusa", identity_marker="the-real-phantomdusa"
+        )
+
+        health = probe_tool("phantomdusa")
+        assert health.status == "wrong-tool"
+        assert not health.confirmed_working
+
+    def test_fast_mode_never_claims_a_tool_works(self, fake_path, catalogued) -> None:
+        # --fast trades truth for speed. It must not be able to launder a PATH
+        # hit into a claim of health — that is the original bug.
+        _fake_tool(fake_path, "phantombroken", "echo 'No module named zope' >&2\nexit 1")
+        catalogued(name="phantombroken", binary="phantombroken")
+
+        health = probe_tool("phantombroken", execute=False)
+        assert health.status == "on-path"
+        assert not health.confirmed_working, "--fast must never assert working"
+
+    def test_no_health_status_confuses_presence_with_working(self) -> None:
+        # Whatever the machine happens to have installed, nothing that was only
+        # found on PATH may end up in the confirmed-working set. Cheap because
+        # --fast is the mode that *could* launder presence into health.
+        for health in health_check(execute=False):
+            assert not health.confirmed_working, f"{health.tool} claimed working unexecuted"
+            assert health.status in {"on-path", "wrong-tool", "missing"}
+
+    def test_on_path_is_never_confirmed_working(self) -> None:
+        assert not ToolHealth("x", "on-path").confirmed_working
+        assert ToolHealth("x", "on-path").ok, "still usable as a 'do not reinstall' signal"
+
+    def test_doctor_executes_by_default(self) -> None:
+        # The health check that is not the default is the health check nobody
+        # runs — which is how this shipped broken in the first place.
+        from easyhunt.cli import build_parser
+
+        args = build_parser().parse_args(["doctor"])
+        assert args.fast is False
+        assert getattr(args, "versions", False) is False
+
+    def test_status_counts_only_executed_tools_as_working(self, machine_status) -> None:
+        assert machine_status["executed"] is True
+        broken_tools = {entry.split(":")[0] for entry in machine_status["broken"]}
+        assert not (set(machine_status["working"]) & broken_tools)
+        assert not (set(machine_status["working"]) & set(machine_status["missing"]))
+
+    def test_status_marks_a_non_executing_run_as_such(self) -> None:
+        # A caller reading status()["working"] deserves to know whether anything
+        # was actually run to produce it.
+        assert Installer.status(execute=False)["executed"] is False

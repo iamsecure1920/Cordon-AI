@@ -24,12 +24,15 @@ say what they will do first.
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -38,7 +41,296 @@ from easyhunt.install.recipes import RECIPES, SYSTEM_PACKAGES, Recipe, install_o
 
 log = logging.getLogger("easyhunt.install")
 
-__all__ = ["InstallReport", "Installer", "StepResult"]
+__all__ = [
+    "InstallReport",
+    "Installer",
+    "StepResult",
+    "ToolHealth",
+    "health_check",
+    "probe_tool",
+]
+
+
+# --------------------------------------------------------------------------- #
+# Health: what a tool actually does when you run it
+# --------------------------------------------------------------------------- #
+#
+# `shutil.which()` answers "is there a file of this name on PATH", which is a
+# much weaker claim than "this tool works" and was being printed as though it
+# were the same thing. It is not: on the machine this was written on, four tools
+# resolved on PATH and died at import on every single invocation —
+#
+#   deepteam     ModuleNotFoundError: No module named 'nntplib'   (3.13 removed it)
+#   dirsearch    ModuleNotFoundError: No module named 'pkg_resources'
+#   dnsreaper    ModuleNotFoundError: No module named 'pkg_resources'
+#   paramspider  ImportError: attempted relative import with no known parent package
+#
+# — and `easyhunt doctor` reported all four with a green tick. That is the same
+# failure that let nikto and testssl ship 100% non-functional. So the health
+# check executes.
+
+#: Substrings that mean "this binary starts up and immediately dies", as opposed
+#: to "this binary printed something we did not recognise as a version". Kept
+#: narrow on purpose: a false BROKEN is nearly as damaging as a false OK.
+#:
+#: The first five were observed verbatim in this repo's own environment. The
+#: remainder are documented failure modes taken from the recipe caveats
+#: (nikto's XML::Writer, testssl's hexdump) and from libc/loader errors.
+_STARTUP_FAILURE = (
+    "traceback (most recent call last)",
+    "modulenotfounderror",
+    "no module named",
+    "importerror:",
+    "attempted relative import",
+    "required module not found",  # nikto without libxml-writer-perl
+    "you need to install",  # testssl without hexdump / ps
+    "@inc contains",  # perl module resolution failure
+    ": command not found",
+    "error while loading shared libraries",
+    "cannot execute binary file",
+)
+
+#: Argument forms tried, in order, until one produces output. Tools disagree
+#: wildly; ``-h`` is last because it is the only one some of them answer at all.
+_VERSION_FORMS: tuple[list[str], ...] = (
+    ["--version"], ["-version"], ["version"], ["-V"], ["-h"],
+)
+
+#: Total seconds allowed per tool across *all* argument forms. A per-attempt
+#: timeout is the wrong unit: a slow Python tool that ignores four forms then
+#: answers the fifth would otherwise cost 5x the budget on its own and set the
+#: wall-clock for the entire run.
+PROBE_BUDGET_S = 10.0
+
+
+@dataclass(frozen=True)
+class ToolHealth:
+    """What is known about one tool, and how it came to be known.
+
+    ``status`` is deliberately not a boolean, because "on PATH" and "confirmed
+    working" are different claims and conflating them is the bug this exists to
+    fix:
+
+    ``working``      executed and responded (or, for a library, imported).
+    ``broken``       executed and failed at startup on every form tried.
+    ``wrong-tool``   something of this name is on PATH, but nothing that
+                     identifies as this tool — an impostor, not an absence.
+    ``unresponsive`` on PATH, ran, produced nothing within the budget. Unknown,
+                     and reported as unknown rather than rounded up to working.
+    ``missing``      nothing of this name anywhere.
+    ``on-path``      found on PATH and *not executed* (``--fast``). This status
+                     asserts nothing about whether it runs.
+    """
+
+    tool: str
+    status: str
+    detail: str = ""
+    version: str = ""
+    binary: str = ""
+    #: True only when the tool declares an identity_marker that was matched.
+    #: Without one, "working" means a binary of that name responded — it does
+    #: not mean it is the right program.
+    identity_verified: bool = False
+
+    @property
+    def ok(self) -> bool:
+        return self.status in {"working", "on-path"}
+
+    @property
+    def confirmed_working(self) -> bool:
+        """Strictly executed and responded. ``on-path`` does not qualify."""
+        return self.status == "working"
+
+
+#: Colour, cursor, and other terminal control sequences. Several of these tools
+#: colour their tracebacks, and pasting raw escape codes into doctor's output
+#: both mangles the alignment and re-colours the terminal mid-line.
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+def _clean(output: str) -> str:
+    return _ANSI.sub("", output)
+
+
+def _decode(stream: Any) -> str:
+    """TimeoutExpired carries bytes even when the call asked for text."""
+    if stream is None:
+        return ""
+    if isinstance(stream, bytes):
+        return stream.decode("utf-8", "replace")
+    return str(stream)
+
+
+def _classify_output(output: str) -> str | None:
+    lowered = output.lower()
+    for signature in _STARTUP_FAILURE:
+        if signature in lowered:
+            return signature
+    return None
+
+
+def _first_informative_line(output: str) -> str:
+    """Best-effort version string, tolerating banners and ANSI noise."""
+    for raw in output.splitlines():
+        line = raw.strip().lstrip("[").replace("INF]", "").strip()
+        if any(character.isdigit() for character in line) and len(line) < 120:
+            return line[:80]
+    for raw in output.splitlines():
+        if raw.strip():
+            return raw.strip()[:80]
+    return ""
+
+
+def _last_line(output: str) -> str:
+    lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
+def _probe_library(spec: Any) -> ToolHealth:
+    """A tool EasyHunt imports rather than executes (bbot) — import it for real.
+
+    ``importlib.util.find_spec`` only proves a directory exists with the right
+    name; it does not run the package's ``__init__``, which is exactly where a
+    broken dependency tree shows up. Import it out-of-process so a tool that
+    blows up cannot take doctor with it.
+    """
+    module = (spec.package or "").replace("-", "_")
+    try:
+        proc = subprocess.run(  # noqa: S603
+            [sys.executable, "-c", f"import {module}"],
+            capture_output=True, text=True, timeout=PROBE_BUDGET_S, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return ToolHealth(spec.name, "broken", f"import {module} did not complete: {exc}")
+    if proc.returncode != 0:
+        return ToolHealth(
+            spec.name, "broken",
+            f"import {module} failed: {_last_line(_clean(proc.stderr or ''))[:120]}",
+        )
+    return ToolHealth(spec.name, "working", "python package (import succeeded)", "python package")
+
+
+def probe_tool(name: str, *, execute: bool = True, budget: float = PROBE_BUDGET_S) -> ToolHealth:
+    """Determine the health of one catalogued tool.
+
+    With ``execute=False`` this degrades to the old PATH-presence check and says
+    so in the status (``on-path``), so a caller that trades truth for speed
+    cannot accidentally report the result as verification.
+    """
+    from easyhunt.tools.common import CATALOG, installed, resolve_binary, verify_identity
+
+    spec = CATALOG.get(name)
+    if spec is None:
+        return ToolHealth(name, "missing", "not in catalog")
+
+    # Identity first. `installed()` folds "impostor on PATH" into "absent", and
+    # those need different words: an absence is fixed by installing, an impostor
+    # by looking at your PATH — and running it would fire the wrong program at a
+    # host (Kali's `medusa` is a credential brute-forcer, not the fuzzer).
+    identity_ok, identity_detail = verify_identity(name)
+    if not identity_ok and identity_detail != "not installed":
+        return ToolHealth(name, "wrong-tool", identity_detail)
+
+    if not installed(name):
+        return ToolHealth(name, "missing", f"not installed — {spec.homepage}")
+
+    binary = resolve_binary(name) if spec.binary else None
+    if binary is None and spec.package:
+        if not execute:
+            return ToolHealth(name, "on-path", "python package present (not imported)")
+        health = _probe_library(spec)
+        return ToolHealth(
+            health.tool, health.status, health.detail, health.version,
+            identity_verified=bool(spec.identity_marker),
+        )
+    if binary is None:
+        return ToolHealth(name, "missing", f"not installed — {spec.homepage}")
+
+    if not execute:
+        return ToolHealth(
+            name, "on-path", "found on PATH; not executed", binary=binary,
+            identity_verified=bool(spec.identity_marker) and identity_ok,
+        )
+
+    marker_verified = bool(spec.identity_marker) and identity_ok
+    deadline = time.monotonic() + budget
+    forms = [spec.version_args, *(f for f in _VERSION_FORMS if f != spec.version_args)]
+    for args in forms:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        timed_out = False
+        try:
+            proc = subprocess.run(  # noqa: S603
+                [binary, *args], capture_output=True, text=True,
+                timeout=remaining, check=False,
+            )
+            output = _clean(proc.stdout + proc.stderr)
+        except subprocess.TimeoutExpired as exc:
+            # A tool that prints a stack trace and *then* hangs is still broken,
+            # and the partial output is the only evidence of why. Discarding it
+            # would downgrade a definite failure to "unknown".
+            timed_out = True
+            output = _clean(_decode(exc.stdout) + _decode(exc.stderr))
+        except OSError:
+            continue
+
+        failure = _classify_output(output)
+        if failure is not None:
+            # Report the tool's own last line, not our matched substring — the
+            # operator needs the actual error to fix it.
+            return ToolHealth(
+                name, "broken",
+                f"runs and fails at startup: {(_last_line(output) or failure)[:140]}",
+                binary=binary, identity_verified=marker_verified,
+            )
+        if timed_out:
+            return ToolHealth(
+                name, "unresponsive",
+                f"{binary} did not exit within {budget:.0f}s — cannot confirm it runs",
+                binary=binary, identity_verified=marker_verified,
+            )
+        if output.strip():
+            return ToolHealth(
+                name, "working", identity_detail, _first_informative_line(output),
+                binary=binary, identity_verified=marker_verified,
+            )
+    return ToolHealth(
+        name, "unresponsive",
+        f"on PATH at {binary} but produced no output to any of "
+        f"{len(forms)} version/help forms within {budget:.0f}s — cannot confirm it runs",
+        binary=binary, identity_verified=marker_verified,
+    )
+
+
+def health_check(
+    names: Iterable[str] | None = None,
+    *,
+    execute: bool = True,
+    workers: int = 32,
+    budget: float = PROBE_BUDGET_S,
+) -> list[ToolHealth]:
+    """Health of every catalogued tool, probed concurrently.
+
+    Concurrency is what makes honesty affordable. Executing every tool in
+    sequence cost ~44s on the reference machine, which is why it was hidden
+    behind an opt-in flag nobody used; the same work fanned out across a thread
+    pool costs ~10s, bounded by the slowest single tool rather than by their sum.
+    These are subprocesses, so the GIL is irrelevant.
+    """
+    from easyhunt.tools.common import CATALOG, resolve_binary, verify_identity
+
+    # Caches are per-process and may predate an install in this same run.
+    resolve_binary.cache_clear()
+    verify_identity.cache_clear()
+
+    selected = sorted(names) if names is not None else sorted(CATALOG)
+    if not selected:
+        return []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        return list(
+            pool.map(lambda n: probe_tool(n, execute=execute, budget=budget), selected)
+        )
 
 
 @dataclass
@@ -157,9 +449,17 @@ class Installer:
     # -- verification ------------------------------------------------------- #
 
     @staticmethod
-    def _verify(tool: str) -> tuple[bool, str]:
-        """Post-install check using the same identity resolution as doctor."""
-        from easyhunt.tools.common import CATALOG, installed, resolve_binary, verify_identity
+    def _verify(tool: str, *, execute: bool = True) -> tuple[bool, str]:
+        """Post-install check using the same probe as ``easyhunt doctor``.
+
+        ``execute=True`` runs the tool. That is the point: an install that
+        reports success and produces something which dies at startup is the
+        failure this whole module exists to catch, and it is invisible to any
+        check that stops at PATH. Planning passes ``execute=False`` — there the
+        question is only "is it already here", and answering it does not justify
+        running eighty binaries.
+        """
+        from easyhunt.tools.common import CATALOG, resolve_binary, verify_identity
 
         # Caches are per-process and now stale.
         resolve_binary.cache_clear()
@@ -168,9 +468,10 @@ class Installer:
         if tool not in CATALOG:
             # Not a catalogued tool (massdns, chrome) — a binary on PATH will do.
             return (shutil.which(tool) is not None, "present on PATH")
-        if not installed(tool):
+        health = probe_tool(tool, execute=execute)
+        if health.status == "missing":
             return False, "not detected after install"
-        return verify_identity(tool)
+        return health.ok, health.detail or health.status
 
     # -- planning ----------------------------------------------------------- #
 
@@ -181,7 +482,7 @@ class Installer:
         plan: dict[str, list[str]] = {"install": [], "already": [], "blocked": []}
 
         for recipe in ordered:
-            present, _ = self._verify(recipe.tool)
+            present, _ = self._verify(recipe.tool, execute=False)
             if present:
                 plan["already"].append(recipe.tool)
             elif recipe.method != "manual" and runtimes.get(self._runtime_for(recipe)) is None:
@@ -276,7 +577,10 @@ class Installer:
         import time
 
         if not force:
-            present, detail = self._verify(recipe.tool)
+            # Cheap pre-check: only deciding whether to skip. The expensive,
+            # executing check runs after the install, where it can catch a
+            # success that produced nothing usable.
+            present, detail = self._verify(recipe.tool, execute=False)
             if present:
                 return self.report.add(StepResult(recipe.tool, "already", detail))
 
@@ -578,26 +882,35 @@ command -v {recipe.tool} >/dev/null
     # -- status ------------------------------------------------------------- #
 
     @staticmethod
-    def status() -> dict[str, Any]:
-        """What is present, missing, or broken right now."""
-        from easyhunt.tools.common import CATALOG, installed, resolve_binary, verify_identity
+    def status(*, execute: bool = True) -> dict[str, Any]:
+        """What is present, missing, or broken right now.
 
-        resolve_binary.cache_clear()
-        verify_identity.cache_clear()
+        ``working`` means *executed and responded*. It used to mean "resolved on
+        PATH", which is how four tools that die at import were being counted
+        towards a coverage percentage the operator was trusting.
+        """
+        from easyhunt.tools.common import CATALOG
 
-        working, missing, broken = [], [], []
-        for name in sorted(CATALOG):
-            if installed(name):
-                ok, detail = verify_identity(name)
-                (working if ok else broken).append(name if ok else f"{name}: {detail}")
-            else:
-                missing.append(name)
+        health = health_check(execute=execute)
+        by_status: dict[str, list[ToolHealth]] = {}
+        for item in health:
+            by_status.setdefault(item.status, []).append(item)
+
+        working = [h.tool for h in health if h.ok]
+        missing = [h.tool for h in by_status.get("missing", [])]
+        broken = [
+            f"{h.tool}: {h.detail}"
+            for h in (*by_status.get("broken", ()), *by_status.get("wrong-tool", ()))
+        ]
+        unverified = [f"{h.tool}: {h.detail}" for h in by_status.get("unresponsive", ())]
 
         core = [r.tool for r in RECIPES.values() if r.core]
         return {
             "working": working,
             "missing": missing,
             "broken": broken,
+            "unverified": unverified,
+            "executed": execute,
             "total": len(CATALOG),
             "core_missing": [t for t in core if t in missing],
             "coverage": round(100 * len(working) / max(1, len(CATALOG))),

@@ -188,6 +188,35 @@ class ToolRun:
         }
 
 
+def _available_in_sandbox(name: str) -> bool:
+    """True when the tool has a working container home, even if the host lacks it.
+
+    Deliberately conservative: an image mapping alone is not enough, because the
+    Dockerfile's per-tool installs are failure-tolerant and produce an image that
+    is missing roughly 29 of the tools it tried to install. ``binary_in_image``
+    actually probes, so a mapping to an image without the binary reads as absent
+    rather than launching a container that exits 127.
+    """
+    from easyhunt.control_plane.context import current_engagement
+
+    engagement = current_engagement()
+    sandbox = getattr(engagement, "sandbox", None)
+    if sandbox is None or not sandbox.runtime_available():
+        return False
+    try:
+        image = sandbox.image_for(name)
+        if not image:
+            return False
+        spec = CATALOG.get(name)
+        binary = (spec.binary if spec else None) or name
+        # Signature is (image, binary) — passing them the other way round reports
+        # every tool as absent, which is indistinguishable from the bug this
+        # function exists to fix.
+        return sandbox.binary_in_image(image, binary)
+    except Exception:  # noqa: BLE001 — a probe failure must not mask the tool
+        return False
+
+
 async def run_one(
     name: str,
     argv: list[str],
@@ -201,7 +230,13 @@ async def run_one(
     spec = CATALOG.get(name)
     if spec is None:
         return ToolRun(tool=name, ran=False, error="not in catalog")
-    if not installed(name):
+    # Host PATH is not the only home a tool can have. Ten tools live only inside
+    # easyhunt:latest — smuggler, sstimap, nosqli, jwt_tool, testssl, websocat,
+    # graphql-cop, corscanner, ssrfmap, medusa — and gating solely on the host
+    # left every one of them reporting "not installed" while sitting in a
+    # container the sandbox was ready to launch. Capability present, silently
+    # unused: the same defect this file keeps producing.
+    if not installed(name) and not _available_in_sandbox(name):
         return ToolRun(tool=name, ran=False, error="not installed")
 
     try:

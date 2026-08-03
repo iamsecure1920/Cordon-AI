@@ -180,23 +180,28 @@ class TestWildcardDns:
 
         assert not _looks_like_wildcard_noise(host, "example.com")
 
-    async def test_wildcard_requires_every_probe_to_answer(self, monkeypatch) -> None:
+    async def test_wildcard_requires_every_probe_to_answer(
+        self, engagement, monkeypatch
+    ) -> None:
         # One stray answer is a resolver quirk, not a wildcard. Declaring a
         # wildcard wrongly would suppress real findings.
+        #
+        # The probe runs dig through `run_one` and takes a limiter token per
+        # query; it used to call `asyncio.create_subprocess_exec` directly, which
+        # meant three DNS queries the rate limiter never saw. The stub moved with
+        # it — the assertion below is unchanged.
         import easyhunt.tools.recon as recon
+        from easyhunt.tools.common import ToolRun
 
         calls = {"n": 0}
 
-        class FakeProc:
-            async def communicate(self):
-                calls["n"] += 1
-                return (b"1.2.3.4\n" if calls["n"] == 1 else b""), b""
+        async def fake_run_one(name, argv, **kwargs):
+            calls["n"] += 1
+            return ToolRun(
+                tool=name, ran=True, values=["1.2.3.4"] if calls["n"] == 1 else []
+            )
 
-        async def fake_exec(*a, **k):
-            return FakeProc()
-
-        # recon imports asyncio inside the function, so patch it at the source.
-        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
+        monkeypatch.setattr(recon, "run_one", fake_run_one)
         result = await recon._detect_wildcard("example.com", probes=3)
         assert result["wildcard"] is False
         assert result["answered"] < result["probes"]

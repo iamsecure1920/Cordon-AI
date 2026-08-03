@@ -115,13 +115,96 @@ auth:
 sandbox:
   # none → run binaries on the host. docker → one container per tool invocation.
   mode: docker
-  # Fall back to host execution when the image is missing rather than failing.
+
+  # Fall back to host execution when a tool cannot be containerised.
+  #
+  # true keeps the engagement running on a machine with a partial image; false
+  # makes "this tool has no container" a hard ToolUnavailable that the wrapper
+  # reports as `ran: false`. Either way the fallback is never silent: each one is
+  # logged at WARNING and written to the audit log as a `sandbox_fallback`
+  # event, visible through the `audit_tail` MCP tool.
   fallback_to_host: true
+
+  # The multi-tool image this repo builds (`docker build -t easyhunt .`) — ~40
+  # working binaries in one 2.7 GB layer. Any tool without its own entry in
+  # `images:` below runs here instead of on the host.
+  #
+  # Why one shared image rather than 49 per-tool entries:
+  #   * Most of these tools publish no image at all (smuggler, sstimap, nosqli,
+  #     jwt_tool, graphql-cop, websocat, netsanitizer …). A per-tool mapping for
+  #     them would be a mapping to something that does not exist.
+  #   * The Dockerfile is already the single source of truth for what EasyHunt
+  #     considers a working install. A parallel 49-line list in config drifts
+  #     from it the first time a build step fails.
+  #   * It is one pull instead of 49, and it is the image `easyhunt doctor`
+  #     already knows how to verify.
+  # What it costs, honestly: 2.7 GB resident, every tool updated together on a
+  # rebuild rather than independently, and a wider blast radius inside any one
+  # container. Where a small, independently-updated upstream image exists, the
+  # `images:` entry below still wins — that is the point of keeping both.
+  #
+  # Set to "" to disable and go back to mapped-tools-only.
+  default_image: easyhunt:latest
+
+  # Before using default_image for a tool, check the binary is actually
+  # executable inside it (one cached `docker run … command -v` per tool, run as
+  # the same user with the same read-only root as the real invocation).
+  # A Docker build that logged `!!! FAILED: aderyn` still produces an image;
+  # without this check that tool launches a container that exits 127, which is
+  # much harder to read than an honest host fallback.
+  verify_image_binary: true
+
   default_network: bridge
+
+  # Per-tool network mode. `none` for anything that only reads local files —
+  # a static analyser with a route to the internet is reach it never needs, and
+  # it is the cheapest place to deny an analyser that parses attacker-supplied
+  # source any way to phone home.
+  #
+  # Deliberately NOT listed: forge and medusa (fork-mode PoCs need an RPC
+  # endpoint), retire (fetches its advisory database), kingfisher (the gated
+  # secret_validate path calls third-party APIs by design), git (clones).
+  # Silently cutting the network from those would look like a clean result.
+  networks:
+    slither: none          # Solidity static analysis; solc ships in the image
+    aderyn: none           # Rust static analyser, purely local
+    gitleaks: none         # regex over local files; does not validate secrets
+    noseyparker: none      # local scan + local datastore
+    jsluice: none          # parses JS files already saved to the workspace
+
+  # Read-only host directories a tool needs inside its container. The image
+  # ships a binary; it does not ship the operator's caches and keys.
+  #
+  # slither is the case that proves the rule: the image's `solc` is a solc-select
+  # shim with no compiler behind it, so on `network: none` it dies trying to
+  # download one and reports zero findings. That is UNANALYSED reading as clean.
+  # Mounting the host's already-populated ~/.solc-select fixes it without giving
+  # a Solidity parser a route to the internet.
+  #
+  # A host path that does not exist is skipped and logged, never mounted —
+  # Docker would create an empty directory that looks configured and is not.
+  # Entries are HOST:CONTAINER[:MODE], MODE defaulting to ro.
+  mounts:
+    slither:
+      - ~/.solc-select:/root/.solc-select:ro
+
+  # Writable scratch carved out of the read-only root, per tool. Used when there
+  # is no host directory worth mounting and the tool merely needs somewhere to
+  # write. Skipped for any path a mount above already owns.
+  tmpfs:
+    slither: ["/root/.solc-select"]   # fallback when the host has no solc-select
+    sqlmap: ["/root/.local/share/sqlmap"]
+    wapiti: ["/root/.wapiti"]
+    noseyparker: ["/root/.cache"]
+
   memory: 2g
   cpus: "2.0"
   read_only_rootfs: true
   drop_all_capabilities: true
+
+  # Single-tool images: the ENTRYPOINT is the binary, so only arguments are
+  # appended. These take priority over default_image — smaller, and updated
+  # upstream independently of an EasyHunt rebuild.
   images:
     nuclei: projectdiscovery/nuclei:latest
     subfinder: projectdiscovery/subfinder:latest

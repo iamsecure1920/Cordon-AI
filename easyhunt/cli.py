@@ -11,9 +11,11 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -27,39 +29,122 @@ def _color(enabled: bool) -> tuple[str, str, str, str, str]:
     return (GREEN, YELLOW, RED, DIM, RESET) if enabled else ("", "", "", "", "")
 
 
-def _tool_version(spec: Any) -> str:
-    """Best-effort version string. Tools disagree wildly on how to report one."""
-    if not spec.binary:
-        return "python package"
-    binary = shutil.which(spec.binary)
-    if not binary:
-        return ""
-    for args in (spec.version_args, ["--version"], ["-version"], ["version"], ["-V"]):
-        try:
-            proc = subprocess.run(  # noqa: S603
-                [binary, *args], capture_output=True, text=True, timeout=8, check=False
+def _terse_version(version: str) -> str:
+    """A short version string, or a plain statement that the tool ran.
+
+    Never invent a version: if what the tool printed is not recognisably one,
+    say "responds" rather than passing off the first line of its help text as a
+    release number.
+    """
+    if not version:
+        return "responds"
+    if version == "python package":
+        return version
+    if len(version) <= 34 and re.search(r"\d+\.\d+", version):
+        return version
+    return "responds"
+
+
+def _print_tool_health(args: argparse.Namespace, palette: tuple[str, ...]) -> dict[str, list[str]]:
+    """Execute every catalogued tool and print what each one actually did.
+
+    The old version asked ``shutil.which()`` and printed "installed", which is a
+    claim about a filename, not about a program. Four tools on the reference
+    machine passed that check and died at import on every invocation; two more
+    (nikto, testssl) shipped 100% non-functional for days behind the same tick.
+    Execution is now the default and ``--fast`` is the opt-out, rather than the
+    other way round — an honest check nobody runs protects nobody.
+    """
+    green, yellow, red, dim, reset = palette
+
+    from easyhunt.install.installer import health_check
+    from easyhunt.tools.common import CATALOG
+
+    execute = not args.fast
+    started = time.monotonic()
+    report = health_check(execute=execute)
+    elapsed = time.monotonic() - started
+
+    print("External tools")
+    buckets: dict[str, list[str]] = {
+        "working": [], "broken": [], "wrong-tool": [],
+        "unresponsive": [], "missing": [], "on-path": [],
+    }
+    unmarked = 0
+    for health in report:
+        buckets.setdefault(health.status, []).append(health.tool)
+        license_name = CATALOG[health.tool].license if health.tool in CATALOG else "unknown"
+        if health.ok and not health.identity_verified:
+            unmarked += 1
+
+        if health.status == "working":
+            # The version was obtained anyway, so show it — but only when it
+            # actually looks like one. Half these tools answer --version with a
+            # usage banner, and a column of truncated help text is worse than a
+            # plain statement that the thing ran.
+            note = health.version if args.versions else _terse_version(health.version)
+            print(f"  {green}✓{reset} {health.tool:18} {dim}{note}{reset}  {dim}[{license_name}]{reset}")
+        elif health.status == "on-path":
+            print(
+                f"  {yellow}?{reset} {health.tool:18} {yellow}on PATH, NOT VERIFIED{reset}"
+                f"  {dim}[{license_name}]{reset}"
             )
-        except (OSError, subprocess.TimeoutExpired):
-            continue
-        output = (proc.stdout + proc.stderr).strip()
-        if not output:
-            continue
-        for line in output.splitlines():
-            line = line.strip().lstrip("[").replace("INF]", "").strip()
-            if any(ch.isdigit() for ch in line) and len(line) < 120:
-                return line[:80]
-        return output.splitlines()[0][:80]
-    return "installed"
+        elif health.status == "broken":
+            print(f"  {red}✗{reset} {health.tool:18} {red}BROKEN{reset} {dim}— {health.detail}{reset}")
+        elif health.status == "wrong-tool":
+            print(f"  {red}✗{reset} {health.tool:18} {red}WRONG TOOL{reset} {dim}— {health.detail}{reset}")
+        elif health.status == "unresponsive":
+            print(
+                f"  {yellow}?{reset} {health.tool:18} {yellow}UNVERIFIED{reset}"
+                f" {dim}— {health.detail}{reset}"
+            )
+        else:
+            print(f"  {red}✗{reset} {health.tool:18} {dim}{health.detail}{reset}")
+
+    total = len(report)
+    if execute:
+        print(
+            f"\n  {green}{len(buckets['working'])} working{reset} "
+            f"{dim}(executed, not just found on PATH){reset} / {total} catalogued"
+        )
+    else:
+        print(
+            f"\n  {yellow}{len(buckets['on-path'])} on PATH — NOT VERIFIED{reset} / "
+            f"{total} catalogued"
+        )
+        print(f"    {dim}--fast skipped execution. Nothing here is a claim that a tool works.{reset}")
+    for label, colour, key in (
+        ("broken (runs, fails at startup)", red, "broken"),
+        ("wrong tool on PATH", red, "wrong-tool"),
+        ("unverified (no response)", yellow, "unresponsive"),
+        ("not installed", dim, "missing"),
+    ):
+        if buckets[key]:
+            print(f"  {colour}{len(buckets[key])} {label}{reset}: {dim}{', '.join(buckets[key])}{reset}")
+    if buckets["wrong-tool"]:
+        print(
+            f"    {dim}A different program of the same name is on your PATH. Those "
+            f"return nothing rather than erroring.{reset}"
+        )
+    if execute and unmarked:
+        # The residual, and the reason `identity_marker` matters: running a
+        # binary proves *a* program of that name responds, not that it is ours.
+        print(
+            f"    {dim}{unmarked} of those declare no identity_marker — execution proves "
+            f"a binary of that name responds, not that it is the right program.{reset}"
+        )
+    print(f"    {dim}checked in {elapsed:.1f}s{reset}\n")
+    return buckets
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Report what is installed, what is configured, and what is missing."""
-    green, yellow, red, dim, reset = _color(sys.stdout.isatty() and not args.no_color)
+    palette = _color(sys.stdout.isatty() and not args.no_color)
+    green, yellow, red, dim, reset = palette
 
     from easyhunt.config import Config, find_scope
     from easyhunt.mcp_server import load_capabilities
     from easyhunt.tools.base import REGISTRY
-    from easyhunt.tools.common import CATALOG, installed, verify_identity
 
     print(f"EasyHunt AI {__version__}\n")
 
@@ -72,35 +157,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"  {mark} {name}{detail}")
     print(f"  {len(REGISTRY)} MCP tools registered\n")
 
-    print("External tools")
-    present: list[str] = []
-    missing: list[str] = []
-    wrong: list[str] = []
-    for name, spec in sorted(CATALOG.items()):
-        if installed(name):
-            identity_ok, detail = verify_identity(name)
-            if not identity_ok:
-                # A name collision on PATH is worse than a missing tool: the
-                # wrong binary returns empty results and no error.
-                wrong.append(name)
-                print(f"  {red}✗{reset} {name:18} {red}WRONG TOOL{reset} {dim}— {detail}{reset}")
-                continue
-            present.append(name)
-            version = _tool_version(spec) if args.versions else "installed"
-            print(f"  {green}✓{reset} {name:18} {dim}{version}{reset}  {dim}[{spec.license}]{reset}")
-        else:
-            missing.append(name)
-    for name in missing:
-        spec = CATALOG[name]
-        print(f"  {red}✗{reset} {name:18} {dim}not installed — {spec.homepage}{reset}")
-    print(f"\n  {len(present)}/{len(CATALOG)} installed")
-    if wrong:
-        print(
-            f"  {red}{len(wrong)} name collision(s): {', '.join(wrong)}{reset}\n"
-            f"    {dim}A different program of the same name is earlier on your PATH. "
-            f"Those tools will return nothing rather than erroring.{reset}"
-        )
-    print()
+    buckets = _print_tool_health(args, palette)
+    missing = buckets["missing"]
+    unhealthy = buckets["broken"] + buckets["wrong-tool"]
 
     print("Configuration")
     config = Config.load(args.config)
@@ -228,14 +287,22 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             print(f"  {dim}nothing to repair{reset}")
         if missing:
             print(f"  {dim}{len(missing)} tool(s) absent — run `easyhunt install` to add them{reset}")
-    elif missing or wrong:
+    elif missing or unhealthy:
         print(f"\n  {dim}Run `easyhunt install` to add missing tools, "
               f"or `easyhunt doctor --fix` to repair what is already here.{reset}")
 
-    blocking = scope_path is None
     print()
-    if blocking:
+    if scope_path is None:
         print(f"{yellow}Doctor finished with warnings. Create a scope.yaml before running.{reset}")
+        return 1
+    if unhealthy:
+        # A tool that resolves and then fails on every invocation is worse than
+        # an absent one: absence degrades a wrapper honestly, whereas this looks
+        # like a clean run that found nothing. Exit non-zero so it is not missed.
+        print(
+            f"{red}Doctor finished with {len(unhealthy)} tool(s) that resolve but do not "
+            f"work:{reset} {', '.join(unhealthy)}"
+        )
         return 1
     print(f"{green}Doctor finished.{reset} {len(missing)} optional tool(s) not installed.")
     return 0
@@ -430,7 +497,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doctor.add_argument("--config")
     doctor.add_argument("--scope")
-    doctor.add_argument("--versions", action="store_true", help="query each tool's version")
+    # Every tool is executed by default now, so --versions no longer changes
+    # *what* is checked — only how much of the answer is printed. Kept because
+    # it is in the docs and in muscle memory, and because the version string is
+    # genuinely useful noise to suppress by default.
+    doctor.add_argument(
+        "--versions", action="store_true",
+        help="print each tool's version string (tools are executed either way)",
+    )
+    doctor.add_argument(
+        "--fast", action="store_true",
+        help="skip execution: report PATH presence only, clearly marked as unverified",
+    )
     doctor.add_argument("--probe", action="store_true", help="verify OpenRouter model slugs")
     doctor.add_argument(
         "--fix", action="store_true",
