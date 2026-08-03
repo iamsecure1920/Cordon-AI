@@ -266,18 +266,44 @@ RUN git clone --depth 1 https://github.com/urbanadventurer/WhatWeb.git /opt/what
 # Installed one per RUN. `a && b && c || true` means a failure in the first
 # silently skips the rest while the layer still succeeds — wapiti3 and
 # corscanner would have been quietly absent.
+# Four tools that Python 3.13 broke, restored here on 3.12. All four were absent
+# from this image entirely and only existed on the host, where 3.13 removed
+# `pkg_resources` (setuptools) and `nntplib` — so dirsearch (content discovery)
+# and dnsreaper (takeover detection) were dead capabilities that `doctor`
+# reported as merely "broken" without saying the image never had them.
+#
+# dirsearch: PyPI is pinned at 0.4.3, which imports pkg_resources. Note that
+# `--with setuptools` does NOT help — setuptools 81+ dropped pkg_resources, so
+# the newest one satisfies the flag and still fails the import. Master is 0.5.0
+# and does not need it.
+RUN uv tool install --python 3.12 "git+https://github.com/maurosoria/dirsearch.git" \
+    || echo "!!! FAILED: dirsearch"
+# paramspider: shipped as a loose script, so running paramspider/main.py directly
+# gives "attempted relative import with no known parent package". Installed as a
+# package, its console script resolves the imports correctly.
+RUN uv tool install --python 3.12 "git+https://github.com/devanshbatham/paramspider" \
+    || echo "!!! FAILED: paramspider"
+# deepteam needs nntplib, removed in 3.13 and present in 3.12. Nothing else.
+RUN uv tool install --python 3.12 deepteam || echo "!!! FAILED: deepteam"
+
 RUN uv tool install --python 3.12 wapiti3 || echo "!!! FAILED: wapiti3"
 RUN uv tool install --python 3.12 corscanner || echo "!!! FAILED: corscanner"
 
 # Python tools that do not publish usable wheels: cloned, with their own venv so
 # nothing lands in EasyHunt's interpreter.
+#
+# Every venv gets setuptools<81 pinned into it. dnsreaper pulls google-cloud-dns,
+# which imports pkg_resources at module scope; setuptools 81 dropped it. The pin
+# is scoped to these venvs and shared with nothing else, which is the whole
+# reason each tool gets its own.
 RUN for repo in \
       "https://github.com/swisskyrepo/SSRFmap.git|ssrfmap|ssrfmap.py" \
       "https://github.com/vladko312/SSTImap.git|sstimap|sstimap.py" \
       "https://github.com/ticarpi/jwt_tool.git|jwt_tool|jwt_tool.py" \
       "https://github.com/dolevf/graphql-cop.git|graphql-cop|graphql-cop.py" \
       "https://github.com/defparam/smuggler.git|smuggler|smuggler.py" \
-      "https://github.com/commixproject/commix.git|commix|commix.py" ; do \
+      "https://github.com/commixproject/commix.git|commix|commix.py" \
+      "https://github.com/punk-security/dnsReaper.git|dnsreaper|main.py" ; do \
       url="${repo%%|*}"; rest="${repo#*|}"; name="${rest%%|*}"; entry="${rest#*|}"; \
       git clone --depth 1 "$url" "/opt/$name" 2>/dev/null || continue; \
       rm -rf "/opt/$name/.git"; \
@@ -285,6 +311,7 @@ RUN for repo in \
       if [ -f "/opt/$name/requirements.txt" ]; then \
         VIRTUAL_ENV="/opt/$name/.venv" uv pip install -q -r "/opt/$name/requirements.txt" || true; \
       fi; \
+      VIRTUAL_ENV="/opt/$name/.venv" uv pip install -q "setuptools<81" >/dev/null 2>&1 || true; \
       printf '#!/bin/sh\nexec /opt/%s/.venv/bin/python /opt/%s/%s "$@"\n' "$name" "$name" "$entry" \
         > "/usr/local/bin/$name"; \
       chmod +x "/usr/local/bin/$name"; \
@@ -296,6 +323,19 @@ RUN ARCH=$(dpkg --print-architecture) && \
       curl -sL "https://github.com/vi/websocat/releases/download/v1.14.1/websocat.x86_64-unknown-linux-musl" \
         -o /usr/local/bin/websocat && chmod +x /usr/local/bin/websocat; \
     fi
+
+# uv installs tool binaries under /root/.local/bin, and the sandbox runs
+# containers as the *host* user's uid:gid — so on any machine where the operator
+# is not root, /root is untraversable and roughly a dozen tools (dirsearch,
+# paramspider, deepteam, semgrep, sqlmap, arjun, wafw00f, slither, wapiti,
+# corscanner, commix) read as absent. They then fall back to the host, where
+# they are usually not installed at all, and the surface reports clean.
+#
+# Making the path traversable is the fix. Nothing here is secret: it is a tool
+# image, every file in it came from a public package index, and the container
+# still runs read-only with all capabilities dropped.
+RUN chmod -R a+rX /root/.local 2>/dev/null || true; \
+    chmod a+rx /root 2>/dev/null || true
 
 WORKDIR /opt/easyhunt
 COPY pyproject.toml README.md ./
