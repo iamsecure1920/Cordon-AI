@@ -38,6 +38,16 @@ SLITHER = register_spec(
         name="slither", binary="slither", license="AGPL-3.0",
         homepage="https://github.com/crytic/slither",
         version_args=["--version"],
+        # PyPI ships an unrelated "slither": a PyGame module that brings
+        # Scratch-like features to Python. `pip install slither` lands a
+        # children's programming toy on PATH, and this spec would then hand it a
+        # Solidity contract and report no findings.
+        #
+        # The marker cannot come from --version, which prints a bare "0.11.6"
+        # and identifies nothing. `_identifies_as` also tries -h, whose usage
+        # text carries the crytic-compile URL — crytic is Trail of Bits' org and
+        # no toy prints it.
+        identity_marker="crytic",
         arg_policy=ArgPolicy(
             tool="slither",
             allowed_flags={
@@ -85,6 +95,16 @@ FORGE = register_spec(
         name="forge", binary="forge", license="Apache-2.0 OR MIT",
         homepage="https://github.com/foundry-rs/foundry",
         version_args=["--version"],
+        # The most-shadowed name in this catalogue: Debian's `snap` package ships
+        # /usr/bin/forge, PyPI's "forge" is a Django scaffolding tool, and
+        # Atlassian's @forge/cli takes the same command. Three impostors, and
+        # this spec's denied_flags exist to stop `forge script`/`create` sending
+        # real transactions — a guard that means nothing if the binary is not
+        # Foundry in the first place.
+        #
+        # --version prints "forge Version: 1.7.1", which a Django tool could
+        # plausibly match. -h prints the tagline instead.
+        identity_marker="deploy solidity contracts",
         arg_policy=ArgPolicy(
             tool="forge",
             allowed_flags={

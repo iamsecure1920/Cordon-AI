@@ -52,6 +52,10 @@ KINGFISHER = register_spec(
     ToolSpec(
         name="kingfisher", binary="kingfisher", license="Apache-2.0",
         homepage="https://github.com/mongodb/kingfisher", version_args=["--version"],
+        # PyPI's "kingfisher" downloads biological FASTA/Q read data. Both print
+        # "kingfisher <version>", so the tool name is not a usable marker; -h
+        # carries the tagline and that is what this matches.
+        identity_marker="detect and validate secrets",
         arg_policy=ArgPolicy(
             tool="kingfisher",
             allowed_flags={

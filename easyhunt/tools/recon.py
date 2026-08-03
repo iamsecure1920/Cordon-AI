@@ -112,6 +112,10 @@ AMASS = register_spec(
     ToolSpec(
         name="amass", binary="amass", license="Apache-2.0",
         homepage="https://github.com/owasp-amass/amass", version_args=["-version"],
+        # PyPI's "amass" vendors libraries from cdnjs. -version prints a bare
+        # "v5.1.1" and identifies nothing, so the marker comes from -h, which
+        # prints "OWASP Amass Project" above the banner.
+        identity_marker="owasp amass",
         arg_policy=ArgPolicy(
             tool="amass",
             allowed_flags={"-d", "-asn", "-org", "-passive", "-silent", "-timeout", "-json", "-o"},

@@ -24,6 +24,7 @@ from easyhunt.engines.nuclei_engine import SPEC as NUCLEI_SPEC
 from easyhunt.errors import SanitizeError, ToolUnavailable
 from easyhunt.knowledge.findings import Severity, Status
 from easyhunt.tools.base import REGISTRY
+from easyhunt.tools.common import resolve_binary, verify_identity
 
 NUCLEI_RESULT = {
     "template-id": "exposed-git-config",
@@ -62,14 +63,29 @@ def fake_nuclei(tmp_path: Path, monkeypatch) -> Path:
         + "[INF] banner noise that is not JSON\n"
     )
     script = bin_dir / "nuclei"
+    # The `-version` branch matters: nuclei declares identity_marker="nuclei
+    # engine" because PyPI publishes an unrelated "nuclei" package, and
+    # resolve_binary refuses any binary of that name which cannot identify
+    # itself. A stub that does not answer -version the way the real tool does is
+    # exactly the impostor the marker exists to reject, so without this the
+    # wrapper correctly declines to run it and the argv file is never written.
     script.write_text(
         "#!/bin/sh\n"
+        'case "$*" in\n'
+        '  *-version*) echo "[INF] Nuclei Engine Version: v3.7.1"; exit 0 ;;\n'
+        "esac\n"
         f'printf "%s\\n" "$*" > "{tmp_path}/nuclei-argv.txt"\n'
         f'cat "{payload}"\n'
         "exit 0\n"
     )
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    # resolve_binary is lru_cached and guarded_run only consults it for specs
+    # that declare an identity_marker. nuclei gained one, so a path cached
+    # earlier in the session — from the real PATH — would be returned here and
+    # this stub would never run. Same clearing the resolution tests already do.
+    resolve_binary.cache_clear()
+    verify_identity.cache_clear()
     return tmp_path
 
 

@@ -46,6 +46,12 @@ SPEC = register_spec(
         license="MIT",
         homepage="https://github.com/projectdiscovery/nuclei",
         version_args=["-version"],
+        # PyPI's "nuclei" is a 2018 Kaggle Data Science Bowl package. This is the
+        # most-used tool in the project and the one whose silent substitution
+        # would be least visible: the wrong binary exits, prints nothing this
+        # parser understands, and the run reports zero findings.
+        # Verified: -version prints "Nuclei Engine Version: v3.7.1".
+        identity_marker="nuclei engine",
         user_agent_flag="-H",
         arg_policy=ArgPolicy(
             tool="nuclei",

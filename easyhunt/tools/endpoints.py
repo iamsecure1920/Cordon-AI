@@ -36,6 +36,10 @@ KATANA = register_spec(
     ToolSpec(
         name="katana", binary="katana", image="projectdiscovery/katana:latest", license="MIT",
         homepage="https://github.com/projectdiscovery/katana", version_args=["-version"],
+        # PyPI's "katana" is a bioinformatics tool that soft-clips sequencing
+        # reads based on primer locations. Verified: -version prints the banner
+        # ending "projectdiscovery.io".
+        identity_marker="projectdiscovery",
         user_agent_flag="-H",
         arg_policy=ArgPolicy(
             tool="katana",
