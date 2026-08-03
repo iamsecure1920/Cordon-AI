@@ -331,7 +331,14 @@ RUN uv tool install --python 3.12 deepteam || echo "!!! FAILED: deepteam"
 # waymore in particular is called by `endpoint_discovery` on every archive
 # sweep, so it was making requests from outside the sandbox on a normal run.
 RUN uv tool install --python 3.12 waymore || echo "!!! FAILED: waymore"
-RUN uv tool install --python 3.12 garak || echo "!!! FAILED: garak"
+# garak is NOT installed here on purpose. It pulls PyTorch and the transformers
+# stack: **5.53 GB**, a third of the image, for an LLM red-team tool that most
+# engagements never invoke. It runs on the host, where it already worked, and
+# `easyhunt doctor` reports it as host-resident rather than pretending otherwise.
+#
+# This is the one place the sandbox-everything rule loses on cost. Recorded here
+# rather than left as an unexplained absence, because an unexplained absence is
+# how a tool ends up quietly reinstalled by the next person.
 # theHarvester from git, not PyPI: the published wheel fails with "Failed to
 # install entrypoints for theharvester" and the repo installs cleanly.
 RUN uv tool install --python 3.12 "git+https://github.com/laramies/theHarvester" \
@@ -434,8 +441,17 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # Making the path traversable is the fix. Nothing here is secret: it is a tool
 # image, every file in it came from a public package index, and the container
 # still runs read-only with all capabilities dropped.
-RUN chmod -R a+rX /root/.local 2>/dev/null || true; \
-    chmod a+rx /root 2>/dev/null || true
+# Directories only, and only the chain that has to be traversed. `chmod -R` over
+# /root/.local cost **6.64 GB** in a single layer: overlay2 copies up every file
+# whose metadata changes, so recursing over the tool store duplicated the whole
+# thing into a new layer. The image went from 2.7 GB to 16.7 GB and the next
+# build died with "no space left on device".
+#
+# Traversal needs +x on directories. The files inside are already 0644/0755 from
+# uv and npm, so nothing needs rewriting — and `find -type d` touches a few
+# hundred inodes instead of hundreds of thousands.
+RUN chmod a+rx /root 2>/dev/null || true; \
+    find /root/.local -type d -exec chmod a+rx {} + 2>/dev/null || true
 
 WORKDIR /opt/easyhunt
 COPY pyproject.toml README.md ./

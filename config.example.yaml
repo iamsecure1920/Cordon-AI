@@ -247,7 +247,6 @@ sandbox:
     # tmpfs on that directory hides about a dozen tools at once and they read as
     # "not present in the image". A scratch mount that makes the tool vanish is
     # a worse failure than the one it was fixing.
-    garak: ["/root/.config/garak", "/root/.local/share/garak", "/root/.cache/garak"]
     theHarvester: ["/root/.theHarvester", "/root/.local/share/theHarvester"]
 
   memory: 2g
