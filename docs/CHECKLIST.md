@@ -49,21 +49,73 @@ answers were about a file named `sstimap`; only one of them was the program.
       (binary at `/app/dalfox`, nothing on PATH — every sandboxed run exited
       127, and `xss_validate` is auto-approved), `semgrep` crashing on a
       read-only `/root/.semgrep`
-- [ ] `identity_marker` still missing on 64 of 81 specs. Execution proves *a*
+- [ ] `identity_marker` still missing on 67 of 81 specs. Execution proves *a*
       binary of that name responds, not that it is the right program
 
-## 3. Carried over, not started
+## 3. Open, verified against the code today
 
-- [ ] 29 tools the Dockerfile attempts are not in `easyhunt:latest`
-      (failure-tolerant installs) — they silently fall back to the host
-- [ ] `ssrfmap` is structurally ungovernable: ~8,282 requests via its own thread
-      pool, no rate flag. Either wrap it or drop it; do not leave it looking
-      governed
-- [ ] Rate-limit flags still hardcoded past the scope ceiling: `arjun`
-      (`--rate-limit` not passed at all), `gau --threads 5`, `waymore -p 5`,
-      `sqlmap --threads 2 --delay 1`
-- [ ] `subdominator` needs `-c` in its allowlist in `extra_specs.py`
-- [ ] amass, jsluice, subzy, aderyn absent from the image (upstream build
-      failures) — recorded, not hidden
+Everything below was re-checked on 2026-08-03; the numbers are measured, not
+remembered. Ordered by what it costs to leave alone.
+
+### 3a. Four tools broken by Python 3.13  — highest value, cheapest fix
+`dirsearch`, `dnsreaper`, `paramspider` (`pkg_resources`, removed in 3.12+ when
+setuptools is absent) and `deepteam` (`nntplib`, removed in 3.13). All four are
+**absent from `easyhunt:latest` entirely**, so they only exist on the host, where
+Python 3.13 broke them. The image runs Python 3.12 — which still has `nntplib` —
+so adding them there fixes the cause rather than patching the host.
+Costs coverage on every run: dirsearch is content discovery, dnsreaper is
+takeover detection.
+
+- [ ] Add all four to the Dockerfile with `setuptools` present
+- [ ] Rebuild, re-run `easyhunt doctor`, record the before/after count
+
+### 3b. 24 tools run on the host, outside the sandbox
+46 of 81 catalogued tools are in `easyhunt:latest`; 48 have a container home once
+the dedicated images are counted. The other 24 fall back to the host and run with
+no read-only root, no dropped capabilities, no memory ceiling:
+
+  aderyn, cloud_enum, cloudfox, findomain, garak, gitdorker, gobuster, jaeles,
+  jsluice, kingfisher, kubescape, linkfinder, noseyparker, retire, s3scanner,
+  secretfinder, shuffledns, subdominator, subjack, subzy, theHarvester, uncover,
+  waymore, xsstrike
+
+The sandbox is the isolation boundary, and a quarter of the toolchain is outside
+it. `fallback_to_host: true` makes that silent by design — each fallback is
+logged, but nobody reads the log.
+
+- [ ] Add the ones that build cleanly to the image
+- [ ] Decide explicitly, in config, which are allowed to run on the host
+
+### 3c. Rate flags that ignore the engagement ceiling
+Verified still hardcoded:
+- `arjun` — `-t 10`, no delay, nothing derived from `scope.rules` (endpoints.py:293)
+- `gau --threads 5` (endpoints.py:193)
+- `waymore -p 5` (endpoints.py:195)
+- `sqlmap --threads 2 --delay 1` (exploitation.py:455)
+- `commix --delay 1` (injection.py:881), `nosqli` likewise (injection.py:1027)
+
+Against a program publishing a low rate these exceed it, in the operator's name,
+with the audit log showing one compliant tool call. Same class as the naabu/dnsx
+breach already fixed — these are the files that fix missed.
+
+- [ ] Source every one from `scope.rules.max_rps` / `max_concurrency`
+
+### 3d. `ssrfmap` is structurally ungovernable
+~8,282 requests through its own thread pool, no rate flag at any price. Measured:
+305s for one `ssrf_probe` call. The saturation guard now stops it producing a
+false finding, but it still cannot be rate-limited.
+- [ ] Either bound it (own image with a network cap) or name it in `risk_notes`
+      so it stops looking governed
+
+### 3e. Smaller, known, documented
+- [ ] `subdominator -c` is not on its allowlist, so takeover detection runs at
+      the tool's own concurrency (already commented in takeover.py:243)
+- [ ] `identity_marker` on 67 of 81 specs — the `medusa` collision waiting to
+      recur
 - [ ] `bootstrap.sh` never run end to end on a clean machine
 - [ ] autopentest-ai comparison run against AT&T
+
+### 3f. Not code — but blocking
+- [ ] **11 commits are unpushed.** `origin/main` is at `1f50e6e`; local `main` is
+      at `aae3196`. Everything from "Make 12 shipped tools reachable" onward
+      exists only on this machine.
