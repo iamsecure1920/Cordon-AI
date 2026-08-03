@@ -13,7 +13,7 @@ OpenRouter.
 
 ## What it actually is
 
-A **control plane** that sits between an AI agent and ~50 security tools. The
+A **control plane** that sits between an AI agent and 81 catalogued security tools. The
 agent plans; the control plane decides what is permitted. Every capability —
 engine, wrapper, or user-supplied plugin — passes through one fixed sequence:
 
@@ -41,13 +41,51 @@ drop — a taskflow that declares a `confirm` verdict is rejected at load time.
 
 ---
 
-## Install
+## Quick start — a machine with nothing on it
 
 ```bash
-git clone <your-fork> EasyHunt-AI && cd EasyHunt-AI
+git clone https://github.com/iamsecure1920/EasyHunt-AI.git && cd EasyHunt-AI
+./bootstrap.sh
+```
+
+That is the whole install. `bootstrap.sh` is idempotent, safe to re-run, and is
+also the repair path — it installs system packages, Go and Python runtimes,
+Docker (enabled at boot), the EasyHunt package, the tool suite, **builds the
+`easyhunt:latest` container image**, pulls the per-tool images, and then runs
+`easyhunt doctor` and prints what is still missing.
+
+Budget **30–45 minutes** for the first run; almost all of it is the image build.
+Needs ~15 GB free and Python ≥ 3.11.
+
+| Flag | Effect |
+| --- | --- |
+| `--no-build` | skip the `easyhunt:latest` build (46 tools then run on the host) |
+| `--no-images` | skip images entirely — no container isolation |
+| `--no-tools` | package only |
+
+### Why the image matters
+
+`easyhunt:latest` is built from the `Dockerfile` in this repo and is **not on any
+registry**, so `docker pull` cannot find it — `bootstrap.sh` builds it, or you
+can do it yourself:
+
+```bash
+docker build -t easyhunt:latest .
+```
+
+46 of the 81 catalogued tools live in it, and 48 have a container home once the
+per-tool images are counted. Without it, every one of those falls back to the
+host: no read-only root, no dropped capabilities, no memory ceiling — and on a
+fresh machine, mostly not installed at all. `easyhunt doctor` tells you which is
+which: a working tool prints `@image`, and one with no marker ran on the host.
+
+### Manual install, if you prefer
+
+```bash
 ./install.sh                    # package, skills, MCP registration
 easyhunt install                # the ~20-tool core pipeline
-easyhunt install --all          # all 64, including cloud and LLM red-team
+easyhunt install --all          # all 81, including cloud and LLM red-team
+docker build -t easyhunt:latest .
 ```
 
 `easyhunt install` is idempotent, dependency-ordered, and **verifies every tool
@@ -64,6 +102,17 @@ easyhunt doctor --fix           # repair what is already here
 It never installs into EasyHunt's own environment — Python tools go through
 `pipx`, isolated. That is enforced with a guard, after `pip install semgrep` once
 pulled in `fastmcp-slim` and silently broke the application's MCP client.
+
+### Configuration
+
+`config.yaml` is gitignored — it holds your own choices. Until you write one,
+EasyHunt reads `config.example.yaml`, which carries the shipped posture: sandbox
+on, the image map, and the per-tool scratch mounts that several tools need to
+start at all. Copy it when you want to change something:
+
+```bash
+cp config.example.yaml config.yaml
+```
 
 Then, before anything else:
 
@@ -93,7 +142,7 @@ correctly rather than silently producing empty scans.
 L5  STRATEGY   Claude CLI — plans and decides. No network access of its own.
 L4  METHOD     8 Claude Skills, one per VAPT phase.
 L3  CONTROL    MCP server — scope, sanitize, rate-limit, approve, sandbox, audit.
-L2  EXECUTION  Engines (BBOT · Nuclei · Osmedeus · Strix) + ~30 atomic wrappers.
+L2  EXECUTION  Engines (BBOT · Nuclei · Osmedeus · Strix) + 66 atomic wrappers.
 L1  KNOWLEDGE  Rule packs · task graph · findings store · evidence · PoC memory.
 
                LLM traffic ──▶ OpenRouter (3 tiers, fallbacks, price ceilings)

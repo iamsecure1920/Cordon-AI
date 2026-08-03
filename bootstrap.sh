@@ -17,6 +17,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKIP_DOCKER="${SKIP_DOCKER:-no}"
 SKIP_IMAGES="${SKIP_IMAGES:-no}"
+SKIP_BUILD="${SKIP_BUILD:-no}"
 SKIP_TOOLS="${SKIP_TOOLS:-no}"
 
 GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; DIM='\033[2m'; NC='\033[0m'
@@ -35,7 +36,7 @@ Usage: ./bootstrap.sh [options]
   --no-tools     skip the security tool suite (Python package only)
   -h, --help     this message
 
-Environment: SKIP_DOCKER, SKIP_IMAGES, SKIP_TOOLS (yes|no)
+Environment: SKIP_DOCKER, SKIP_IMAGES, SKIP_TOOLS, SKIP_BUILD (yes|no)
 
 Disk: budget 30 GB+ free. Images alone are ~7 GB; scan artifacts grow.
 USAGE
@@ -45,6 +46,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --no-docker) SKIP_DOCKER=yes ;;
         --no-images) SKIP_IMAGES=yes ;;
+        --no-build) SKIP_BUILD=yes ;;
         --no-tools)  SKIP_TOOLS=yes ;;
         -h|--help)   usage; exit 0 ;;
         *) fail "unknown option: $1"; usage; exit 2 ;;
@@ -183,8 +185,29 @@ for image in dict(Config.load().get("sandbox.images") or {}).values():
     print(image)
 PY
 )
+    # The default image is not on any registry -- it is built from this repo's
+    # Dockerfile and holds 46 of the tools. `docker pull` cannot find it, so a
+    # fresh machine that only pulls ends up with every one of those tools
+    # falling back to the host, unsandboxed and mostly missing entirely.
+    DEFAULT_IMAGE=$("$VENV/bin/python" -c "from easyhunt.config import Config; print(Config.load().get('sandbox.default_image') or '')" 2>/dev/null)
+    if [ -n "$DEFAULT_IMAGE" ]; then
+        if docker image inspect "$DEFAULT_IMAGE" >/dev/null 2>&1; then
+            ok "$DEFAULT_IMAGE (already built)"
+        elif [ "$SKIP_BUILD" = "yes" ]; then
+            warn "$DEFAULT_IMAGE not built -- 46 tools will fall back to the host"
+        else
+            printf "  building %s (30-45 min on a first run) ... \n" "$DEFAULT_IMAGE"
+            if docker build -t "$DEFAULT_IMAGE" "$ROOT"; then
+                ok "$DEFAULT_IMAGE built"
+            else
+                warn "build failed -- tools fall back to the host. Retry with:
+    docker build -t $DEFAULT_IMAGE ."
+            fi
+        fi
+    fi
+
     if [ -z "$IMAGES" ]; then
-        warn "no images configured in config.yaml"
+        warn "no per-tool images configured in config.yaml"
     else
         for img in $IMAGES; do
             if docker image inspect "$img" >/dev/null 2>&1; then
