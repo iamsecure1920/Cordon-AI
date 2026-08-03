@@ -103,6 +103,9 @@ class SandboxConfig:
     #: Per-tool writable scratch directories carved out of the read-only root.
     #: A container that cannot create its own cache dir dies on import.
     tmpfs: dict[str, list[str]] = field(default_factory=dict)
+    #: Per-tool uid:gid override, or the literal "image" to accept the image's
+    #: own USER. Only for images that cannot run as the host user.
+    users: dict[str, str] = field(default_factory=dict)
     runtime: str = "docker"
     pull: bool = False
 
@@ -125,6 +128,7 @@ class SandboxConfig:
                 str(k): [str(m) for m in (v or [])]
                 for k, v in (data.get("mounts") or {}).items()
             },
+            users={str(k): str(v) for k, v in (data.get("users") or {}).items()},
             tmpfs={
                 str(k): [str(p) for p in (v or [])]
                 for k, v in (data.get("tmpfs") or {}).items()
@@ -254,7 +258,7 @@ class Sandbox:
         ]
         if self.config.read_only_rootfs:
             command.append("--read-only")
-        user = self._container_user()
+        user = self._container_user(binary)
         if user:
             command += ["--user", user]
         command += [image, "-c", 'command -v "$1" >/dev/null 2>&1', "_", binary]
@@ -312,10 +316,41 @@ class Sandbox:
             command += ["--tmpfs", f"{scratch}:rw,nosuid,size=64m"]
         if self.config.read_only_rootfs:
             command.append("--read-only")
-        user = self._container_user()
+        user = self._container_user(tool or binary)
         if user:
             command += ["--user", user]
-        command += ["--entrypoint", binary, image, *args]
+        # Mirror `_docker_plan`: a single-tool image's ENTRYPOINT *is* the binary,
+        # and overriding it breaks images that run as their own user with the
+        # tool outside root's PATH. prowler is exactly that — ENTRYPOINT
+        # /home/prowler/.venv/bin/prowler, USER prowler — and `--entrypoint
+        # prowler` gave "exec prowler failed: Permission denied", which reads as
+        # a broken tool rather than as a probe asking the wrong question.
+        #
+        # Only the shared image needs the name appended; its entrypoint execs
+        # whatever it is handed.
+        # Not every mapped image sets ENTRYPOINT to the tool: prowler does,
+        # semgrep does not. Guessing either way makes a working tool read as
+        # broken (permission denied) or absent (exit 127). Try the image's own
+        # entrypoint first, and fall back to naming the binary — the fallback is
+        # what the shared image needs anyway.
+        shared = image == self.config.default_image
+        attempts = (
+            [["--entrypoint", binary, image, *args]]
+            if shared
+            else [[image, *args], ["--entrypoint", binary, image, *args]]
+        )
+        last: tuple[int | None, str] = (None, "")
+        for attempt in attempts:
+            result = self._run_container(command + attempt)
+            code, output = result
+            # 125/126/127 are docker's own "could not start" codes, not the
+            # tool's opinion of its arguments.
+            if code not in (125, 126, 127):
+                return result
+            last = result
+        return last
+
+    def _run_container(self, command: list[str]) -> tuple[int | None, str]:
 
         try:
             proc = subprocess.run(  # noqa: S603
@@ -546,7 +581,7 @@ class Sandbox:
             command.append("--read-only")
         # Run as the invoking user so artifacts written into the workspace stay
         # readable outside the container.
-        user = self._container_user()
+        user = self._container_user(tool)
         if user:
             command += ["--user", user]
         run_env = self._base_env(env)
@@ -573,7 +608,25 @@ class Sandbox:
             network=network,
         )
 
-    def _container_user(self) -> str | None:
+    def _container_user(self, tool: str | None = None) -> str | None:
+        """The uid:gid to run as, or None to let the image choose.
+
+        Default is the host user, so files written into the bind-mounted
+        workspace are owned by whoever started the engagement rather than by
+        root. Some published images do not tolerate it: prowler's puts its
+        entrypoint behind a 0700 home owned by uid 1000, and because this
+        sandbox drops ALL capabilities — including CAP_DAC_OVERRIDE — even root
+        cannot traverse into it. Every prowler call failed with
+
+            [FATAL tini] exec /home/prowler/.venv/bin/prowler: Permission denied
+
+        which is our hardening meeting their layout, not a broken tool. Rather
+        than granting the capability back for everyone, `sandbox.users` lets one
+        image run as the uid it was built for.
+        """
+        override = self.config.users.get(tool or "")
+        if override:
+            return None if str(override).lower() == "image" else str(override)
         return f"{os.getuid()}:{os.getgid()}" if hasattr(os, "getuid") else None
 
     def _configured_mounts(self, tool: str) -> list[tuple[Path, str, str]]:

@@ -248,6 +248,9 @@ sandbox:
     # "not present in the image". A scratch mount that makes the tool vanish is
     # a worse failure than the one it was fixing.
     theHarvester: ["/root/.theHarvester", "/root/.local/share/theHarvester"]
+    # Capital S — subdominator writes /root/.config/Subdominator and a db_config
+    # beside it, and warns rather than failing, so it exits 0 with no providers.
+    subdominator: ["/root/.config", "/root/.local/share/Subdominator", "/root/.cache/SubdominatorDB"]
     # Every ProjectDiscovery tool reads and writes ~/.config/<tool> at startup,
     # and the read-only root denies it. This was invisible because most of them
     # print their version anyway and **nuclei exits 0** while saying
@@ -274,6 +277,15 @@ sandbox:
     katana: ["/root/.config"]
     # cloudfox additionally writes an error log into the working directory.
     cloudfox: ["/root/.config", "/root/.aws", "/root/.cloudfox"]
+
+  # Per-tool container user. "image" means accept the image's own USER.
+  #
+  # prowler only. Its image puts the entrypoint behind a 0700 home owned by uid
+  # 1000, and this sandbox drops ALL capabilities — so even root cannot traverse
+  # in, and every call died with "exec ... Permission denied". Granting
+  # CAP_DAC_OVERRIDE back would weaken every container to accommodate one image.
+  users:
+    prowler: image
 
   memory: 2g
   cpus: "2.0"

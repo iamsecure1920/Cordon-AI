@@ -228,9 +228,22 @@ _RUNTIME_STARTUP_FAILURE = (
 )
 
 
-def _looks_like_a_startup_failure(output: str) -> bool:
+def _looks_like_a_startup_failure(output: str, exit_code: int | None) -> bool:
+    """Whether this output means the tool never got going.
+
+    The runtime markers below appear in plenty of *warnings* from tools that ran
+    perfectly well, so they only count when the process also failed. semgrep
+    prints its version, exits 0, and mentions "read-only file system" in a note
+    about git's safe.directory — calling that broken is the same misdiagnosis as
+    calling a crashed tool an impostor, pointed the other way.
+
+    An import-time failure is different: those are fatal wherever they appear,
+    and some tools still manage to exit 0 after one.
+    """
     if _classify_output(output) is not None:
         return True
+    if exit_code in (None, 0):
+        return False
     lowered = output.lower()
     return any(marker in lowered for marker in _RUNTIME_STARTUP_FAILURE)
 
@@ -304,7 +317,7 @@ def _probe_in_container(name: str, spec: Any, sandbox: Any, budget: float) -> To
     # possibly appear.
     #
     # An identity claim requires the tool to have spoken. If it did not, say so.
-    if _looks_like_a_startup_failure(cleaned):
+    if _looks_like_a_startup_failure(cleaned, code):
         return ToolHealth(
             name, "broken",
             f"present in {image} but fails at startup: {_last_line(cleaned)[:140]}",
