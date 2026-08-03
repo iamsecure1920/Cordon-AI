@@ -66,6 +66,22 @@ approval:
       - smuggling_probe
       - nosqli_probe
 
+      # The two general-purpose web scanners. Aggressive, and both were refused
+      # on every call because nobody listed them — the same defect as the
+      # injection probes above, found the same way: by running them.
+      #
+      # What still bounds them is structural, not a prompt. nikto's -Tuning
+      # pattern permits only discovery categories (1 interesting files,
+      # 2 misconfiguration, 3 information disclosure, b software identification,
+      # e admin consoles); injection, command execution, SQL injection and DoS
+      # are absent from the character class and cannot be requested. wapiti
+      # takes a profile *name*, never module names, so brute_login_form and the
+      # path brute-forcer are unreachable, and both scanners carry an internal
+      # time bound that fires before the process timeout so a killed scan
+      # reports INCOMPLETE rather than clean.
+      - nikto_scan
+      - wapiti_scan
+
     # Never unattended, regardless of the list above.
     auto_deny:
       # Claims a dangling subdomain. That registers a resource on a third-party

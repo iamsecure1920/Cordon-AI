@@ -23,13 +23,13 @@ accepted by the real binary / result parsed**.
 
 | Tool | Mode | Ran | Notes |
 |---|---|---|---|
-| `tls_audit` | passive | ☐ | |
-| `cors_audit` | passive | ☐ | |
-| `graphql_audit` | passive | ☐ | |
-| `jwt_inspect` | passive | ☐ | |
-| `websocket_probe` | passive | ☐ | |
-| `nikto_scan` | aggressive | ☐ | tuning fixed to `[123be]`, re-verify argv |
-| `wapiti_scan` | aggressive | ☐ | |
+| `tls_audit` | passive | ☑ | ran 84s, 170 checks, found TLS1.0/1.1 still offered |
+| `cors_audit` | passive | ☑ | ran 8.7s, 7 origins tested, 0 permissive |
+| `graphql_audit` | passive | ☑ | ran 3.0s, correctly reports `not_graphql` for a non-GraphQL path |
+| `jwt_inspect` | passive | ☑ | ran 3.5s, parsed HS256, flagged missing `exp` |
+| `websocket_probe` | passive | ☑ | ran 1.6s; misdiagnosed a 200 OK as a transport failure — fixed |
+| `nikto_scan` | aggressive | ☑ | was auto-denied; now ran 50s, 18 items, tuning `123be` verified |
+| `wapiti_scan` | aggressive | ☑ | was auto-denied; now ran 221s, crawled 142 pages, safe profile |
 | `ssrf_probe` | exploit | ☐ | |
 | `ssti_probe` | exploit | ☐ | |
 | `cmdi_probe` | exploit | ☐ | |

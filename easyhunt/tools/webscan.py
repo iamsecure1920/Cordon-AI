@@ -969,6 +969,12 @@ async def jwt_inspect(target: str, token: str) -> dict[str, Any]:
     }
 
 
+#: websocat's message when the server answers an upgrade with ordinary HTTP.
+#: "Received unexpected status code (200 OK)" means we were heard and answered —
+#: the opposite of a transport failure, though both end with a non-zero exit.
+_WS_STATUS_RE = re.compile(r"unexpected status code \((\d{3}[^)]*)\)")
+
+
 def _jwt_bootstrapped(text: str) -> bool:
     """Whether this run only created jwt_tool's config file."""
     return "Configuration file built" in text or "Running config setup" in text
@@ -1042,10 +1048,26 @@ async def websocket_probe(target: str, origin: str | None = None) -> dict[str, A
 
     text = "\n".join(run.values)
     connected = "Connected to ws" in text
-    # "The server refused the upgrade" and "we never reached the server" look
-    # identical if you only check whether the handshake succeeded — and one of
-    # them would otherwise be reported as the server validating Origin.
-    transport_failed = not connected and any(
+    # Three outcomes, not two. "The server refused the upgrade" and "we never
+    # reached the server" look identical if you only check whether the handshake
+    # succeeded — and one of them would otherwise be reported as the server
+    # validating Origin. But there is a third: the server answered, with an
+    # ordinary HTTP status, because there is no WebSocket at this path. That is
+    # a *tested* result and the operator's next move is to find the real
+    # endpoint — not to debug TLS, which is what "transport failure" tells them
+    # to do. Measured on the validation target: TCP connected, 200 OK, reported as a transport
+    # failure.
+    status_match = _WS_STATUS_RE.search(text)
+    status_code = int(status_match.group(1)[:3]) if status_match else None
+    # 400/401/403 is the server understanding the upgrade and declining it —
+    # that is a *tested* refusal and may well be Origin doing its job. Anything
+    # else with a body (200, 404, a redirect, a 5xx) means we asked a path that
+    # does not speak WebSocket at all, and nothing was tested.
+    not_a_websocket = (
+        not connected and status_code is not None and status_code not in {400, 401, 403}
+    )
+    reached_server = connected or not_a_websocket or "Connected to TCP" in text
+    transport_failed = not reached_server and any(
         marker in text
         for marker in (
             "Failure during connecting TCP", "I/O failure", "Connection refused",
@@ -1086,20 +1108,36 @@ async def websocket_probe(target: str, origin: str | None = None) -> dict[str, A
         )
 
     killed = run.error == "timed out"
-    incomplete = killed or transport_failed
+    incomplete = killed or transport_failed or not_a_websocket
+    if killed:
+        message = (
+            "websocat was killed at the timeout — the endpoint neither accepted "
+            "nor refused the handshake. UNKNOWN, not clean."
+        )
+    elif transport_failed:
+        message = (
+            "websocat never reached this endpoint (transport or TLS failure), so "
+            "the server never got the chance to validate Origin. UNKNOWN — do not "
+            "read this as 'Origin is checked'."
+        )
+    elif not_a_websocket:
+        code = status_match.group(1) if status_match else "a non-101 status"
+        message = (
+            f"The server answered the upgrade with HTTP {code}, so there is no "
+            f"WebSocket at {url}. Origin handling is UNTESTED — find the real "
+            "WebSocket path (check the JS bundle for 'wss://' or 'new WebSocket') "
+            "and pass it explicitly. Nothing here is evidence of absence."
+        )
+    else:
+        message = None
     return {
         "ok": not incomplete,
         "status": "INCOMPLETE" if incomplete else "COMPLETE",
         "complete": not incomplete,
-        "error": "probe_incomplete" if incomplete else None,
-        "message": (
-            "websocat was killed at the timeout — the endpoint neither accepted "
-            "nor refused the handshake. UNKNOWN, not clean."
-            if killed else
-            "websocat never completed a connection to this endpoint (transport or "
-            "TLS failure), so the server never got the chance to validate Origin. "
-            "UNKNOWN — do not read this as 'Origin is checked'."
-        ) if incomplete else None,
+        "error": ("not_a_websocket" if not_a_websocket else "probe_incomplete")
+        if incomplete
+        else None,
+        "message": message,
         "target": url,
         "origin_sent": foreign_origin,
         "handshake_accepted": connected,

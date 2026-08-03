@@ -811,6 +811,39 @@ class TestParsing:
         assert result["status"] == "INCOMPLETE"
         assert result["findings"] == []
 
+    async def test_plain_http_answer_is_not_a_transport_failure(
+        self, engagement, monkeypatch
+    ) -> None:
+        # Measured on the validation target: TCP connected, the server answered 200 OK because
+        # there is no WebSocket at "/", and the wrapper called it a "transport or
+        # TLS failure". That sends the operator to debug TLS when the actual next
+        # move is to find the real WebSocket path. Three outcomes, not two.
+        _spy(monkeypatch, values=(
+            "[INFO  websocat::net_peer] Connected to TCP 172.67.71.224:443",
+            "websocat: WebSocketError: Received unexpected status code (200 OK)",
+            "websocat: error running",
+        ))
+        result = await REGISTRY["websocket_probe"].fn(target="https://example.com/")
+        assert result["error"] == "not_a_websocket"
+        assert result["origin_validated"] is None
+        assert result["findings"] == []
+        assert "200" in result["message"]
+        assert "transport" not in result["message"].lower()
+
+    async def test_forbidden_upgrade_is_still_a_refusal(
+        self, engagement, monkeypatch
+    ) -> None:
+        # The counterpart: 400/401/403 is the server understanding the upgrade
+        # and declining it, which is a tested result and possibly Origin working.
+        _spy(monkeypatch, values=(
+            "[INFO  websocat::net_peer] Connected to TCP 10.0.0.1:443",
+            "websocat: WebSocketError: Received unexpected status code (403 Forbidden)",
+        ))
+        result = await REGISTRY["websocket_probe"].fn(target="https://example.com/socket")
+        assert result["error"] is None
+        assert result["complete"] is True
+        assert result["origin_validated"] is True
+
     async def test_ws_scheme_target_fails_closed(self, engagement, monkeypatch) -> None:
         # The scope engine cannot parse ws:// or wss:// and reports
         # 'unparseable_target'. That is the correct direction to fail in, but it
