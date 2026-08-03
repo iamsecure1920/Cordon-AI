@@ -50,6 +50,21 @@ approval:
       - xss_validate
       - sqli_validate
       - validate_findings
+      # The injection probes. A bug bounty pays for a reproducible PoC, not for
+      # "an attacker could" — so proving the bug IS the deliverable, and a tool
+      # that cannot run cannot prove anything. These all check
+      # scope.rules.allow_exploitation first, so an engagement whose program did
+      # not authorize exploitation still refuses them; listing them here decides
+      # only that no interactive prompt stands in the way when it did.
+      #
+      # Their argument policies remain the real boundary: no shells
+      # (--os-shell, --eval-code, --lhost), no file read or write, no credential
+      # enumeration, no target the scope engine never saw.
+      - ssrf_probe
+      - ssti_probe
+      - cmdi_probe
+      - smuggling_probe
+      - nosqli_probe
 
     # Never unattended, regardless of the list above.
     auto_deny:
