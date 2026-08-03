@@ -120,7 +120,20 @@ def find_config(explicit: str | Path | None = None) -> Path | None:
         if not path.is_file():
             raise ConfigError(f"config file not found: {path}")
         return path
-    return _search(["config.yaml", "easyhunt.yaml"], "EASYHUNT_CONFIG")
+    found = _search(["config.yaml", "easyhunt.yaml"], "EASYHUNT_CONFIG")
+    if found is not None:
+        return found
+    # A fresh clone has no config.yaml — it is gitignored, because it holds the
+    # operator's own choices. Falling through to the code defaults silently sets
+    # `sandbox.mode: none`, which runs every tool on the host with no read-only
+    # root, no dropped capabilities and no memory ceiling. That is the opposite
+    # of the shipped posture, and nothing in the output would say so.
+    #
+    # The example file *is* the shipped posture: sandbox on, the image map, the
+    # per-tool scratch mounts that stop sstimap and semgrep crashing. Use it
+    # until the operator writes their own. `bootstrap.sh` copies it into place;
+    # this is for everyone who clones and runs something directly.
+    return _search(["config.example.yaml"], "EASYHUNT_CONFIG")
 
 
 def find_scope(explicit: str | Path | None = None) -> Path | None:

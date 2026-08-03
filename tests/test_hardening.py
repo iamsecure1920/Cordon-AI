@@ -386,3 +386,60 @@ class TestAmpersandInUrls:
         sanitize_argv("sqlmap", ["-u", url], policy=CATALOG["sqlmap"].arg_policy)
         sanitize_argv("dalfox", ["url", url], policy=CATALOG["dalfox"].arg_policy)
         sanitize_argv("ffuf", ["-u", url], policy=CATALOG["ffuf"].arg_policy)
+
+
+class TestFreshCloneDefaults:
+    """What someone gets when they clone the repo and run something.
+
+    `config.yaml` is gitignored — it holds the operator's own choices — so a
+    fresh clone has only `config.example.yaml`. Falling through to the code
+    DEFAULTS silently set `sandbox.mode: none`, which runs every tool on the
+    host with no read-only root, no dropped capabilities and no memory ceiling,
+    and skipped the per-tool scratch mounts that stop sstimap and semgrep
+    crashing. The shipped posture and the actual posture disagreed, and nothing
+    in the output said so.
+    """
+
+    def test_example_config_is_used_when_no_config_yaml_exists(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from easyhunt import config as config_module
+
+        example = tmp_path / "config.example.yaml"
+        example.write_text("sandbox:\n  mode: docker\n  default_image: easyhunt:latest\n")
+        monkeypatch.setattr(config_module, "_SEARCH_DIRS", [tmp_path])
+        monkeypatch.delenv("EASYHUNT_CONFIG", raising=False)
+
+        loaded = config_module.Config.load(None)
+        assert loaded.source == str(example)
+        assert loaded.get("sandbox.mode") == "docker"
+
+    def test_a_real_config_yaml_still_wins(self, tmp_path, monkeypatch) -> None:
+        from easyhunt import config as config_module
+
+        (tmp_path / "config.example.yaml").write_text("sandbox:\n  mode: docker\n")
+        real = tmp_path / "config.yaml"
+        real.write_text("sandbox:\n  mode: none\n")
+        monkeypatch.setattr(config_module, "_SEARCH_DIRS", [tmp_path])
+        monkeypatch.delenv("EASYHUNT_CONFIG", raising=False)
+
+        loaded = config_module.Config.load(None)
+        assert loaded.source == str(real)
+        assert loaded.get("sandbox.mode") == "none"
+
+    def test_the_shipped_example_turns_the_sandbox_on(self) -> None:
+        """The file a fresh clone falls back to must carry the real posture."""
+        from pathlib import Path
+
+        import yaml
+
+        from easyhunt.control_plane.sandbox import SandboxConfig
+
+        raw = yaml.safe_load(Path("config.example.yaml").read_text(encoding="utf-8"))
+        sandbox = SandboxConfig.from_dict(raw.get("sandbox"))
+        assert sandbox.mode == "docker"
+        assert sandbox.default_image, "no default image: every tool would fall to the host"
+        assert sandbox.read_only_rootfs
+        # The scratch mounts exist because both of these crash without them.
+        for tool in ("sstimap", "semgrep"):
+            assert sandbox.tmpfs.get(tool), f"{tool} needs writable scratch or it crashes at import"
