@@ -10,6 +10,22 @@ All aggressive and gated. Two guards beyond the usual approval prompt:
   needs; the rest is exploitation wearing a scanner's clothes.
 
 Run ``cdn_check`` first. Scanning a CDN edge measures the CDN.
+
+**Rate governance.** One tool call here is thousands of packets, so the control
+plane's per-call token governs nothing on its own; the tool's own rate flag does.
+``naabu -rate`` and ``nmap --max-rate`` are both packets-per-second ceilings and
+are both set from ``scope.rules.max_rps``.
+
+They used to be set to ``max_rps * 20`` and ``max_rps * 10`` respectively, with a
+floor of 10 that overrode the engagement entirely below 1 rps. The argument for
+the multiplier is that a SYN probe is cheaper than an HTTP request. That argument
+is not ours to make: a program that publishes a ceiling has already decided what
+its infrastructure will absorb, and "we judged our packets to be cheap" is not a
+defence anyone accepts after the fact. The multipliers are gone.
+
+The honest consequence: a top-1000 scan of 20 hosts is 20,000 packets, and at a
+6 rps ceiling that is roughly an hour. Port scanning under a published rate limit
+is slow. That is the constraint, not a bug.
 """
 
 from __future__ import annotations
@@ -82,6 +98,10 @@ NMAP = register_spec(
     )
 )
 
+#: Registered but not invoked by any wrapper. Kept in the catalog so
+#: `easyhunt doctor` reports on it, and kept capped so it stays un-abusable if it
+#: is ever wired up: masscan's `--rate` defaults to 100 pps and it has no other
+#: throttle, so `--rate` from `max_rps` would be the whole of its governance.
 MASSCAN = register_spec(
     ToolSpec(
         name="masscan", binary="masscan", license="AGPL-3.0",
@@ -122,10 +142,18 @@ def _check_nse(scripts: str) -> str:
 
 @easyhunt_tool(
     phase="ports", mode="aggressive", targets_arg="target", timeout=1800,
-    name="port_scan", tags={"ports"}, estimated_requests=1000,
+    name="port_scan", tags={"ports"},
+    # hosts x ports, not a constant. The default is top-100 and a post-recon host
+    # list is routinely 50-300 names, so 10,000 is a realistic default-case figure
+    # and top-1000 multiplies it by ten.
+    estimated_requests=10_000,
     risk_notes=[
         "Connects to many ports on the target — unmistakable in network logs.",
-        "Rate is capped at the engagement ceiling and cannot be raised by argument.",
+        "Packet volume is hosts x ports: top-100 against 100 hosts is 10,000 "
+        "packets, top-1000 is 100,000. The estimate above is a default-case "
+        "figure, not a ceiling.",
+        "naabu -rate is set to the engagement's max_rps exactly and -c to "
+        "max_concurrency; neither can be raised by a caller argument.",
         "Run cdn_check first: scanning a CDN edge tells you about the CDN.",
     ],
 )
@@ -141,11 +169,15 @@ async def port_scan(target: str, ports: str = "top-100") -> dict[str, Any]:
     targets_file = engagement.raw_path("naabu-targets", "txt")
     targets_file.write_text("\n".join(hosts) + "\n", encoding="utf-8")
 
+    rules = engagement.scope.rules
     argv = [
         "-list", str(targets_file),
         "-json", "-silent", "-nc", "-duc", "-exclude-cdn",
-        "-rate", str(min(1000, max(10, int(engagement.scope.rules.max_rps) * 20))),
-        "-c", str(max(1, engagement.scope.rules.max_concurrency)),
+        # Packets per second, at the engagement ceiling — no multiplier and no
+        # floor. A floor of 10 would have silently ignored any program that
+        # published a limit below that.
+        "-rate", str(max(1, int(rules.max_rps))),
+        "-c", str(max(1, int(rules.max_concurrency))),
         "-retries", "1",
     ]
     if ports == "top-100":
@@ -193,9 +225,19 @@ async def port_scan(target: str, ports: str = "top-100") -> dict[str, Any]:
 
 @easyhunt_tool(
     phase="ports", mode="aggressive", targets_arg="target", timeout=1800,
-    name="service_scan", tags={"ports"}, estimated_requests=200,
+    name="service_scan", tags={"ports"},
+    # -sV at intensity 5 sends on the order of 30 probes per open port, and
+    # --max-retries 2 can triple any of them; default/safe NSE adds more. For the
+    # default two ports that is ~200, but a caller passing a 100-port list makes
+    # it ~10,000 and no argument bounds that.
+    estimated_requests=200,
     risk_notes=[
-        "Version detection sends protocol-specific probes to each open port.",
+        "Version detection sends protocol-specific probes to each open port — "
+        "roughly 30 per port at intensity 5, times up to 3 for --max-retries, "
+        "plus whatever the selected NSE scripts send.",
+        "Volume scales with the port list the caller passes; the estimate covers "
+        "the two-port default only.",
+        "nmap --max-rate is set to the engagement's max_rps exactly.",
         "Only safe NSE categories are permitted; exploit/dos/brute are refused.",
     ],
 )
@@ -211,12 +253,15 @@ async def service_scan(
     host = split_targets(target)[0]
     selection = _check_nse(scripts)
 
+    rules = engagement.scope.rules
     output = engagement.raw_path("nmap", "xml")
     argv = [
         "-p", ports, "-sV", "-Pn", "-open", "-n",
         "-T", "3",
         "--version-intensity", "5",
-        "--max-rate", str(min(500, max(10, int(engagement.scope.rules.max_rps) * 10))),
+        # Packets per second at the engagement ceiling. nmap treats --max-rate as
+        # a hard cap, so this is the one flag that actually binds -sV's fan-out.
+        "--max-rate", str(max(1, int(rules.max_rps))),
         "--max-retries", "2",
         "--host-timeout", "600s",
         "-oX", str(output),

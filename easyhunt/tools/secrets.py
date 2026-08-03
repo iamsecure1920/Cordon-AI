@@ -17,6 +17,19 @@ Two boundaries are enforced here:
 * **Validation is gated.** Validating a credential means *using* it. That is a
   request to a third party with someone else's key, and it needs a human to say
   yes — even though the request never touches the target.
+
+**Rate governance.** Scanning is local file I/O and sends nothing, so
+``secret_scan`` is governed by construction. ``secret_validate`` is the one tool
+here that makes network requests, and it makes one or more per candidate to
+AWS/GitHub/Stripe/etc. Kingfisher's ``--validation-rps`` is a global
+requests-per-second ceiling over exactly that traffic; it is set from
+``scope.rules.max_rps``. Before this audit it was not passed at all, so validating
+a repository with a few hundred candidates issued a few hundred authenticated
+requests as fast as the machine could manage — against third parties who rate
+limit, log, and occasionally suspend for it.
+
+``--jobs`` is CPU parallelism over local files and is deliberately not treated as
+a rate control. ``noseyparker`` and ``gitleaks`` send nothing at all.
 """
 
 from __future__ import annotations
@@ -44,6 +57,7 @@ KINGFISHER = register_spec(
             allowed_flags={
                 "--format", "--output", "--no-validate", "--confidence", "--jobs",
                 "--git-history", "--exclude", "--redact", "--min-entropy",
+                "--validation-rps",
             },
             boolean_flags={"--no-validate", "--redact"},
             value_patterns={
@@ -51,7 +65,10 @@ KINGFISHER = register_spec(
                 "--confidence": re.compile(r"low|medium|high"),
                 "--git-history": re.compile(r"full|none|latest"),
             },
-            numeric_caps={"--jobs": 16, "--min-entropy": 8},
+            # --validation-rps is the global requests-per-second ceiling over
+            # credential-validation traffic. Capped as well as set, so it stays
+            # bounded if a future caller reaches this argv.
+            numeric_caps={"--jobs": 16, "--min-entropy": 8, "--validation-rps": 100},
             allow_positional=True,
             positional_pattern=re.compile(r"scan|[A-Za-z0-9._/-]{1,512}"),
         ),
@@ -73,6 +90,10 @@ NOSEYPARKER = register_spec(
     )
 )
 
+#: Registered but not invoked by any wrapper here. Note for whoever wires it up:
+#: trufflehog's `--only-verified` mode makes a validation request per candidate
+#: and it has **no requests-per-second flag** — `--concurrency` is the only
+#: throttle it offers, which bounds parallelism but not rate.
 TRUFFLEHOG = register_spec(
     ToolSpec(
         name="trufflehog", binary="trufflehog", image="trufflesecurity/trufflehog:latest",
@@ -327,10 +348,16 @@ async def secret_scan(path: str = ".", git_history: bool = True) -> dict[str, An
 
 @easyhunt_tool(
     phase="secrets", mode="aggressive", targets_arg=None, timeout=1800,
-    name="secret_validate", tags={"secrets"}, estimated_requests=50,
+    name="secret_validate", tags={"secrets"},
+    # One or more requests per candidate, and a repository with any history
+    # routinely yields hundreds. 50 was a placeholder.
+    estimated_requests=500,
     risk_notes=[
         "Sends each candidate credential to its issuing service to test whether it works.",
         "Those requests are authenticated as the credential's owner and may be logged by them.",
+        "Request count scales with the number of candidates found, not with the "
+        "estimate above — a repository with deep history can produce hundreds.",
+        "Paced by kingfisher --validation-rps at the engagement's max_rps.",
         "Only validate credentials belonging to the program you are testing.",
     ],
 )
@@ -340,8 +367,15 @@ async def secret_validate(path: str = ".") -> dict[str, Any]:
     This is what makes a secrets report actionable: a live credential is critical,
     an unvalidated match is noise. It is gated because validation is *use* — the
     request goes to AWS/GitHub/Stripe authenticated as whoever owns the key.
+
+    Validation traffic is paced at the engagement's ``max_rps``. That ceiling was
+    written for the target, and these requests go to third parties instead — but
+    it is the only rate this engagement has consented to, and issuing hundreds of
+    authenticated requests per second at anyone is not something a scan should
+    decide on its own.
     """
     engagement = get_engagement()
+    rules = engagement.scope.rules
     scan_path = sanitize_path(path, workspace=engagement.workspace, name="path", must_exist=True)
     output = engagement.raw_path("kingfisher-validated", "jsonl")
 
@@ -351,6 +385,9 @@ async def secret_validate(path: str = ".") -> dict[str, Any]:
             "scan", str(scan_path),
             "--format", "jsonl", "--output", str(output),
             "--confidence", "medium", "--git-history", "full", "--redact",
+            # The global ceiling over credential-validation requests. Without it
+            # kingfisher validates as fast as the network allows.
+            "--validation-rps", str(max(1, int(rules.max_rps))),
         ],
         timeout=1500,
         allow_codes=(0, 200, 205),
@@ -398,6 +435,10 @@ async def secret_validate(path: str = ".") -> dict[str, Any]:
 @easyhunt_tool(
     phase="secrets", mode="passive", targets_arg=None, timeout=900,
     name="source_fetch", tags={"secrets", "recon"}, estimated_requests=5,
+    risk_notes=[
+        "git clone has no rate flag. Ungoverned, but it is one connection to a "
+        "code host and never touches the target.",
+    ],
 )
 async def source_fetch(repo_url: str, depth: int = 100) -> dict[str, Any]:
     """Clone a public repository into the workspace so it can be scanned.

@@ -20,6 +20,19 @@ writes out exactly what a human should do, and ``takeover_confirm`` verifies and
 records the proof once they have done it. That boundary is deliberate — claiming
 a resource is an action with consequences at a provider EasyHunt has no
 relationship with.
+
+**Rate governance.** ``takeover_detect`` is the heaviest tool in this module: four
+detectors, each handed the whole host list, each fetching every host. None of them
+has a requests-per-second flag — the best any of them offers is a concurrency or
+parallelism ceiling, which bounds simultaneity but not rate. Those ceilings are
+now taken from ``scope.rules.max_concurrency`` instead of the hardcoded 10 and 20
+that were there before; the residual gap is declared in the tool's ``risk_notes``
+rather than papered over.
+
+``takeover_verify`` and ``takeover_confirm`` use httpx directly and take a limiter
+token per request via ``engagement.limiter.slot``. That is the pattern that
+actually works, and it works precisely because the request is issued in our
+process rather than inside someone else's thread pool.
 """
 
 from __future__ import annotations
@@ -86,10 +99,31 @@ DIG = register_spec(
         version_args=["-v"],
         arg_policy=ArgPolicy(
             tool="dig",
+            # These entries are inert and kept only as documentation. The
+            # sanitizer's flag detector is `^--?[A-Za-z0-9]...`, so dig's
+            # `+`-style query options are never recognised as flags at all — they
+            # fall through to the positional check below. Listing them here looks
+            # like an allowlist and is not one.
+            #
+            # That gap was not cosmetic: `positional_pattern` did not accept a
+            # leading `+`, so *every* dig invocation in this module was refused by
+            # its own policy. `run_one` swallows the refusal into
+            # `ToolRun(ran=False)`, so `_dig` returned an empty list every time,
+            # `checks["cname_present"]` was always False, and `takeover_verify`
+            # could never verify anything. A tool that always says "not a
+            # candidate" looks exactly like a clean estate.
             allowed_flags={"+short", "+noall", "+answer", "+nocomments", "+time", "+tries"},
             boolean_flags={"+short", "+noall", "+answer", "+nocomments"},
             allow_positional=True,
-            positional_pattern=re.compile(r"[A-Za-z0-9._-]{1,253}|CNAME|NS|MX|A|AAAA|TXT|SOA"),
+            positional_pattern=re.compile(
+                # The `+` options this module actually uses, named explicitly
+                # rather than a blanket `\+\w+`, so the allowlist stays an
+                # allowlist. `+time`/`+tries` take their value as a separate
+                # argument, which the numeric branch below accepts.
+                r"\+(?:short|noall|answer|nocomments|time|tries)"
+                r"|[A-Za-z0-9._-]{1,253}"
+                r"|CNAME|NS|MX|A|AAAA|TXT|SOA"
+            ),
             max_argv=12,
         ),
     )
@@ -133,9 +167,20 @@ async def _dig(host: str, record: str) -> list[str]:
 
 @easyhunt_tool(
     phase="takeover", mode="aggressive", targets_arg="target", timeout=1200,
-    name="takeover_detect", tags={"takeover"}, estimated_requests=200,
+    name="takeover_detect", tags={"takeover"},
+    # Four detectors x every host x roughly two schemes. A 300-host list is on the
+    # order of 2,400 requests, not 200.
+    estimated_requests=2400,
     risk_notes=[
         "Fetches each candidate host over HTTP to compare response fingerprints.",
+        "Four detectors each receive the whole host list, so volume is roughly "
+        "8 requests per host — a 300-subdomain list is ~2,400 requests.",
+        "NONE of subzy, dnsReaper, subjack or Subdominator has a "
+        "requests-per-second flag. Their concurrency is pinned to the "
+        "engagement's max_concurrency, which bounds how many requests are in "
+        "flight at once but NOT the rate. On a program with a published rps "
+        "ceiling this tool can exceed it; run it against short host lists, or "
+        "prefer takeover_verify per host, which is rate-limited properly.",
         "Produces candidates only — every tool in this category has false positives.",
     ],
 )
@@ -157,26 +202,50 @@ async def takeover_detect(target: str) -> dict[str, Any]:
     # Every detector that is installed gets a pass. They disagree often, which
     # is the point: agreement across independent signatures is worth more than
     # any single tool's verdict, and verification still gates all of them.
+    #
+    # Every concurrency ceiling below comes from the engagement. They were
+    # hardcoded at 10 and 20 — higher than two of the tools' own defaults — which
+    # meant an engagement could publish max_concurrency: 2 and still get 20
+    # simultaneous connections out of subjack. None of these tools has a
+    # requests-per-second flag, so this is the only governor available and it is
+    # an incomplete one; see this tool's risk_notes.
+    concurrency = str(max(1, int(engagement.scope.rules.max_concurrency)))
     runs = await asyncio.gather(
         run_one(
             "subzy",
-            ["run", "--targets", str(targets_file), "--concurrency", "10", "--hide_fails", "--vuln"],
+            [
+                "run", "--targets", str(targets_file),
+                "--concurrency", concurrency,
+                "--hide_fails", "--vuln",
+            ],
             timeout=900,
             allow_codes=(0, 1),
         ),
         run_one(
             "dnsreaper",
-            ["file", "--domain-csv", str(targets_file), "--out", str(dnsreaper_out), "--out-format", "json"],
+            [
+                "file", "--domain-csv", str(targets_file),
+                "--out", str(dnsreaper_out), "--out-format", "json",
+                # dnsReaper defaults to 200 domains in parallel (an asyncio
+                # semaphore); it was previously left at that default.
+                "--parallelism", concurrency,
+            ],
             timeout=900,
             allow_codes=(0, 1),
         ),
         run_one(
             "subjack",
-            ["-w", str(targets_file), "-t", "20", "-timeout", "15", "-ssl", "-v"],
+            ["-w", str(targets_file), "-t", concurrency, "-timeout", "15", "-ssl", "-v"],
             timeout=900,
             allow_codes=(0, 1),
         ),
         run_one(
+            # Subdominator's concurrency flag is -c/--concurrency. It is not on
+            # the allowlist in tools/extra_specs.py, so passing it here would be
+            # refused by the sanitizer and this detector runs at its own default.
+            # Reported rather than worked around: widening another module's arg
+            # policy from here is exactly the kind of quiet drift the policies
+            # exist to prevent.
             "subdominator",
             ["-l", str(targets_file), "--validate"],
             timeout=900,

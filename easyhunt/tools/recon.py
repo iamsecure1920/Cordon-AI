@@ -1,9 +1,29 @@
 """Passive recon: subdomains, ASN, certificates, org intelligence.
 
 Everything here reads public sources. Nothing sends a request to the target's own
-infrastructure beyond DNS resolution, which is why these run without an approval
-prompt. BBOT covers most of this ground already — these wrappers exist for the
-cases where you want one specific source, or where BBOT is not installed.
+infrastructure beyond DNS resolution and one TLS handshake, which is why these run
+without an approval prompt. BBOT covers most of this ground already — these
+wrappers exist for the cases where you want one specific source, or where BBOT is
+not installed.
+
+**Rate governance.** The control plane's limiter charges one token per *tool
+call*, not per HTTP request, so a wrapper that hands a target list to a tool with
+its own thread pool is ungoverned unless the tool is told otherwise on its command
+line. Every rate or concurrency flag used here is sourced from
+``scope.rules.max_rps`` / ``max_concurrency`` and never from a caller argument —
+a rate an agent can set is a rate an agent can raise.
+
+Where a tool has no such flag it is named in the wrapper's ``risk_notes`` rather
+than left to look governed. As of this audit:
+
+* ``subfinder`` — ``-rl`` (requests/second, global). Governed.
+* ``findomain`` — ``--rate-limit`` (whole seconds *between targets*). Passed, but
+  it is an inter-target delay and does not bound the per-request rate.
+* ``tlsx`` — ``-c`` (concurrency, default **300**) and ``-delay``. Governed.
+* ``assetfinder``, ``asnmap``, ``theHarvester``, ``whois`` — no rate, concurrency,
+  or delay flag exists. Ungoverned; declared.
+* ``amass`` — v4 had ``-max-dns-queries``; v5 dropped it and offers no
+  replacement. Version-dependent, so treated as ungoverned.
 """
 
 from __future__ import annotations
@@ -28,6 +48,12 @@ from easyhunt.tools.common import (
     store_assets,
 )
 
+# The wildcard probe runs dig through the governed runner. Importing the spec
+# rather than trusting module load order keeps `run_one("dig", ...)` from
+# degrading to "not in catalog", which would report "no wildcard" for a domain
+# that has one.
+from easyhunt.tools.takeover import DIG  # noqa: F401
+
 __all__ = ["asn_lookup", "subdomain_enum", "tls_info", "whois_lookup"]
 
 SUBFINDER = register_spec(
@@ -37,10 +63,15 @@ SUBFINDER = register_spec(
         version_args=["-version"],
         arg_policy=ArgPolicy(
             tool="subfinder",
-            allowed_flags={"-d", "-dL", "-silent", "-nc", "-all", "-timeout", "-t", "-o", "-duc"},
+            allowed_flags={
+                "-d", "-dL", "-silent", "-nc", "-all", "-timeout", "-t", "-o", "-duc", "-rl",
+            },
             boolean_flags={"-silent", "-nc", "-all", "-duc"},
             value_patterns={"-d": HOST_PATTERN},
-            numeric_caps={"-timeout": 60, "-t": 50},
+            # -rl is subfinder's global requests-per-second ceiling. Capped here
+            # as well as set from the engagement, so a future caller cannot pass
+            # a larger one through.
+            numeric_caps={"-timeout": 60, "-t": 50, "-rl": 100},
         ),
     )
 )
@@ -66,9 +97,13 @@ FINDOMAIN = register_spec(
         homepage="https://github.com/Findomain/Findomain", version_args=["--version"],
         arg_policy=ArgPolicy(
             tool="findomain",
-            allowed_flags={"-t", "--quiet", "-u", "--external-subdomains"},
+            allowed_flags={"-t", "--quiet", "-u", "--external-subdomains", "--rate-limit"},
             boolean_flags={"--quiet", "--external-subdomains"},
             value_patterns={"-t": HOST_PATTERN},
+            # findomain's --rate-limit is whole seconds of delay *per target*, not
+            # a requests-per-second ceiling. Capped so it cannot be turned into a
+            # multi-hour stall, but see the note in subdomain_enum's risk_notes.
+            numeric_caps={"--rate-limit": 60},
         ),
     )
 )
@@ -108,9 +143,20 @@ TLSX = register_spec(
         homepage="https://github.com/projectdiscovery/tlsx", version_args=["-version"],
         arg_policy=ArgPolicy(
             tool="tlsx",
-            allowed_flags={"-u", "-l", "-json", "-silent", "-san", "-cn", "-so", "-duc", "-c", "-nc"},
+            allowed_flags={
+                "-u", "-l", "-json", "-silent", "-san", "-cn", "-so", "-duc", "-c", "-nc",
+                "-delay",
+            },
             boolean_flags={"-json", "-silent", "-san", "-cn", "-so", "-duc", "-nc"},
-            value_patterns={"-u": HOST_PATTERN},
+            value_patterns={
+                "-u": HOST_PATTERN,
+                # A Go duration, e.g. "200ms" or "2s". tlsx waits this long between
+                # connections on each thread.
+                "-delay": re.compile(r"[0-9]{1,6}(?:ms|s)"),
+            },
+            # tlsx defaults to 300 concurrent threads. The cap matters as much as
+            # the value the wrapper passes: without -c, one tls_info call opens up
+            # to 300 simultaneous handshakes against the target.
             numeric_caps={"-c": 30},
         ),
     )
@@ -158,33 +204,45 @@ async def _detect_wildcard(seed: str, probes: int = 3) -> dict[str, Any]:
     recursive permutations like ``update.update.update.trust``. Left undetected,
     http_probe reports them all live (the wildcard answers) and the scanner then
     spends the whole budget on hosts that do not exist.
+
+    Each probe is a real query against the target's authoritative nameservers, so
+    each one takes a token from the engagement limiter and goes through the
+    sandboxed runner. This used to call ``create_subprocess_exec`` directly, which
+    meant three queries that the rate limiter never saw and the sandbox never
+    contained.
     """
-    import asyncio
     import secrets
 
+    engagement = get_engagement()
     addresses: set[str] = set()
     answered = 0
+    attempted = 0
     for _ in range(probes):
         label = f"eh-{secrets.token_hex(6)}"
-        proc = await asyncio.create_subprocess_exec(
-            "dig", "+short", "+tries=1", "+time=3", f"{label}.{seed}",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
-        out, _ = await proc.communicate()
-        found = [
-            line.strip() for line in out.decode(errors="replace").splitlines()
-            if line.strip() and not line.strip().endswith(".")
-        ]
+        async with engagement.limiter.slot(host=seed):
+            run = await run_one(
+                "dig",
+                ["+short", "+time", "3", "+tries", "1", f"{label}.{seed}"],
+                timeout=30,
+            )
+        if not run.ran:
+            # dig absent or unregistered. Say so rather than reporting "no
+            # wildcard" — a silent false negative here re-poisons every later
+            # phase with hosts that do not exist.
+            continue
+        attempted += 1
+        found = [v.strip() for v in run.values if v.strip() and not v.strip().endswith(".")]
         if found:
             answered += 1
             addresses.update(found)
 
     # Every probe must answer. One stray hit is a resolver quirk, not a wildcard.
     return {
-        "wildcard": answered == probes and bool(addresses),
+        "wildcard": attempted == probes and answered == probes and bool(addresses),
         "addresses": sorted(addresses),
         "probes": probes,
         "answered": answered,
+        "checked": attempted == probes,
     }
 
 
@@ -209,7 +267,24 @@ def _looks_like_wildcard_noise(host: str, seed: str) -> bool:
     timeout=900,
     name="subdomain_enum",
     tags={"recon"},
-    estimated_requests=50,
+    # Honest, not tidy. subfinder with -all queries roughly 40 passive sources,
+    # assetfinder about 6, findomain about 10; each source is one or more HTTP
+    # requests and several paginate. Plus 3 DNS probes at the target's own
+    # nameservers for the wildcard check. ~200 is the realistic total for the
+    # default configuration, and nearly all of it lands on third parties rather
+    # than the target — but it is still traffic this engagement is accountable
+    # for, and budgeting it at 50 understated it fourfold.
+    estimated_requests=200,
+    risk_notes=[
+        "subfinder is held to the engagement's max_rps via -rl; findomain gets "
+        "--rate-limit, which is a delay between targets and does NOT bound its "
+        "per-request rate.",
+        "assetfinder, amass (v5) and theHarvester expose no rate, concurrency, or "
+        "delay flag of any kind. Their request rate to third-party data sources is "
+        "ungoverned by this system and cannot be governed without patching them.",
+        "Only the 3 wildcard DNS probes touch the target directly; those are "
+        "charged to the limiter individually.",
+    ],
 )
 async def subdomain_enum(
     target: str, include_amass: bool = False, thorough: bool = False
@@ -234,15 +309,34 @@ async def subdomain_enum(
     these combined.
     """
     engagement = get_engagement()
+    rules = engagement.scope.rules
     domains = split_targets(target)
     seed = domains[0]
 
     # Every source that is actually installed contributes. `run_one` reports a
     # missing tool rather than failing, so the set is effectively self-tuning.
     tasks = [
-        run_one("subfinder", ["-d", seed, "-silent", "-nc", "-duc", "-all"], timeout=600),
+        run_one(
+            "subfinder",
+            [
+                "-d", seed, "-silent", "-nc", "-duc", "-all",
+                # subfinder's global requests-per-second ceiling. Without it the
+                # tool fans out across ~40 sources at whatever rate they allow.
+                "-rl", str(max(1, int(rules.max_rps))),
+            ],
+            timeout=600,
+        ),
         run_one("assetfinder", ["--subs-only", seed], timeout=300),
-        run_one("findomain", ["-t", seed, "--quiet"], timeout=300),
+        run_one(
+            "findomain",
+            [
+                "-t", seed, "--quiet",
+                # Whole seconds between targets, which is the only throttle
+                # findomain has. It does not pace requests within a target.
+                "--rate-limit", str(max(1, round(1 / max(0.01, rules.max_rps)))),
+            ],
+            timeout=300,
+        ),
     ]
     if include_amass:
         # -timeout bounds amass itself (minutes). Without it amass runs until the
@@ -313,7 +407,14 @@ async def subdomain_enum(
 
 @easyhunt_tool(
     phase="recon", mode="passive", targets_arg="target", timeout=300,
-    name="asn_lookup", tags={"recon"}, estimated_requests=5,
+    name="asn_lookup", tags={"recon"},
+    # asnmap is one API call; amass intel is a handful of whois/RIR lookups.
+    estimated_requests=10,
+    risk_notes=[
+        "asnmap and 'amass intel' have no rate, concurrency, or delay flag. Their "
+        "request rate is ungoverned — acceptable here only because the volume is a "
+        "handful of RIR lookups, none of them against the target.",
+    ],
 )
 async def asn_lookup(target: str) -> dict[str, Any]:
     """Look up ASN and netblocks for a domain or organization.
@@ -358,7 +459,9 @@ async def asn_lookup(target: str) -> dict[str, Any]:
 
 @easyhunt_tool(
     phase="recon", mode="passive", targets_arg="target", timeout=300,
-    name="tls_info", tags={"recon"}, estimated_requests=10,
+    name="tls_info", tags={"recon"},
+    # One host, one TLS handshake, up to 3 retries on failure.
+    estimated_requests=4,
 )
 async def tls_info(target: str) -> dict[str, Any]:
     """Read TLS certificates and pull subject-alternative names.
@@ -366,11 +469,25 @@ async def tls_info(target: str) -> dict[str, Any]:
     SANs frequently reveal internal hostnames and sibling domains. They are
     scope-filtered before being stored, since one certificate often covers hosts
     belonging to several organizations.
+
+    tlsx opens TLS connections to the target, so its concurrency and inter-
+    connection delay are pinned to the engagement. Its default concurrency is 300.
     """
+    engagement = get_engagement()
+    rules = engagement.scope.rules
     hosts = split_targets(target)
     run = await run_one(
         "tlsx",
-        ["-u", hosts[0], "-json", "-silent", "-san", "-cn", "-duc", "-nc"],
+        [
+            "-u", hosts[0], "-json", "-silent", "-san", "-cn", "-duc", "-nc",
+            # Default is 300 concurrent handshakes. That is a load test, not a
+            # certificate read.
+            "-c", str(max(1, int(rules.max_concurrency))),
+            # tlsx waits this long between connections on each thread; at
+            # concurrency N the effective ceiling is N/delay, which is why both
+            # are set together.
+            "-delay", f"{max(1, int(1000 / max(0.01, rules.max_rps)))}ms",
+        ],
         timeout=180,
     )
 
@@ -412,6 +529,10 @@ async def tls_info(target: str) -> dict[str, Any]:
 @easyhunt_tool(
     phase="recon", mode="passive", targets_arg="target", timeout=120,
     name="whois_lookup", tags={"recon"}, estimated_requests=1,
+    risk_notes=[
+        "whois(1) has no rate flag. Ungoverned, but it is a single query to a "
+        "registrar and never touches the target.",
+    ],
 )
 async def whois_lookup(target: str) -> dict[str, Any]:
     """WHOIS registration data for a domain: registrar, org, dates, nameservers.

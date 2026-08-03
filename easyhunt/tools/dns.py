@@ -4,6 +4,19 @@ Resolution is the bridge between "a name appeared in a certificate" and "a host
 exists". It is also where takeover candidates first surface: a CNAME that
 resolves to a provider with no A record behind it is the shape of a dangling
 delegation, and that observation is what feeds the verified takeover flow.
+
+**Rate governance.** These wrappers hand a whole host list to one process, so the
+control plane's per-tool-call token is not a per-query limit — the tool's own
+flags are. ``dnsx`` gets both ``-rl`` (DNS requests/second) and ``-t`` (threads,
+default **100**), sourced from ``scope.rules``.
+
+``-rl`` used to be set to ``max_rps * 10``. Nothing justified the multiplier: a
+program that publishes a ceiling means that ceiling, and these queries land on the
+target's own authoritative nameservers, which are as much "availability" as the
+web tier. It is now ``max_rps``, exactly.
+
+``cdncheck`` has no rate flag and ``alterx`` sends nothing; both are declared as
+such rather than left looking governed.
 """
 
 from __future__ import annotations
@@ -73,6 +86,11 @@ CDNCHECK = register_spec(
     )
 )
 
+#: Registered but not invoked by any wrapper in this module. Left in the catalog
+#: so `easyhunt doctor` still reports on it. If it is ever wired up, note that its
+#: `-t` defaults to **10,000** concurrent massdns resolves and it has no
+#: requests-per-second flag at all — `-t` from `max_concurrency` is the only
+#: governor available, and it is a weak one.
 SHUFFLEDNS = register_spec(
     ToolSpec(
         name="shuffledns", binary="shuffledns", license="MIT",
@@ -97,7 +115,17 @@ def _write_list(name: str, values: list[str]) -> str:
 
 @easyhunt_tool(
     phase="dns", mode="passive", targets_arg="target", timeout=900,
-    name="dns_resolve", tags={"dns"}, estimated_requests=100,
+    name="dns_resolve", tags={"dns"},
+    # One query per host per record type. The default record set is A + CNAME, so
+    # a typical post-recon list of ~300 subdomains is ~600 queries. Not a
+    # constant — the note below carries the scaling law that the number cannot.
+    estimated_requests=600,
+    risk_notes=[
+        "Sends one DNS query per host per record type to the target's own "
+        "authoritative nameservers; volume scales with the host list, not with "
+        "this estimate.",
+        "Paced by dnsx -rl at the engagement's max_rps and -t at max_concurrency.",
+    ],
 )
 async def dns_resolve(target: str, record_types: list[str] | None = None) -> dict[str, Any]:
     """Resolve hosts and return A/AAAA/CNAME/MX/NS/TXT records.
@@ -110,11 +138,17 @@ async def dns_resolve(target: str, record_types: list[str] | None = None) -> dic
     hosts = split_targets(target)
     wanted = [t.lower() for t in (record_types or ["a", "cname"])]
 
+    rules = engagement.scope.rules
     argv = ["-l", _write_list("dnsx-targets", hosts), "-json", "-silent", "-nc", "-duc", "-resp"]
     for record in wanted:
         if f"-{record}" in DNSX.arg_policy.allowed_flags:  # type: ignore[union-attr]
             argv.append(f"-{record}")
-    argv += ["-rl", str(max(1, int(engagement.scope.rules.max_rps * 10)))]
+    # The engagement ceiling, not a multiple of it. dnsx defaults to 100 threads
+    # and no rate limit at all, so both flags have to be set or neither binds.
+    argv += [
+        "-rl", str(max(1, int(rules.max_rps))),
+        "-t", str(max(1, int(rules.max_concurrency))),
+    ]
 
     run = await run_one("dnsx", argv, timeout=600)
 
@@ -171,10 +205,18 @@ async def dns_resolve(target: str, record_types: list[str] | None = None) -> dic
 
 @easyhunt_tool(
     phase="dns", mode="aggressive", targets_arg="target", timeout=1800,
-    name="dns_permute", tags={"dns"}, estimated_requests=5000,
+    name="dns_permute", tags={"dns"},
+    # One query per generated permutation. `limit` defaults to 20,000 and the
+    # wrapper caps it at 100,000; 5,000 was a placeholder that understated the
+    # default run by 4x and the maximum by 20x.
+    estimated_requests=20_000,
     risk_notes=[
-        "Generates and resolves a large permutation wordlist.",
+        "Generates and resolves a large permutation wordlist — one DNS query per "
+        "permutation, up to 100,000 of them.",
         "High DNS query volume — visible to the target's resolver operator.",
+        "Paced by dnsx -rl at the engagement's max_rps. At a 6 rps ceiling a "
+        "20,000-name run takes about an hour; that is the ceiling working, not a "
+        "hang.",
     ],
 )
 async def dns_permute(target: str, limit: int = 20000) -> dict[str, Any]:
@@ -200,12 +242,14 @@ async def dns_permute(target: str, limit: int = 20000) -> dict[str, Any]:
             "note": "alterx produced no permutations (is it installed?)",
         }
 
+    rules = engagement.scope.rules
     resolve = await run_one(
         "dnsx",
         [
             "-l", _write_list("alterx-permutations", generate.values),
             "-silent", "-nc", "-duc", "-a", "-resp",
-            "-rl", str(max(1, int(engagement.scope.rules.max_rps * 10))),
+            "-rl", str(max(1, int(rules.max_rps))),
+            "-t", str(max(1, int(rules.max_concurrency))),
         ],
         timeout=1500,
     )
@@ -226,7 +270,15 @@ async def dns_permute(target: str, limit: int = 20000) -> dict[str, Any]:
 
 @easyhunt_tool(
     phase="dns", mode="passive", targets_arg="target", timeout=300,
-    name="cdn_check", tags={"dns"}, estimated_requests=10,
+    name="cdn_check", tags={"dns"},
+    # cdncheck resolves every host it is handed and matches the address against
+    # bundled provider ranges. One query per host; ~300 for a typical list.
+    estimated_requests=300,
+    risk_notes=[
+        "cdncheck has no rate, concurrency, or delay flag — its only tunable is "
+        "the resolver list. One DNS query per input host, ungoverned. Hand it "
+        "short lists, or accept that the pace is whatever the tool chooses.",
+    ],
 )
 async def cdn_check(target: str) -> dict[str, Any]:
     """Identify which hosts sit behind a CDN, WAF, or cloud provider.
