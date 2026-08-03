@@ -78,7 +78,13 @@ RUN set -u; \
         github.com/BishopFox/jsluice/cmd/jsluice@latest \
         github.com/zricethezav/gitleaks/v8@latest \
         github.com/crytic/medusa@latest \
-        github.com/LukaSikic/subzy@latest \
+        github.com/PentestPad/subzy@latest \
+        github.com/haccer/subjack@latest \
+        github.com/projectdiscovery/shuffledns/cmd/shuffledns@latest \
+        github.com/projectdiscovery/uncover/cmd/uncover@latest \
+        github.com/OJ/gobuster/v3@latest \
+        github.com/jaeles-project/jaeles@latest \
+        github.com/BishopFox/cloudfox@latest \
       ; do \
         echo "==> $pkg"; \
         go install -v "$pkg" || echo "!!! FAILED: $pkg"; \
@@ -91,11 +97,22 @@ RUN set -u; \
 RUN CGO_ENABLED=1 go install -v github.com/projectdiscovery/katana/cmd/katana@latest || \
     echo "!!! FAILED: katana"
 
-# Tools that do not install cleanly today, recorded rather than hidden:
-#   jsluice — build failure upstream
-#   subzy   — "version constraints conflict" on @latest
-# Each is attempted; failures are printed and the image reports which are absent
-# via `easyhunt doctor`, so a missing tool is a known gap and not a quiet one.
+# Six tools added to the list above after being measured, not assumed. They were
+# running on the *host*, outside the sandbox — no read-only root, no dropped
+# capabilities, no memory ceiling — because nothing had ever tried to build them
+# here. `fallback_to_host: true` makes that silent by design.
+#
+# subzy moved: github.com/LukaSikic/subzy no longer resolves ("but was required
+# as:" module path mismatch) and the maintained fork is PentestPad/subzy. The old
+# path was recorded below as an upstream failure for months; it was a rename.
+#
+# jsluice builds fine on golang:1.25 — verified in a clean builder. The note
+# below claiming an upstream build failure was stale, and the stale note is why
+# nobody re-tried it.
+#
+# Each is still attempted rather than required; failures are printed and
+# `easyhunt doctor` reports which are absent, so a missing tool is a known gap
+# and not a quiet one.
 #
 # amass: the v5 module path is tried first and the v4 path is the fallback. As
 # of this build the v5 install fails and the fallback succeeds, so the image
@@ -144,14 +161,17 @@ FROM rust:1-bookworm AS rust-builder
 
 RUN cargo install --locked feroxbuster
 
-# aderyn is allowed to fail. As of this writing its transitive dependency
-# svm-rs-builds does not compile (duplicate SOLC_VERSION_0_8_35_CHECKSUM), which
-# is an upstream defect, not a configuration error. Slither covers the same
-# ground and is installed in the runtime stage, so one broken crate must not
+# The note that used to sit here explained, at length, why aderyn was allowed to
+# fail: its transitive dependency svm-rs-builds does not compile. All true, and
+# all irrelevant — aderyn publishes a working Linux binary, which is now fetched
+# in the runtime stage. A long-standing "known upstream failure" is worth
+# re-checking; this one had a released binary the whole time.
+# The rule it stated still holds everywhere else: one broken crate must not
 # cost the whole image — the same rule the installer already applies to host
 # tools. The runtime COPY below tolerates its absence.
-RUN cargo install --locked aderyn || \
-    echo "aderyn unavailable (upstream build failure) — slither covers static analysis" 
+# aderyn was here as `cargo install --locked aderyn` and failed on every build
+# for months. It publishes a working Linux binary; it is fetched with the other
+# prebuilts in the final stage. Building it from source bought nothing. 
 
 # --------------------------------------------------------------------------- #
 # Runtime
@@ -286,6 +306,20 @@ RUN uv tool install --python 3.12 "git+https://github.com/devanshbatham/paramspi
 # deepteam needs nntplib, removed in 3.13 and present in 3.12. Nothing else.
 RUN uv tool install --python 3.12 deepteam || echo "!!! FAILED: deepteam"
 
+# Four more that were running on the host, verified installable here first.
+# waymore in particular is called by `endpoint_discovery` on every archive
+# sweep, so it was making requests from outside the sandbox on a normal run.
+RUN uv tool install --python 3.12 waymore || echo "!!! FAILED: waymore"
+RUN uv tool install --python 3.12 garak || echo "!!! FAILED: garak"
+# theHarvester from git, not PyPI: the published wheel fails with "Failed to
+# install entrypoints for theharvester" and the repo installs cleanly.
+RUN uv tool install --python 3.12 "git+https://github.com/laramies/theHarvester" \
+    || echo "!!! FAILED: theHarvester"
+RUN uv tool install --python 3.12 s3scanner || echo "!!! FAILED: s3scanner"
+RUN uv tool install --python 3.12 subdominator || echo "!!! FAILED: subdominator"
+RUN uv tool install --python 3.12 "git+https://github.com/initstring/cloud_enum" \
+    || echo "!!! FAILED: cloud_enum"
+
 RUN uv tool install --python 3.12 wapiti3 || echo "!!! FAILED: wapiti3"
 RUN uv tool install --python 3.12 corscanner || echo "!!! FAILED: corscanner"
 
@@ -303,7 +337,11 @@ RUN for repo in \
       "https://github.com/dolevf/graphql-cop.git|graphql-cop|graphql-cop.py" \
       "https://github.com/defparam/smuggler.git|smuggler|smuggler.py" \
       "https://github.com/commixproject/commix.git|commix|commix.py" \
-      "https://github.com/punk-security/dnsReaper.git|dnsreaper|main.py" ; do \
+      "https://github.com/punk-security/dnsReaper.git|dnsreaper|main.py" \
+      "https://github.com/s0md3v/XSStrike.git|xsstrike|xsstrike.py" \
+      "https://github.com/GerbenJavado/LinkFinder.git|linkfinder|linkfinder.py" \
+      "https://github.com/m4ll0k/SecretFinder.git|secretfinder|SecretFinder.py" \
+      "https://github.com/obheda12/GitDorker.git|gitdorker|GitDorker.py" ; do \
       url="${repo%%|*}"; rest="${repo#*|}"; name="${rest%%|*}"; entry="${rest#*|}"; \
       git clone --depth 1 "$url" "/opt/$name" 2>/dev/null || continue; \
       rm -rf "/opt/$name/.git"; \
@@ -322,6 +360,47 @@ RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then \
       curl -sL "https://github.com/vi/websocat/releases/download/v1.14.1/websocat.x86_64-unknown-linux-musl" \
         -o /usr/local/bin/websocat && chmod +x /usr/local/bin/websocat; \
+    fi
+
+# kubescape publishes no "latest" alias for its Linux asset — the name carries
+# the version, so `latest/download/...` 404s and the download lands an HTML
+# error page that chmod +x happily marks executable. Pinned, which invariant 6
+# wanted anyway.
+ARG KUBESCAPE_VERSION=4.0.11
+
+# retire is the JS-library CVE detector and npm is its only distribution. It
+# spent this project's entire life un-runnable — `--js` was not declared boolean,
+# so the sanitizer swallowed the flag after it — and once that was fixed it was
+# still only on the host. Node costs ~120 MB against a 2.7 GB image; a dead
+# detection capability costs more.
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends nodejs npm >/dev/null 2>&1 && \
+    npm install -g --silent retire >/dev/null 2>&1 || echo "!!! FAILED: retire"; \
+    rm -rf /var/lib/apt/lists/* /root/.npm
+
+# Five Rust/Go tools shipped as prebuilt release binaries rather than built from
+# source. cargo build for these costs 20+ minutes each and is where this image
+# already learned the pinned-toolchain-plus-floating-deps lesson (rust:1.83 plus
+# --locked crates needing edition2024). A published binary has neither problem.
+#
+# All three were running on the host before this: noseyparker and kingfisher are
+# the secret scanners, so they were reading repository contents outside the
+# sandbox entirely. Verified in a clean container: findomain 10.0.1,
+# noseyparker 0.24.0, kingfisher 1.110.0.
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then \
+      cd /tmp && \
+      { curl -sL -o f.zip "https://github.com/Findomain/Findomain/releases/latest/download/findomain-linux.zip" && \
+        unzip -oq f.zip && install -m 0755 findomain /usr/local/bin/findomain; } || echo "!!! FAILED: findomain"; \
+      { curl -sL -o np.tgz "https://github.com/praetorian-inc/noseyparker/releases/download/v0.24.0/noseyparker-v0.24.0-x86_64-unknown-linux-gnu.tar.gz" && \
+        tar xzf np.tgz && install -m 0755 "$(find /tmp -name noseyparker -type f | head -1)" /usr/local/bin/noseyparker; } || echo "!!! FAILED: noseyparker"; \
+      { curl -sL -o kf.tgz "https://github.com/mongodb/kingfisher/releases/latest/download/kingfisher-linux-x64.tgz" && \
+        tar xzf kf.tgz && install -m 0755 "$(find /tmp -name kingfisher -type f | head -1)" /usr/local/bin/kingfisher; } || echo "!!! FAILED: kingfisher"; \
+      { curl -sL -o ad.tar.xz "https://github.com/Cyfrin/aderyn/releases/latest/download/aderyn-x86_64-unknown-linux-gnu.tar.xz" && \
+        tar xJf ad.tar.xz && install -m 0755 "$(find /tmp -name aderyn -type f | head -1)" /usr/local/bin/aderyn; } || echo "!!! FAILED: aderyn"; \
+      { curl -sL -o ks "https://github.com/kubescape/kubescape/releases/download/v${KUBESCAPE_VERSION}/kubescape_${KUBESCAPE_VERSION}_linux_amd64" && \
+        install -m 0755 ks /usr/local/bin/kubescape; } || echo "!!! FAILED: kubescape"; \
+      rm -rf /tmp/f.zip /tmp/np.tgz /tmp/kf.tgz /tmp/ad.tar.xz /tmp/ks; \
     fi
 
 # uv installs tool binaries under /root/.local/bin, and the sandbox runs
