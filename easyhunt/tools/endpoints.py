@@ -189,10 +189,21 @@ async def endpoint_discovery(target: str, include_crawl: bool = False) -> dict[s
 
     # Every archive source that is installed contributes; absent ones are
     # reported rather than skipped silently, so partial coverage is visible.
+    # Concurrency comes from the engagement, never from a literal. These were
+    # "5" and "5" regardless of what the program published — the same defect
+    # already fixed in naabu and dnsx, in the files that fix missed. The
+    # limiter charges one token per *tool call*, so a tool with its own thread
+    # pool is ungoverned unless told a number on its command line.
+    rules = engagement.scope.rules
+    concurrency = max(1, int(rules.max_concurrency))
+    # Clamp to each policy's numeric_cap as well. An engagement permitting 20
+    # concurrent is not permission to exceed a per-tool ceiling, and passing a
+    # value above the cap does not run fast — it is refused by the sanitizer,
+    # which would turn a rate fix into a tool that no longer runs at all.
     tasks = [
-        run_one("gau", ["--subs", "--threads", "5", domain], timeout=600),
+        run_one("gau", ["--subs", "--threads", str(min(concurrency, 20)), domain], timeout=600),
         run_one("waybackurls", [domain], timeout=600),
-        run_one("waymore", ["-i", domain, "-mode", "U", "-p", "5"], timeout=900),
+        run_one("waymore", ["-i", domain, "-mode", "U", "-p", str(min(concurrency, 10))], timeout=900),
         run_one("paramspider", ["-d", domain], timeout=600),
     ]
     if include_crawl:
@@ -288,9 +299,19 @@ async def param_discovery(target: str, method: str = "GET") -> dict[str, Any]:
         method = "GET"
 
     output = engagement.raw_path("arjun", "json")
+    # arjun fans out over its own thread pool and had -t hardcoded to 10 with no
+    # delay at all — so on a program publishing 5 rps it ran at whatever 10
+    # threads could manage. Both now come from the engagement. arjun's --stable
+    # already serialises the confirmation passes; -d is the inter-request delay.
+    rules = engagement.scope.rules
     run = await run_one(
         "arjun",
-        ["-u", url, "-m", method.upper(), "-oJ", str(output), "-t", "10", "-q", "--stable"],
+        [
+            "-u", url, "-m", method.upper(), "-oJ", str(output),
+            "-t", str(min(max(1, int(rules.max_concurrency)), 15)),
+            "-d", str(min(max(0, round(1 / max(0.01, rules.max_rps), 2)), 10)),
+            "-q", "--stable",
+        ],
         timeout=900,
     )
 

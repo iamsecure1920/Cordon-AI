@@ -57,7 +57,7 @@ answers were about a file named `sstimap`; only one of them was the program.
 Everything below was re-checked on 2026-08-03; the numbers are measured, not
 remembered. Ordered by what it costs to leave alone.
 
-### 3a. Four tools broken by Python 3.13  — highest value, cheapest fix
+### 3a. Four tools broken by Python 3.13  ✅ DONE
 `dirsearch`, `dnsreaper`, `paramspider` (`pkg_resources`, removed in 3.12+ when
 setuptools is absent) and `deepteam` (`nntplib`, removed in 3.13). All four are
 **absent from `easyhunt:latest` entirely**, so they only exist on the host, where
@@ -66,8 +66,9 @@ so adding them there fixes the cause rather than patching the host.
 Costs coverage on every run: dirsearch is content discovery, dnsreaper is
 takeover detection.
 
-- [ ] Add all four to the Dockerfile with `setuptools` present
-- [ ] Rebuild, re-run `easyhunt doctor`, record the before/after count
+- [x] All four added to the Dockerfile, each verified in a python:3.12-slim
+      container first
+- [x] Rebuilt and re-probed: **73 -> 77 working, 4 broken -> 0**
 
 ### 3b. 24 tools run on the host, outside the sandbox
 46 of 81 catalogued tools are in `easyhunt:latest`; 48 have a container home once
@@ -86,7 +87,7 @@ logged, but nobody reads the log.
 - [ ] Add the ones that build cleanly to the image
 - [ ] Decide explicitly, in config, which are allowed to run on the host
 
-### 3c. Rate flags that ignore the engagement ceiling
+### 3c. Rate flags that ignore the engagement ceiling  ✅ DONE
 Verified still hardcoded:
 - `arjun` — `-t 10`, no delay, nothing derived from `scope.rules` (endpoints.py:293)
 - `gau --threads 5` (endpoints.py:193)
@@ -98,7 +99,11 @@ Against a program publishing a low rate these exceed it, in the operator's name,
 with the audit log showing one compliant tool call. Same class as the naabu/dnsx
 breach already fixed — these are the files that fix missed.
 
-- [ ] Source every one from `scope.rules.max_rps` / `max_concurrency`
+- [x] All six sourced from `scope.rules`, each clamped to its own policy
+      `numeric_cap` — a value above the cap is refused by the sanitizer, so an
+      uncapped conversion would turn a rate fix into a tool that stops running
+- [x] 18 regression tests, each varying the scope so a hardcoded expectation
+      cannot pass
 
 ### 3d. `ssrfmap` is structurally ungovernable
 ~8,282 requests through its own thread pool, no rate flag at any price. Measured:

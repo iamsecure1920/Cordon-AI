@@ -411,6 +411,21 @@ _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _MAX_LINE = 4000
 
 
+def _delay_for(rules: Any, *, cap: float) -> str:
+    """Inter-request delay implied by the engagement's rate ceiling.
+
+    These tools drive their own request loops, and the limiter charges one token
+    for the whole call — so this string is the entirety of their rate
+    governance. It was hardcoded to "1" everywhere, which is right only for a
+    program that happens to publish 1 rps.
+
+    Clamped to the flag's numeric_cap: a value above the cap is refused by the
+    sanitizer, so an uncapped conversion would turn a rate fix into a tool that
+    stops running.
+    """
+    return str(min(max(0.0, round(1 / max(0.01, rules.max_rps), 2)), cap))
+
+
 def _clean(text: str, *, limit: int = 4000) -> list[str]:
     """Merged, de-ANSI'd, line-capped output. Both streams: these tools log to
     stderr as readily as stdout, and a marker on the wrong stream reads as a
@@ -862,6 +877,7 @@ async def ssti_probe(
     that a template engine evaluates attacker input is the finding; proving code
     execution beyond that is a decision a human makes, in writing.
     """
+    engagement = get_engagement()
     url = _http_target(target, tool="sstimap")
     if not re.fullmatch(r"[QBHC]{1,4}", injection_points):
         return {
@@ -878,7 +894,7 @@ async def ssti_probe(
         "-P", injection_points,
         "-l", str(max(1, min(int(level), 3))),
         "-r", "REBT",
-        "--delay", "1",
+        "--delay", _delay_for(engagement.scope.rules, cap=5),
     ]
     if engine:
         argv += ["-e", engine]
@@ -1024,7 +1040,7 @@ async def cmdi_probe(target: str, parameter: str | None = None, level: int = 1) 
         "--time-sec", "5",
         "--timeout", "20",
         "--retries", "1",
-        "--delay", "1",
+        "--delay", _delay_for(engagement.scope.rules, cap=5),
         "--skip-empty",
         "--disable-coloring",
         "--output-dir", str(outdir),

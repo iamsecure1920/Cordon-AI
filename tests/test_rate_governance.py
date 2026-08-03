@@ -540,3 +540,85 @@ class TestInProcessRequestsAreCharged:
 
 async def _no_wildcard(seed: str, probes: int = 3) -> dict[str, Any]:
     return {"wildcard": False, "addresses": [], "probes": probes, "answered": 0, "checked": True}
+
+
+class TestArchiveAndInjectionFlagsTrackTheEngagement:
+    """The wrappers the first rate pass missed.
+
+    naabu, dnsx, nmap and tlsx were fixed when the multiplier bug was found.
+    These six were not, because nobody grepped for the *absence* of a rate flag —
+    only for wrong ones. A tool that never had a rate argument looks correct in a
+    diff and is exactly as ungoverned as one multiplying by twenty.
+    """
+
+    @pytest.mark.parametrize("concurrency", [1, 3, 20])
+    async def test_gau_threads_track_max_concurrency(
+        self, engagement, monkeypatch, concurrency: int
+    ) -> None:
+        """Regression: ``--threads`` was the literal "5"."""
+        engagement.scope.rules.max_concurrency = concurrency
+        calls = _spy(monkeypatch, "endpoints")
+        await REGISTRY["endpoint_discovery"].fn(target="example.com")
+
+        assert _value(_argv_for(calls, "gau"), "--threads") == str(min(concurrency, 20))
+
+    @pytest.mark.parametrize("concurrency", [1, 3, 20])
+    async def test_waymore_parallelism_tracks_max_concurrency(
+        self, engagement, monkeypatch, concurrency: int
+    ) -> None:
+        """Regression: ``-p`` was the literal "5". Clamped to its cap of 10."""
+        engagement.scope.rules.max_concurrency = concurrency
+        calls = _spy(monkeypatch, "endpoints")
+        await REGISTRY["endpoint_discovery"].fn(target="example.com")
+
+        assert _value(_argv_for(calls, "waymore"), "-p") == str(min(concurrency, 10))
+
+    @pytest.mark.parametrize("rps,concurrency", [(0.5, 1), (2, 4), (20, 20)])
+    async def test_arjun_had_no_rate_argument_at_all(
+        self, engagement, monkeypatch, rps: float, concurrency: int
+    ) -> None:
+        """Regression: ``-t`` was the literal "10" and ``-d`` was never passed.
+
+        arjun fans out over its own thread pool, so with no delay it ran at
+        whatever ten threads could manage regardless of what the program
+        published.
+        """
+        engagement.scope.rules.max_rps = rps
+        engagement.scope.rules.max_concurrency = concurrency
+        calls = _spy(monkeypatch, "endpoints")
+        _approve(engagement, "param_discovery")
+        await REGISTRY["param_discovery"].fn(target="https://www.example.com/")
+
+        argv = _argv_for(calls, "arjun")
+        assert _value(argv, "-t") == str(min(concurrency, 15))
+        assert "-d" in argv, "arjun ran with no inter-request delay"
+        assert float(_value(argv, "-d")) == pytest.approx(min(round(1 / rps, 2), 10))
+
+    @pytest.mark.parametrize("rps", [0.5, 2, 20])
+    async def test_sqlmap_delay_and_threads_track_the_engagement(
+        self, engagement, monkeypatch, rps: float
+    ) -> None:
+        """Regression: ``--threads 2 --delay 1``, both literals."""
+        engagement.scope.rules.max_rps = rps
+        engagement.scope.rules.max_concurrency = 4
+        calls = _spy(monkeypatch, "exploitation")
+        _approve(engagement, "sqli_validate")
+        await REGISTRY["sqli_validate"].fn(target="https://www.example.com/?id=1")
+
+        argv = _argv_for(calls, "sqlmap")
+        assert _value(argv, "--threads") == str(min(4, 5))
+        assert float(_value(argv, "--delay")) == pytest.approx(min(round(1 / rps, 2), 5))
+
+    @pytest.mark.parametrize("probe,tool", [("ssti_probe", "sstimap"), ("cmdi_probe", "commix")])
+    @pytest.mark.parametrize("rps", [0.5, 2, 20])
+    async def test_injection_probe_delays_track_the_engagement(
+        self, engagement, monkeypatch, probe: str, tool: str, rps: float
+    ) -> None:
+        """Regression: both passed ``--delay 1``, right only at exactly 1 rps."""
+        engagement.scope.rules.max_rps = rps
+        calls = _spy(monkeypatch, "injection")
+        _approve(engagement, probe)
+        await REGISTRY[probe].fn(target="https://www.example.com/?q=1")
+
+        argv = _argv_for(calls, tool)
+        assert float(_value(argv, "--delay")) == pytest.approx(min(round(1 / rps, 2), 5))
