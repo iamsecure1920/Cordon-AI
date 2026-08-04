@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -133,7 +134,12 @@ async def main() -> int:
         return 3
 
     took = round(time.time() - started, 1)
-    (eng.workspace / f"phase-{phase}.json").write_text(
+    # The target belongs in the filename. Without it a twelve-target run wrote
+    # phase-scan.json twelve times and kept only the last — eleven hosts' results
+    # silently destroyed, and the summary then reported on one host while
+    # appearing to describe the whole run.
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", target)[:80] or "target"
+    (eng.workspace / f"phase-{phase}--{slug}.json").write_text(
         json.dumps(result, indent=2, default=str), encoding="utf-8"
     )
 

@@ -64,12 +64,14 @@ def main() -> int:
     # ---- what it found -----------------------------------------------------
     findings: list[dict] = []
     for path in sorted(ws.glob("phase-*.json")):
+        # phase-<name>--<target>.json
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
         for f in data.get("findings", []) if isinstance(data, dict) else []:
-            f["_phase"] = path.stem.replace("phase-", "")
+            stem = path.stem.replace("phase-", "")
+            f["_phase"], _, f["_target"] = stem.partition("--")
             findings.append(f)
 
     print(f"\nFINDINGS  {len(findings)} candidate(s)")
@@ -79,7 +81,8 @@ def main() -> int:
             by_sev[str(f.get("severity", "info")).lower()].append(f)
         for sev in ("critical", "high", "medium", "low", "info"):
             for f in by_sev.get(sev, []):
-                print(f"  [{sev:8}] {f.get('_phase','?'):9} {str(f.get('title',''))[:74]}")
+                print(f"  [{sev:8}] {f.get('_phase','?'):9} {str(f.get('_target',''))[:28]:28} "
+                      f"{str(f.get('title',''))[:44]}")
 
     # ---- what to do next ---------------------------------------------------
     print("\nNEXT")
