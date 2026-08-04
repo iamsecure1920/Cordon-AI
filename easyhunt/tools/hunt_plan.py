@@ -239,6 +239,13 @@ async def hunt_plan(focus: str | None = None, limit: int = 120) -> dict[str, Any
                 "reproducible PoC."
             ),
             "gaps": _gaps(surface),
+            # What this phase actually produced. In agent mode the SURFACE is
+            # the output — there are no proposals because no internal model was
+            # asked for any — so counting proposals would report a working phase
+            # as empty. Count the things an agent can act on.
+            "actionable": sum(
+                len(v) for v in surface["worth_a_look"].values() if isinstance(v, list)
+            ),
         }
 
     ask = f"Focus on: {focus}\n\n" if focus else ""
@@ -277,6 +284,8 @@ async def hunt_plan(focus: str | None = None, limit: int = 120) -> dict[str, Any
 
     return {
         "ok": True,
+        "mode": "llm",
+        "actionable": len(grounded),
         "proposals": grounded,
         "dropped_ungrounded": len(proposals) - len(grounded),
         "gaps": parsed.get("gaps") or [],

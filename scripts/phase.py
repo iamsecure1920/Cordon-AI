@@ -71,7 +71,7 @@ PHASES: dict[str, dict[str, Any]] = {
     "takeover":  {"tool": "takeover_detect",     "count": None,       "inherits": True, "wants": ("subdomain",)},
     "scan":      {"tool": "nuclei_scan",         "count": None,       "inherits": True, "wants": ("url",), "tag": "live"},
     "report":    {"tool": "report_generate",     "count": None},
-    "plan":      {"tool": "hunt_plan",           "count": "proposals"},
+    "plan":      {"tool": "hunt_plan",           "count": "actionable"},
 }
 
 
