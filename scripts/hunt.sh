@@ -52,7 +52,13 @@ done
 
 # Phases that must succeed for the rest to mean anything. A scan of hosts that
 # were never confirmed alive is not a scan, it is a WAF survey.
-ALL_PHASES="recon resolve probe waf tls cors endpoints js takeover scan report"
+# Per-target phases run once for each host. Global phases run ONCE at the end,
+# over everything every host contributed — scanning is sized against the real
+# total instead of a set that grows under it, and the report covers the run
+# rather than the last host in it.
+PER_TARGET_PHASES="recon resolve probe waf tls cors endpoints js"
+GLOBAL_PHASES_LIST="takeover scan plan report"
+ALL_PHASES="$PER_TARGET_PHASES $GLOBAL_PHASES_LIST"
 REQUIRED="resolve probe"
 
 # ── Preflight ────────────────────────────────────────────────────────────────
@@ -92,10 +98,20 @@ RUN_PHASES="$ALL_PHASES"
 STARTED=no; [ -z "$FROM" ] && STARTED=yes
 
 FAILED=""; EMPTY=""
+
+run_phase() {
+    phase="$1"; tgt="$2"
+    printf "\n${D}── %s ──${N}\n" "$phase"
+    "$PY" "${ROOT}/scripts/phase.py" "$phase" "$tgt"
+    return $?
+}
+
+# ── Per-target phases ────────────────────────────────────────────────────────
 for TARGET in $TARGETS; do
 printf "\n${D}══ %s ══${N}\n" "$TARGET"
 STARTED=no; [ -z "$FROM" ] && STARTED=yes
 for phase in $RUN_PHASES; do
+    case " $GLOBAL_PHASES_LIST " in *" $phase "*) continue ;; esac
     [ "$STARTED" = "no" ] && { [ "$phase" = "$FROM" ] && STARTED=yes || continue; }
 
     printf "\n${D}── %s ──${N}\n" "$phase"
@@ -116,6 +132,20 @@ for phase in $RUN_PHASES; do
            esac ;;
     esac
 done
+done
+
+# ── Global phases: once, over everything every target found ──────────────────
+FIRST=$(echo $TARGETS | awk '{print $1}')
+for phase in $GLOBAL_PHASES_LIST; do
+    case " $RUN_PHASES " in *" $phase "*) ;; *) continue ;; esac
+    printf "\n${D}══ all targets ══${N}\n${D}── %s ──${N}\n" "$phase"
+    "$PY" "${ROOT}/scripts/phase.py" "$phase" "$FIRST"
+    rc=$?
+    case $rc in
+        0) ok "$phase" ;;
+        2) warn "$phase produced nothing"; EMPTY="$EMPTY $phase" ;;
+        *) warn "$phase FAILED (exit $rc)"; FAILED="$FAILED $phase" ;;
+    esac
 done
 
 # ── Summary ──────────────────────────────────────────────────────────────────

@@ -50,6 +50,15 @@ from easyhunt.control_plane.scope import Scope  # noqa: E402
 #: subdomains must not put all of them on a single command line.
 MAX_INHERITED = 500
 
+#: Phases that run ONCE over everything found, not once per target.
+#
+# hunt.sh loops per target, which is right for probing a host and wrong for
+# scanning: `scan` inherits the global asset store, so on a twelve-host run it
+# was handed 3 targets, then 4, then 6 ... then 12, failing the sizing gate every
+# single time as the set grew underneath it. Twelve refusals for one scan that
+# should have been sized once against the real total.
+GLOBAL_PHASES = frozenset({"scan", "takeover", "report", "plan"})
+
 PHASES: dict[str, dict[str, Any]] = {
     "recon":     {"tool": "subdomain_enum",      "count": "subdomains"},
     "resolve":   {"tool": "dns_resolve",         "count": "resolved", "inherits": True, "wants": ("subdomain",)},
@@ -62,6 +71,7 @@ PHASES: dict[str, dict[str, Any]] = {
     "takeover":  {"tool": "takeover_detect",     "count": None,       "inherits": True, "wants": ("subdomain",)},
     "scan":      {"tool": "nuclei_scan",         "count": None,       "inherits": True, "wants": ("url",), "tag": "live"},
     "report":    {"tool": "report_generate",     "count": None},
+    "plan":      {"tool": "hunt_plan",           "count": "proposals"},
 }
 
 

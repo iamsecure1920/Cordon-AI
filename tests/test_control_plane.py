@@ -437,3 +437,52 @@ class TestLiveAndArchivedUrlsAreNotTheSameInput:
 
     def test_a_tag_nothing_carries_returns_nothing(self) -> None:
         assert self._store().values("url", tag="nonexistent") == []
+
+
+class TestHuntPlanSurfaceGrouping:
+    """2,747 URLs is not a surface anyone can reason about; 19 is.
+
+    Scanners cover known CVEs. What they do not do is notice that a path ends
+    in a six-digit number, or that a parameter is named `redirect_uri`. This
+    grouping is the difference between a dump and a short list of things to
+    actually try — measured on a live run, 2,747 URLs reduced to 19 object
+    reference candidates.
+    """
+
+    def _group(self, urls):
+        from easyhunt.tools.hunt_plan import _interesting
+
+        return _interesting(urls)
+
+    def test_numeric_path_segments_are_object_references(self) -> None:
+        g = self._group(["https://x.example.com/event/43691/", "https://x.example.com/about"])
+        assert g["object_reference_candidates"] == ["https://x.example.com/event/43691/"]
+
+    def test_uuids_are_object_references(self) -> None:
+        g = self._group(["https://x.example.com/o/3f2504e0-4f89-11d3-9a0c-0305e82c3301"])
+        assert len(g["object_reference_candidates"]) == 1
+
+    def test_id_parameters_are_object_references(self) -> None:
+        g = self._group(["https://x.example.com/p?user_id=7", "https://x.example.com/p?q=hello"])
+        assert g["object_reference_candidates"] == ["https://x.example.com/p?user_id=7"]
+
+    def test_url_taking_parameters_are_sinks(self) -> None:
+        g = self._group([
+            "https://x.example.com/go?redirect_uri=https://y.example.com",
+            "https://x.example.com/f?file=notes.txt",
+            "https://x.example.com/plain?q=1",
+        ])
+        assert len(g["server_side_sink_candidates"]) == 2
+
+    def test_parameter_vocabulary_is_collected_and_deduplicated(self) -> None:
+        g = self._group([
+            "https://x.example.com/a?page=1&sort=asc",
+            "https://x.example.com/b?page=2&filter=x",
+        ])
+        assert g["distinct_parameter_names"] == ["filter", "page", "sort"]
+
+    def test_an_ordinary_page_produces_no_candidates(self) -> None:
+        """The control: this must not flag everything."""
+        g = self._group(["https://x.example.com/", "https://x.example.com/about-us"])
+        assert not g["object_reference_candidates"]
+        assert not g["server_side_sink_candidates"]
