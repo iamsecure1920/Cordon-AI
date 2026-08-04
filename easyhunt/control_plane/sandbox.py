@@ -393,6 +393,7 @@ class Sandbox:
         tool: str,
         binary: str,
         argv: list[str],
+        host_binary: str | None = None,
         network: str | None = None,
         capabilities: list[str] | None = None,
         env: dict[str, str] | None = None,
@@ -440,8 +441,14 @@ class Sandbox:
                     reason=reason,
                 )
 
-        # Host execution.
-        resolved = shutil.which(binary)
+        # Host execution. `host_binary` is the identity-resolved absolute path
+        # when the caller had one — it is meaningful HERE and nowhere else. It
+        # must never reach the container branch above: an absolute host path has
+        # no meaning inside an image, and `command -v /usr/bin/amass` fails there
+        # whatever the image contains.
+        resolved = shutil.which(host_binary or binary) or (
+            host_binary if host_binary and Path(host_binary).is_file() else None
+        )
         if not resolved:
             raise ToolUnavailable(
                 f"{tool}: neither a sandbox image nor the host binary {binary!r} is available"

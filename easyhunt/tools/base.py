@@ -563,17 +563,32 @@ async def guarded_run(
                 if header not in final_argv:
                     final_argv += [spec.user_agent_flag, header]
 
-    # Resolve to the binary that identifies itself as this tool, rather than
-    # whichever same-named executable happens to be first on PATH.
+    # Two different questions, and they had one answer between them.
+    #
+    # `binary` is the NAME the tool is known by. Inside a container that is all
+    # that means anything: the image has its own layout and PATH.
+    #
+    # `host_binary` is the identity-resolved absolute path, used only when the
+    # tool falls back to host execution — that is where "which of the three
+    # things called httpx is the right one" matters.
+    #
+    # Conflating them sent an absolute host path into the container check, so
+    # `command -v /usr/bin/amass` ran inside an image that keeps amass in
+    # /usr/local/bin, reported it absent, and fell back to the host. amass,
+    # cloud_enum, commix, garak and jaeles all escaped the sandbox this way; the
+    # rest passed only because their host and image paths happened to match.
+    # Found by running the toolchain against a live target, not by any test.
     binary = spec.binary or spec.name
+    host_binary: str | None = None
     if spec.identity_marker:
         from easyhunt.tools.common import resolve_binary
 
-        binary = resolve_binary(spec.name) or binary
+        host_binary = resolve_binary(spec.name)
 
     plan: ExecPlan = engagement.sandbox.plan(
         tool=spec.name,
         binary=binary,
+        host_binary=host_binary,
         argv=final_argv,
         network=spec.network,
         capabilities=spec.capabilities,

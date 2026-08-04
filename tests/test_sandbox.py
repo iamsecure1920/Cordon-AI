@@ -491,3 +491,73 @@ class TestActuallyRunsInTheContainer:
         assert plan.sandboxed is False
         assert "not executable inside" in plan.fallback_reason
         assert sandbox.fallback_report() == [{"tool": absent, "reason": plan.fallback_reason}]
+
+
+class TestHostPathNeverReachesTheContainer:
+    """An absolute host path has no meaning inside an image.
+
+    `guarded_run` resolved a tool's identity with `resolve_binary()`, which
+    returns an absolute HOST path, and passed that single value to
+    `Sandbox.plan()` as `binary`. The container branch then asked
+    `command -v /usr/bin/amass` inside an image that keeps amass in
+    /usr/local/bin, concluded it was absent, and fell back to the host.
+
+    amass, cloud_enum, commix, garak and jaeles all escaped the sandbox this
+    way. Every other marked tool passed only because its host and image paths
+    happened to coincide — so the bug was invisible right up until an image
+    layout differed. Found by running the toolchain against a live target;
+    no test and no `doctor` run would have shown it, because both were asking
+    about the host.
+    """
+
+    def test_container_check_uses_the_name_not_the_host_path(self, tmp_path) -> None:
+        from easyhunt.control_plane.sandbox import Sandbox, SandboxConfig
+
+        asked: list[str] = []
+
+        class Probing(Sandbox):
+            def runtime_available(self) -> bool:
+                return True
+
+            def image_present(self, image: str) -> bool:
+                return True
+
+            def binary_in_image(self, image: str, binary: str) -> bool:
+                asked.append(binary)
+                return not binary.startswith("/")
+
+        sandbox = Probing(
+            SandboxConfig.from_dict(
+                {"mode": "docker", "default_image": "example:latest",
+                 "verify_image_binary": True, "fallback_to_host": True}
+            ),
+            workspace=tmp_path,
+        )
+        plan = sandbox.plan(
+            tool="amass",
+            binary="amass",
+            host_binary="/usr/bin/amass",
+            argv=["-version"],
+        )
+        assert asked == ["amass"], f"container was asked about {asked}, not the bare name"
+        assert plan.sandboxed, "resolved host path must not push the tool onto the host"
+
+    def test_host_fallback_still_uses_the_resolved_path(self, tmp_path) -> None:
+        """The identity-resolved path is the whole point on the host branch."""
+        from easyhunt.control_plane.sandbox import Sandbox, SandboxConfig
+
+        sandbox = Sandbox(
+            SandboxConfig.from_dict({"mode": "none", "fallback_to_host": True}),
+            workspace=tmp_path,
+        )
+        real = tmp_path / "httpx-real"
+        real.write_text("#!/bin/sh\necho ok\n")
+        real.chmod(0o755)
+
+        plan = sandbox.plan(
+            tool="httpx", binary="httpx", host_binary=str(real), argv=["-version"]
+        )
+        assert not plan.sandboxed
+        assert str(real) in " ".join(plan.argv), (
+            "host execution must use the identity-resolved binary, not PATH order"
+        )
