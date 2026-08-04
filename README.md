@@ -41,6 +41,153 @@ drop — a taskflow that declares a `confirm` verdict is rejected at load time.
 
 ---
 
+## The whole thing in one picture
+
+```mermaid
+mindmap
+  root((EasyHunt AI))
+    L5 Strategy
+      Claude CLI
+      no network of its own
+      8 phase skills
+    L4 Method
+      OWASP WSTG · 115 tests
+      taskflows
+      payload store · 62 lists
+    L3 Control plane
+      scope · fails closed
+      sanitize · rejects
+      budget · USD + requests
+      rate limit · per request
+      approval · policy or human
+      sandbox · read-only, caps dropped
+      audit · hash-chained
+    L2 Execution
+      66 MCP tools
+      81 catalogued binaries
+      6 engines
+      Docker per invocation
+    L1 Knowledge
+      findings · PoC required
+      graph memory
+      detection rules
+      evidence store
+```
+
+## How one tool call actually flows
+
+Every capability takes this path. There is no flag, debug mode or plugin hook
+that skips a step — that is the property the whole design exists to hold.
+
+```mermaid
+flowchart TD
+    A[Agent asks for a tool] --> B{in scope?}
+    B -- no --> X1[scope_denied · stop]
+    B -- yes --> C{argv sanitized?}
+    C -- rejected --> X2[SanitizeError · never cleaned-and-run]
+    C -- ok --> D{budget left?}
+    D -- no --> X3[BudgetExceeded · report_generate still works]
+    D -- yes --> E{rate limit}
+    E -- over --> X4[RateLimited · names the ceiling]
+    E -- ok --> F{mode}
+    F -- passive --> H[run]
+    F -- aggressive/exploit --> G{approved?}
+    G -- no --> X5[ApprovalDenied]
+    G -- yes --> H
+    H --> I[sandbox: read-only root, caps dropped, memory cap]
+    I --> J[parse and normalize]
+    J --> K{did it actually run?}
+    K -- no --> L[status UNTESTED · never 'clean']
+    K -- yes --> M[findings as CANDIDATES]
+    M --> N[hash-chained audit]
+    L --> N
+```
+
+The `K` branch is the one that took the longest to get right. A killed scan, a
+tool that could not write its config, a WAF page returning 200 — all of them
+produce *zero findings*, and zero findings reads as good news. Every wrapper
+distinguishes **tested and clean** from **not tested**, and says which in words.
+
+## Engagement flow
+
+```mermaid
+flowchart LR
+    S[scope.yaml<br/>transcribed by hand] --> D[easyhunt doctor]
+    D --> R[recon<br/>passive first]
+    R --> P[http_probe<br/>what is alive]
+    P --> E[endpoints · js · params]
+    E --> V[vuln scan<br/>templates matched to stack]
+    V --> T[triage<br/>adversarial pair]
+    T --> X[PoC validation]
+    X --> RPT[report]
+    P -.-> TK[takeover check]
+    TK -.-> RPT
+```
+
+`scripts/hunt.sh` runs this unattended, one phase at a time, and **stops when a
+phase produces nothing** — scanning hosts nobody confirmed alive is not a scan.
+
+---
+
+## Tech stack
+
+| Layer | What it uses |
+| --- | --- |
+| Protocol | **MCP** via FastMCP 3.x — stdio and streamable-HTTP |
+| Auth (remote) | **OAuth 2.1 + PKCE**, RFC 9728 / RFC 8707 |
+| Language | **Python ≥ 3.11**, fully async, `uv` for installs |
+| Isolation | **Docker** — read-only root, all capabilities dropped, memory/CPU caps, one writable mount |
+| Models | **OpenRouter**, three tiers with price ceilings and fallbacks |
+| Memory | JSONL findings store, optional **Neo4j** graph, cross-engagement PoC memory |
+| Knowledge | **OWASP WSTG** (115 tests, pinned, CC BY-SA), vetted payload store |
+| Audit | Hash-chained JSONL — tampering breaks the chain |
+| Tests | **1,266** covering the control plane, wrappers and regressions |
+
+## Integrated tools
+
+**66 MCP tools** driving **81 catalogued binaries**. `·` passive, `!` aggressive,
+`!!` exploit — the mode decides whether a human is consulted.
+
+| Category | Binaries |
+| --- | --- |
+| **Recon** | `subfinder` `amass` `assetfinder` `findomain` `asnmap` `cdncheck` `theHarvester` `uncover` `shuffledns` `alterx` `subdominator` `subdomainsleuth` `bbot` `osmedeus` `whois` `dig` |
+| **HTTP / TLS** | `httpx` `whatweb` `wafw00f` `tlsx` `testssl` `katana` `corscanner` `websocat` `graphql-cop` `jwt_tool` |
+| **Content & params** | `ffuf` `feroxbuster` `dirsearch` `gobuster` `arjun` `paramspider` `gau` `waybackurls` `waymore` `linkfinder` `secretfinder` `xsstrike` `jsluice` `retire` `netsanitizer` |
+| **Scanning** | `nuclei` `jaeles` `nikto` `wapiti` `semgrep` `nmap` `naabu` `masscan` `dnsx` |
+| **Exploitation** | `sqlmap` `dalfox` `commix` `ssrfmap` `sstimap` `smuggler` `nosqli` `interactsh-client` `medusa` `strix` |
+| **Takeover** | `subzy` `subjack` `dnsreaper` |
+| **Secrets** | `trufflehog` `gitleaks` `noseyparker` `kingfisher` `gitdorker` |
+| **Cloud** | `prowler` `cloudfox` `kubescape` `s3scanner` `cloud_enum` `cloudpeass` |
+| **Smart contracts** | `slither` `aderyn` `forge` |
+| **LLM security** | `garak` `promptfoo` `deepteam` |
+
+Run `easyhunt doctor` for the live picture — it executes each tool **inside the
+container it will actually run in**, so a green tick is a claim about the program
+that runs, not about a filename on your PATH.
+
+### MCP tools by phase
+
+| Phase | Tools |
+| --- | --- |
+| Recon | `subdomain_enum` `asn_lookup` `whois_lookup` `tls_info` `bbot_scan` `bbot_scan_active`! `osmedeus_flow`! |
+| DNS | `dns_resolve` `cdn_check` `dns_permute`! |
+| HTTP | `http_probe` `waf_detect` `tls_audit` `cors_audit` |
+| Endpoints | `endpoint_discovery` `content_discovery`! `param_discovery`! `graphql_audit` `websocket_probe` `payload_catalog` |
+| JS | `js_analyze` |
+| Ports | `port_scan`! `service_scan`! |
+| Takeover | `takeover_detect`! `takeover_verify` `takeover_poc_plan` `takeover_confirm`!! |
+| Vuln scan | `nuclei_scan`! `jaeles_scan`! `nikto_scan`! `wapiti_scan`! `semgrep_scan` |
+| Exploit | `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
+| Secrets | `secret_scan` `secret_validate`! `jwt_inspect` `source_fetch` |
+| Cloud | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
+| Contracts | `contract_static_scan` `contract_toolchain` |
+| LLM | `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` |
+| Method | `wstg_lookup` |
+| Triage | `triage_findings` `triage_taskflows` `triage_canary_preview` |
+| Report | `report_generate` `findings_list` `finding_detail` `finding_note` |
+| Control | `job_status` |
+
+
 ## Quick start — a machine with nothing on it
 
 ```bash
@@ -148,25 +295,16 @@ correctly rather than silently producing empty scans.
 
 ## Architecture
 
-```
-L5  STRATEGY   Claude CLI — plans and decides. No network access of its own.
-L4  METHOD     8 Claude Skills, one per VAPT phase.
-L3  CONTROL    MCP server — scope, sanitize, rate-limit, approve, sandbox, audit.
-L2  EXECUTION  Engines (BBOT · Nuclei · Osmedeus · Strix) + 66 atomic wrappers.
-L1  KNOWLEDGE  Rule packs · task graph · findings store · evidence · PoC memory.
+See the diagrams above, and `docs/ARCHITECTURE.md` for the module-level walk-through.
 
-               LLM traffic ──▶ OpenRouter (3 tiers, fallbacks, price ceilings)
-```
-
-**Engines over wrappers.** BBOT already orchestrates 80+ recon modules, so
-EasyHunt drives it through its Python API rather than wrapping each one. Atomic
-wrappers exist where surgical control matters.
+**Engines over wrappers.** BBOT already orchestrates 80+ recon modules, so EasyHunt
+drives it through its Python API rather than wrapping each one. Atomic wrappers
+exist where surgical control matters.
 
 **Scope is enforced twice.** BBOT's own whitelist/blacklist are populated from
 `scope.yaml`, *and* every emitted event is re-checked before storage — a module
 that resolves outward cannot smuggle a host into the findings store.
 
----
 
 ## Extending it
 
@@ -340,7 +478,7 @@ New machine? `./bootstrap.sh` — idempotent, safe to re-run.
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 1,240 tests
+.venv/bin/python -m pytest tests/ -q          # 1,266 tests
 .venv/bin/python -m pytest tests/test_security.py -q   # adversarial suite
 .venv/bin/ruff check easyhunt/ tests/
 ```
