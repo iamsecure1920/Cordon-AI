@@ -270,7 +270,26 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     print("\nLLM (OpenRouter)")
     key_env = str(config.get("llm.api_key_env", "OPENROUTER_API_KEY"))
-    if not os.environ.get(key_env):
+
+    # The key being set is not the same as the client being able to run. The
+    # `openai` package is an optional dependency, and without it every LLM path
+    # — triage, report synthesis, hunt_plan — raises at call time, not at start.
+    # Doctor reported the key was present and said nothing about the import, so
+    # a machine with a configured key and no package looked fully working right
+    # up until the first triage call failed mid-engagement.
+    try:
+        import openai  # noqa: F401
+
+        client_ready = True
+    except ImportError:
+        client_ready = False
+
+    if not client_ready:
+        print(f"  {red}✗{reset} the 'openai' package is missing — every LLM path will")
+        print(f"    {dim}raise at call time, not at startup. Install with:{reset}")
+        print(f"    {dim}  pip install 'easyhunt-ai[llm]'{reset}")
+        print(f"    {dim}Scanning and rule-based detection are unaffected.{reset}")
+    elif not os.environ.get(key_env):
         print(f"  {yellow}!{reset} ${key_env} not set — triage and report synthesis are unavailable")
         print(f"    {dim}Passive recon, scanning, and rule-based detection work without it.{reset}")
     elif args.probe:
