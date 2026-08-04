@@ -8,6 +8,8 @@ dist/
 # Engagement artifacts contain target data, findings, and evidence.
 # These must never be committed.
 engagements/
+# hunt.sh's current-workspace pointer — contains the engagement name.
+.easyhunt-run
 scope.yaml
 # Every per-engagement scope, not just the active one. These name real
 # targets, contacts, and authorization references.

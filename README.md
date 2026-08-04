@@ -1,47 +1,108 @@
+<div align="center">
+
 # EasyHunt AI
 
-Agentic VAPT orchestrator. Drives open-source security engines through a custom
-MCP server, runs inside the Claude CLI, and routes model traffic through
-OpenRouter.
+**An agentic VAPT orchestrator where the control plane — not the model — is the security boundary.**
 
-> **Authorized testing only.** Owned assets, an in-scope bug bounty program, or
-> org assets with documented written approval. The `scope.yaml` you write *is*
-> the authorization boundary, and the server refuses every request that falls
-> outside it.
+[![Tests](https://img.shields.io/badge/tests-1%2C266-brightgreen)](#development)
+[![Tools](https://img.shields.io/badge/tools-81%20catalogued-blue)](#every-tool-it-drives)
+[![MCP](https://img.shields.io/badge/MCP-66%20tools-8A2BE2)](#mcp-tools-by-phase)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#tech-stack)
+[![Sandbox](https://img.shields.io/badge/sandbox-read--only%20%C2%B7%20caps%20dropped-orange)](#isolation)
+[![License](https://img.shields.io/badge/license-see%20LICENSE-lightgrey)](LICENSE)
 
----
+</div>
 
-## What it actually is
-
-A **control plane** that sits between an AI agent and 81 catalogued security tools. The
-agent plans; the control plane decides what is permitted. Every capability —
-engine, wrapper, or user-supplied plugin — passes through one fixed sequence:
-
-```
-scope → sanitize → budget → rate-limit → approval → sandbox exec
-      → parse/normalize → audit → structured return
-```
-
-There is no flag, argument, or debug mode that skips a step. That is the whole
-design: adding the fiftieth tool cannot accidentally add the first unguarded one.
-
-### The five rules it enforces in code
-
-| Rule | Where it lives |
-| --- | --- |
-| Denylist beats allowlist; unparseable input fails closed | `control_plane/scope.py` |
-| Arguments are **rejected**, never sanitized-and-run | `control_plane/sanitize.py` |
-| Aggressive and exploit actions stop for a human | `control_plane/approval.py` |
-| **No PoC, no finding** — only a reproducible proof confirms | `knowledge/findings.py` |
-| No scope, rate-limit, or attribution evasion capability, ever | `sanitize.GLOBAL_DENIED_FLAGS` |
-
-The fourth is worth spelling out: `Finding.confirm()` requires a PoC with both
-reproduction steps and an observed result. AI triage can rank, downgrade, and
-drop — a taskflow that declares a `confirm` verdict is rejected at load time.
+> [!WARNING]
+> **Authorized testing only.** Owned assets, an in-scope bug bounty program, or org
+> assets with documented written approval. The `scope.yaml` you write **is** the
+> authorization boundary, and the server refuses every request that falls outside
+> it. This tool will not help you test something you have no permission to test.
 
 ---
 
-## The whole thing in one picture
+## The one-paragraph version
+
+Most AI security tools give a model a shell and a system prompt telling it to
+behave. EasyHunt gives the model **no shell at all**. Every capability is an MCP
+tool that passes through a fixed sequence — scope, sanitize, budget, rate-limit,
+approval, sandbox, parse, audit — enforced in code, server-side, with no path
+that skips a step. The model supplies strategy. The control plane decides what is
+permitted. **A jailbroken prompt cannot reach the network.**
+
+---
+
+## Why this is not another scanner wrapper
+
+Six design decisions, each of which came from something breaking in production.
+
+### 1. Absence is not a clean result
+
+This is the whole thing. A killed scan, a tool that could not write its config,
+and a genuinely secure target all produce **zero findings** — and zero findings
+reads as good news.
+
+```mermaid
+flowchart LR
+    A[nuclei exits 0] --> B{why?}
+    B --> C[tested 13,391 templates<br/>found nothing]
+    B --> D[could not write its config<br/>tested NOTHING]
+    C --> E["findings: 0 ✓"]
+    D --> E
+    style D fill:#7f1d1d,color:#fff
+    style E fill:#78350f,color:#fff
+```
+
+Both branches used to print the same result. Every wrapper now distinguishes
+**tested and clean** from **not tested**, and says which in words:
+
+> *"zero findings here means UNTESTED, not clean."*
+
+Twenty-five instances of this defect have been found and fixed in this codebase
+— including `nuclei` exiting **0** while unable to create its config directory,
+and a command-injection tool that discarded its own target flag for the
+project's entire life and reported "no injectable parameter" every time.
+
+### 2. The scope file is an authorization record, not configuration
+
+`scope.yaml` is transcribed by hand from the program's published policy. The
+installer **refuses to create one for you** — it used to copy a template that
+declared `authorization: bug-bounty` and a `fetched_at` date nobody had earned,
+and three separate green ticks then confirmed it.
+
+An absent scope is a correct state. A fabricated one is not.
+
+### 3. Rate limits come from the program, never from a literal
+
+The limiter charges per **request**, not per tool call — so a scanner with its
+own thread pool cannot out-run the published ceiling while the audit log shows
+one compliant call. Every rate flag is derived from `scope.rules`, then clamped
+to what the binary actually accepts.
+
+### 4. Tools are resolved by identity, not by PATH order
+
+`pip install nuclei` gets you a 2018 Kaggle package. `slither` on PyPI is a
+children's Scratch-for-Python toy. Kali's `medusa` is a password brute-forcer;
+ours is a fuzzer. EasyHunt executes each candidate and keeps the one that
+identifies itself — and never "fixes" a collision by uninstalling your software.
+
+### 5. Health checks run where the tool runs
+
+`easyhunt doctor` executes every tool **inside the container it will actually
+run in**, under the real read-only root and dropped capabilities. Checking the
+host copy answers a question about a different program — that is how tools
+shipped broken for days behind a green tick.
+
+### 6. No PoC, no finding
+
+`Finding.confirm()` requires reproduction steps **and** an observed result. AI
+triage may rank, downgrade and drop; a taskflow that declares a `confirm`
+verdict is rejected at load time. Scanner output is a *candidate*, permanently,
+until a human or a validator proves it.
+
+---
+
+## The whole system in one picture
 
 ```mermaid
 mindmap
@@ -52,12 +113,12 @@ mindmap
       8 phase skills
     L4 Method
       OWASP WSTG · 115 tests
-      taskflows
-      payload store · 62 lists
+      adversarial triage taskflows
+      payload store · 62 vetted lists
     L3 Control plane
       scope · fails closed
-      sanitize · rejects
-      budget · USD + requests
+      sanitize · rejects, never cleans
+      budget · USD and requests
       rate limit · per request
       approval · policy or human
       sandbox · read-only, caps dropped
@@ -74,58 +135,121 @@ mindmap
       evidence store
 ```
 
-## How one tool call actually flows
-
-Every capability takes this path. There is no flag, debug mode or plugin hook
-that skips a step — that is the property the whole design exists to hold.
+## How one tool call flows
 
 ```mermaid
 flowchart TD
-    A[Agent asks for a tool] --> B{in scope?}
+    A([Agent requests a tool]) --> B{in scope?}
     B -- no --> X1[scope_denied · stop]
-    B -- yes --> C{argv sanitized?}
-    C -- rejected --> X2[SanitizeError · never cleaned-and-run]
+    B -- yes --> C{argv valid?}
+    C -- rejected --> X2[SanitizeError<br/>never cleaned-and-run]
     C -- ok --> D{budget left?}
-    D -- no --> X3[BudgetExceeded · report_generate still works]
+    D -- no --> X3[BudgetExceeded<br/>report_generate still works]
     D -- yes --> E{rate limit}
     E -- over --> X4[RateLimited · names the ceiling]
     E -- ok --> F{mode}
-    F -- passive --> H[run]
-    F -- aggressive/exploit --> G{approved?}
+    F -- passive --> H[execute]
+    F -- aggressive / exploit --> G{approved?}
     G -- no --> X5[ApprovalDenied]
     G -- yes --> H
-    H --> I[sandbox: read-only root, caps dropped, memory cap]
+    H --> I[[sandbox<br/>read-only root · caps dropped · memory cap]]
     I --> J[parse and normalize]
     J --> K{did it actually run?}
-    K -- no --> L[status UNTESTED · never 'clean']
+    K -- no --> L[status: UNTESTED<br/>never 'clean']
     K -- yes --> M[findings as CANDIDATES]
-    M --> N[hash-chained audit]
+    M --> N[(hash-chained audit)]
     L --> N
+    style X1 fill:#7f1d1d,color:#fff
+    style X2 fill:#7f1d1d,color:#fff
+    style L fill:#78350f,color:#fff
+    style I fill:#1e3a8a,color:#fff
+    style N fill:#065f46,color:#fff
 ```
-
-The `K` branch is the one that took the longest to get right. A killed scan, a
-tool that could not write its config, a WAF page returning 200 — all of them
-produce *zero findings*, and zero findings reads as good news. Every wrapper
-distinguishes **tested and clean** from **not tested**, and says which in words.
 
 ## Engagement flow
 
 ```mermaid
 flowchart LR
-    S[scope.yaml<br/>transcribed by hand] --> D[easyhunt doctor]
+    S[/scope.yaml<br/>transcribed by hand/] --> D{{easyhunt doctor}}
     D --> R[recon<br/>passive first]
     R --> P[http_probe<br/>what is alive]
     P --> E[endpoints · js · params]
     E --> V[vuln scan<br/>templates matched to stack]
     V --> T[triage<br/>adversarial pair]
     T --> X[PoC validation]
-    X --> RPT[report]
+    X --> RPT[/report/]
     P -.-> TK[takeover check]
     TK -.-> RPT
+    style S fill:#1e3a8a,color:#fff
+    style RPT fill:#065f46,color:#fff
 ```
 
-`scripts/hunt.sh` runs this unattended, one phase at a time, and **stops when a
-phase produces nothing** — scanning hosts nobody confirmed alive is not a scan.
+`scripts/hunt.sh` runs this unattended and **stops when a phase produces
+nothing** — scanning hosts nobody confirmed alive is not a scan, it is a survey
+of someone's WAF.
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/iamsecure1920/EasyHunt-AI.git && cd EasyHunt-AI
+./bootstrap.sh
+```
+
+That is the whole install. `bootstrap.sh` is idempotent and is also the repair
+path: system packages, Go and Python runtimes, Docker enabled at boot, the
+EasyHunt package, the tool suite, **the `easyhunt:latest` image**, the per-tool
+images, then `easyhunt doctor`.
+
+Budget **30–45 minutes** for a first run. Needs ~15 GB free and Python ≥ 3.11.
+
+| Flag | Effect |
+| --- | --- |
+| `--no-build` | skip the image build (≈46 tools then run on the host) |
+| `--no-images` | skip images entirely — no container isolation |
+| `--no-tools` | package only |
+
+> [!NOTE]
+> `easyhunt:latest` is built from this repo's `Dockerfile` and is **not on any
+> registry**, so `docker pull` cannot find it. `bootstrap.sh` builds it, or:
+> `docker build -t easyhunt:latest .`
+
+### Then, before anything touches a network
+
+```bash
+cp scope.example.yaml scope.yaml
+$EDITOR scope.yaml          # transcribe the program's published policy
+easyhunt scope validate
+easyhunt doctor             # expect 0 broken
+```
+
+In Claude Code: `/easyhunt`.
+
+### Running an engagement
+
+```bash
+# Unattended, all phases, gated
+./scripts/hunt.sh target.example.com
+
+# Several targets
+./scripts/hunt.sh a.example.com b.example.com
+
+# Pick phases, or resume
+./scripts/hunt.sh target.example.com --only probe,scan
+./scripts/hunt.sh target.example.com --from scan
+
+# Exploitation — refused unless scope.yaml permits it
+./scripts/hunt.sh target.example.com --exploit
+```
+
+Each phase appends to `status.jsonl` so a human or a model can watch without
+touching the run:
+
+```json
+{"phase":"probe","state":"ok","tool":"http_probe","seconds":4.1,"produced":248,"findings":0}
+{"phase":"cors","state":"failed","tool":"cors_audit","message":"killed at the timeout — UNTESTED, not clean"}
+```
 
 ---
 
@@ -135,18 +259,33 @@ phase produces nothing** — scanning hosts nobody confirmed alive is not a scan
 | --- | --- |
 | Protocol | **MCP** via FastMCP 3.x — stdio and streamable-HTTP |
 | Auth (remote) | **OAuth 2.1 + PKCE**, RFC 9728 / RFC 8707 |
-| Language | **Python ≥ 3.11**, fully async, `uv` for installs |
+| Language | **Python ≥ 3.11**, fully async; `uv` for installs |
 | Isolation | **Docker** — read-only root, all capabilities dropped, memory/CPU caps, one writable mount |
 | Models | **OpenRouter**, three tiers with price ceilings and fallbacks |
-| Memory | JSONL findings store, optional **Neo4j** graph, cross-engagement PoC memory |
-| Knowledge | **OWASP WSTG** (115 tests, pinned, CC BY-SA), vetted payload store |
+| Memory | JSONL findings store · optional **Neo4j** graph · cross-engagement PoC memory |
+| Knowledge | **OWASP WSTG** — 115 tests, pinned, CC BY-SA · 62 vetted payload lists |
 | Audit | Hash-chained JSONL — tampering breaks the chain |
-| Tests | **1,266** covering the control plane, wrappers and regressions |
+| Code | ~25,600 lines · **1,266 tests** across 31 files · 83 install recipes |
 
-## Integrated tools
+## Isolation
 
-**66 MCP tools** driving **81 catalogued binaries**. `·` passive, `!` aggressive,
-`!!` exploit — the mode decides whether a human is consulted.
+Every containerised tool runs with:
+
+```
+--read-only              --cap-drop ALL         --security-opt no-new-privileges
+--memory 2g --cpus 2.0   --network <per-tool>   one writable mount (the workspace)
+```
+
+Per-tool scratch mounts exist only where a tool genuinely needs `$HOME` — and
+they mount the **leaf**, never the parent, because a tmpfs over a parent hides
+the tool store and makes a dozen tools vanish.
+
+---
+
+## Every tool it drives
+
+**66 MCP tools** over **81 catalogued binaries**.
+`·` passive · `!` aggressive · `!!` exploit — the mode decides whether a human is consulted.
 
 | Category | Binaries |
 | --- | --- |
@@ -161,150 +300,56 @@ phase produces nothing** — scanning hosts nobody confirmed alive is not a scan
 | **Smart contracts** | `slither` `aderyn` `forge` |
 | **LLM security** | `garak` `promptfoo` `deepteam` |
 
-Run `easyhunt doctor` for the live picture — it executes each tool **inside the
-container it will actually run in**, so a green tick is a claim about the program
-that runs, not about a filename on your PATH.
+Run `easyhunt doctor` for the live picture.
 
 ### MCP tools by phase
 
 | Phase | Tools |
 | --- | --- |
-| Recon | `subdomain_enum` `asn_lookup` `whois_lookup` `tls_info` `bbot_scan` `bbot_scan_active`! `osmedeus_flow`! |
-| DNS | `dns_resolve` `cdn_check` `dns_permute`! |
-| HTTP | `http_probe` `waf_detect` `tls_audit` `cors_audit` |
-| Endpoints | `endpoint_discovery` `content_discovery`! `param_discovery`! `graphql_audit` `websocket_probe` `payload_catalog` |
-| JS | `js_analyze` |
-| Ports | `port_scan`! `service_scan`! |
-| Takeover | `takeover_detect`! `takeover_verify` `takeover_poc_plan` `takeover_confirm`!! |
-| Vuln scan | `nuclei_scan`! `jaeles_scan`! `nikto_scan`! `wapiti_scan`! `semgrep_scan` |
-| Exploit | `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
-| Secrets | `secret_scan` `secret_validate`! `jwt_inspect` `source_fetch` |
-| Cloud | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
-| Contracts | `contract_static_scan` `contract_toolchain` |
-| LLM | `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` |
-| Method | `wstg_lookup` |
-| Triage | `triage_findings` `triage_taskflows` `triage_canary_preview` |
-| Report | `report_generate` `findings_list` `finding_detail` `finding_note` |
-| Control | `job_status` |
-
-
-## Quick start — a machine with nothing on it
-
-```bash
-git clone https://github.com/iamsecure1920/EasyHunt-AI.git && cd EasyHunt-AI
-./bootstrap.sh
-```
-
-That is the whole install. `bootstrap.sh` is idempotent, safe to re-run, and is
-also the repair path — it installs system packages, Go and Python runtimes,
-Docker (enabled at boot), the EasyHunt package, the tool suite, **builds the
-`easyhunt:latest` container image**, pulls the per-tool images, and then runs
-`easyhunt doctor` and prints what is still missing.
-
-Budget **30–45 minutes** for the first run; almost all of it is the image build.
-Needs ~30 GB free, Python ≥ 3.11, and **Go ≥ 1.21** — Debian's `golang-go` is
-1.19 and every Go tool refuses to build against it. `bootstrap.sh` detects this
-and installs a current toolchain from go.dev.
-
-| Flag | Effect |
-| --- | --- |
-| `--no-build` | skip the `easyhunt:latest` build (73 tools then run on the host) |
-| `--no-images` | skip images entirely — no container isolation |
-| `--no-tools` | package only |
-
-### Why the image matters
-
-`easyhunt:latest` is built from the `Dockerfile` in this repo and is **not on any
-registry**, so `docker pull` cannot find it — `bootstrap.sh` builds it, or you
-can do it yourself:
-
-```bash
-docker build -t easyhunt:latest .
-```
-
-46 of the 81 catalogued tools live in it, and 48 have a container home once the
-per-tool images are counted. Without it, every one of those falls back to the
-host: no read-only root, no dropped capabilities, no memory ceiling — and on a
-fresh machine, mostly not installed at all. `easyhunt doctor` tells you which is
-which: a working tool prints `@image`, and one with no marker ran on the host.
-
-### Manual install, if you prefer
-
-```bash
-./install.sh                    # package, skills, MCP registration
-easyhunt install                # the ~20-tool core pipeline
-easyhunt install --all          # all 81, including cloud and LLM red-team
-docker build -t easyhunt:latest .
-```
-
-`easyhunt install` is idempotent, dependency-ordered, and **verifies every tool
-after installing it** — a successful `go install` does not mean a working tool.
-It reports per-tool failures with the command and stderr and keeps going, so one
-broken recipe costs you one tool rather than the run.
-
-```bash
-easyhunt install --dry-run      # show the plan, change nothing
-easyhunt install --category dns # one group at a time
-easyhunt doctor --fix           # repair what is already here
-```
-
-It never installs into EasyHunt's own environment — Python tools go through
-`pipx`, isolated. That is enforced with a guard, after `pip install semgrep` once
-pulled in `fastmcp-slim` and silently broke the application's MCP client.
-
-### Configuration
-
-`config.yaml` is gitignored — it holds your own choices. Until you write one,
-EasyHunt reads `config.example.yaml`, which carries the shipped posture: sandbox
-on, the image map, and the per-tool scratch mounts that several tools need to
-start at all. Copy it when you want to change something:
-
-```bash
-cp config.example.yaml config.yaml
-```
-
-Then, before anything else:
-
-```bash
-cp scope.example.yaml scope.yaml
-$EDITOR scope.yaml              # fill in from the program's policy page
-easyhunt doctor                 # what is installed, configured, and missing
-easyhunt scope example.com      # confirm a target resolves the way you expect
-```
-
-> **The installer will not do this for you, deliberately.** `install.sh` used to
-> copy the template into place; the operator ended up with a file declaring
-> `authorization: bug-bounty`, a `program_url` and a `fetched_at` date they never
-> wrote — and `easyhunt doctor` then printed a green tick for it. `scope.yaml` is
-> not configuration, it is the record of an authorization. `easyhunt scope
-> validate` warns if it is still the unedited template.
-
-
-In Claude Code: `/easyhunt`.
-
-### What "installed" means here
-
-`doctor` and the installer both resolve tools **by identity, not PATH order**.
-`httpx` is both ProjectDiscovery's prober and the Python HTTP library's CLI; if
-the wrong one is first on your PATH it exits zero, prints nothing, and looks
-exactly like a target with no live hosts. EasyHunt runs each candidate once and
-picks the one that identifies itself, so a shadowed install is reported and used
-correctly rather than silently producing empty scans.
+| **Recon** | `subdomain_enum` `asn_lookup` `whois_lookup` `tls_info` `bbot_scan` `bbot_scan_active`! `osmedeus_flow`! |
+| **DNS** | `dns_resolve` `cdn_check` `dns_permute`! |
+| **HTTP** | `http_probe` `waf_detect` `tls_audit` `cors_audit` |
+| **Endpoints** | `endpoint_discovery` `content_discovery`! `param_discovery`! `graphql_audit` `websocket_probe` `payload_catalog` |
+| **JavaScript** | `js_analyze` |
+| **Ports** | `port_scan`! `service_scan`! |
+| **Takeover** | `takeover_detect`! `takeover_verify` `takeover_poc_plan` `takeover_confirm`!! |
+| **Vuln scan** | `nuclei_scan`! `jaeles_scan`! `nikto_scan`! `wapiti_scan`! `semgrep_scan` |
+| **Exploit** | `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
+| **Secrets** | `secret_scan` `secret_validate`! `jwt_inspect` `source_fetch` |
+| **Cloud** | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
+| **Contracts** | `contract_static_scan` `contract_toolchain` |
+| **LLM** | `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` |
+| **Method** | `wstg_lookup` |
+| **Triage** | `triage_findings` `triage_taskflows` `triage_canary_preview` |
+| **Report** | `report_generate` `findings_list` `finding_detail` `finding_note` |
+| **Control** | `job_status` |
 
 ---
 
 ## Architecture
 
-See the diagrams above, and `docs/ARCHITECTURE.md` for the module-level walk-through.
+```
+L5  STRATEGY   Claude CLI — plans and decides. No network access of its own.
+L4  METHOD     8 Claude Skills, one per VAPT phase.
+L3  CONTROL    MCP server — scope, sanitize, rate-limit, approve, sandbox, audit.
+L2  EXECUTION  6 engines (BBOT · Nuclei · Jaeles · Semgrep · Osmedeus · Strix)
+               + 66 atomic wrappers, each sandboxed.
+L1  KNOWLEDGE  Rule packs · task graph · findings store · evidence · PoC memory.
 
-**Engines over wrappers.** BBOT already orchestrates 80+ recon modules, so EasyHunt
-drives it through its Python API rather than wrapping each one. Atomic wrappers
-exist where surgical control matters.
+               LLM traffic ──▶ OpenRouter (3 tiers, fallbacks, price ceilings)
+```
 
-**Scope is enforced twice.** BBOT's own whitelist/blacklist are populated from
+**Engines over wrappers.** BBOT already orchestrates 80+ recon modules, so
+EasyHunt drives it through its Python API rather than wrapping each one. Atomic
+wrappers exist where surgical control matters.
+
+**Scope is enforced twice.** BBOT's own allow/deny lists are populated from
 `scope.yaml`, *and* every emitted event is re-checked before storage — a module
 that resolves outward cannot smuggle a host into the findings store.
 
+Module-level walk-through: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+---
 
 ## Extending it
 
@@ -313,24 +358,29 @@ Drop a YAML file into `rules/` and you have a new detection. No code change.
 | Directory | Format | Run by |
 | --- | --- | --- |
 | `rules/nuclei/` | Nuclei templates + workflows | Nuclei engine |
-| `rules/easyhunt/` | native matcher/extractor packs | built-in matcher engine |
-| `rules/jaeles/`, `rules/semgrep/` | those tools' native formats | their engines |
-| `rules/bbot/` | BBOT presets | BBOT |
-| `rules/easyhunt/*.py` + manifest | Python plugin | the EasyHunt runner |
+| `rules/easyhunt/` | native matcher/extractor packs | built-in matcher |
+| `rules/jaeles/`, `rules/semgrep/`, `rules/bbot/` | those tools' native formats | their engines |
 
-Every rule must declare a `verify` block saying how a hit gets confirmed, and a
-Python plugin claiming `mode: passive` while its source reaches for an aggressive
-primitive is **refused at load time** — that check exists so the approval gate
-cannot be bypassed by mislabeling.
-
-```bash
-easyhunt rules          # what loaded, and what was rejected and why
-```
-
-A rejected rule is a detection you think you have and don't, so `rules_list()`
-surfaces rejections to the agent too.
+A Python plugin gets the same treatment as a built-in tool: it is wrapped by the
+same decorator and passes through the same eight steps. There is no privileged
+path.
 
 ---
+
+## Safety properties worth knowing
+
+- **The model never holds a shell.** It calls MCP tools; the server executes.
+- **Denylist beats allowlist**, always, and unparseable input fails closed.
+- **Arguments are rejected, never sanitized-and-run** — a caller that quietly
+  strips a semicolon teaches the agent that malformed input sometimes works.
+- **No evasion capability, ever.** `--random-agent`, `--tor`, proxy chaining and
+  their equivalents are globally denied. Not configurable.
+- **Aggressive and exploit modes are gated**, and exploitation is additionally
+  refused when the engagement's rules disallow it.
+- **The audit log is hash-chained.** Editing an entry breaks verification.
+
+---
+
 
 ## Cost control
 
@@ -348,6 +398,8 @@ than failing a phase.
 Raw tool output never reaches a model. It is parsed, deduplicated, and filtered
 in code first, then map-reduced on the cheap tier. **Everything except AI triage
 and report synthesis works with no API key at all.**
+
+---
 
 ---
 
@@ -401,22 +453,7 @@ For an IdP without Dynamic Client Registration (GitHub, Google), use
 `mode: oauth_proxy`; FastMCP fronts it and forwards PKCE and the resource
 indicator upstream. Credentials come from the environment, never `config.yaml`.
 
-## Safety properties worth knowing
-
-- **Audit log is hash-chained.** Every attempt — including refusals — is one
-  JSONL line carrying the previous line's digest. Deletions and edits are
-  detectable. Credential-shaped values are redacted on the way in.
-- **Tool output is treated as untrusted input.** Prompt-injection markers in
-  target-controlled text are stripped before it reaches a context window, with a
-  visible `[stripped: ...]` marker left behind.
-- **Tool definitions are cryptographically pinned.** A passive tool that becomes
-  an exploit tool between runs is reported as a privilege escalation.
-- **Budget ceilings abort cleanly.** Report generation is deliberately exempt
-  from the spend gate, so a stopped run still produces a report — labelled
-  PARTIAL on its first page.
-- **Canary defense in triage.** Fabricated findings on `.invalid` hosts are mixed
-  into every batch; a pass that "confirms" one has its verdicts weighted down,
-  and the measurement is reported.
+---
 
 ## Reasoning across an engagement
 
@@ -444,53 +481,40 @@ recorded per call in the audit log.
 
 ---
 
+---
+
 ## Layout
 
 ```
 easyhunt/
-├── mcp_server.py          MCP entrypoint — the only door
-├── control_plane/         scope · sanitize · ratelimit · approval
-│                          sandbox · audit · budget · jobs · pins
-├── engines/               bbot · nuclei · osmedeus · strix
-├── tools/                 base.py (the decorator) + wrappers by phase
-├── plugins/               manifest schema · loader · matcher engine
-├── knowledge/             findings · taskgraph · memory
-├── llm/                   openrouter · summarize · triage
-└── report/                synthesize.py
-rules/ · taskflows/ · skills/ · tests/
-docs/ · scripts/ · CLAUDE.md · bootstrap.sh
+  control_plane/   scope · sanitize · budget · ratelimit · approval
+                   · sandbox · audit · auth · jobs · pins · context
+  tools/           66 wrappers, one decorator, no privileged path
+  engines/         bbot · nuclei · jaeles · semgrep · osmedeus · strix
+  knowledge/       findings · WSTG · payloads · graph memory
+  install/         83 recipes, identity-verified
+  llm/             OpenRouter routing, 3 tiers
+skills/            8 phase playbooks for the agent
+rules/             detection packs — YAML, no code
+scripts/           hunt.sh · phase.py · summary.py · lab_target.py
+docs/              architecture · bootstrap · payloads
 ```
-
-## Documentation
-
-`CLAUDE.md` is loaded automatically by Claude CLI and carries the hard
-invariants — read it first. Full index in [`docs/README.md`](docs/README.md).
-
-| Document | Answers |
-|---|---|
-| [`CLAUDE.md`](CLAUDE.md) | The invariants, working rhythm, and known traps. |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Mind map, control-plane sequence, engagement flow, module map. |
-| [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md) | New-machine setup and troubleshooting. |
-| [`docs/PAYLOADS.md`](docs/PAYLOADS.md) | Vetted payload store: tiers, quarantine, tool mapping. |
-
-New machine? `./bootstrap.sh` — idempotent, safe to re-run.
 
 ## Development
 
 ```bash
 .venv/bin/python -m pytest tests/ -q          # 1,266 tests
-.venv/bin/python -m pytest tests/test_security.py -q   # adversarial suite
 .venv/bin/ruff check easyhunt/ tests/
+easyhunt doctor                                # executed, not just found on PATH
 ```
 
-`tests/test_security.py` tries to defeat each control — scope bypass via
-homoglyphs, IP encodings and list smuggling; sanitizer fuzzing; approval bypass;
-prompt injection; tool-definition tampering. `tests/test_e2e.py` runs the full
-pipeline against a deliberately misconfigured server it starts on loopback.
+Nearly every test in the suite exists because something broke against a live
+target. That is the working loop: run it against something real, distrust every
+clean result, verify hits by hand, fix the class rather than the instance, encode
+the bug in a test, then re-measure.
 
 ## License
 
-MIT. Note that several wrapped tools carry stronger licenses — TruffleHog and
-masscan are AGPL-3.0, nmap is NPSL. Each tool's license is recorded in its
-`ToolSpec` and printed in the report's tool inventory, which matters the moment
-anyone redistributes a bundle.
+See [LICENSE](LICENSE). Third-party tools retain their own licenses — several are
+AGPL-3.0, and `nmap` ships under a custom non-OSI license. `easyhunt doctor`
+prints the license of every tool it finds.
