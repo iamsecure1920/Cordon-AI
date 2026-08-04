@@ -90,7 +90,9 @@ WAYMORE = register_spec(
             tool="waymore",
             allowed_flags={"-i", "-mode", "-oU", "-p", "-t", "-l"},
             value_patterns={"-i": HOST_PATTERN, "-mode": re.compile(r"U|R|B")},
-            numeric_caps={"-p": 10, "-t": 10, "-l": 10000},
+            # -p is capped at 5 by waymore itself; a policy cap of 10 let a
+            # value through that the binary then rejected.
+            numeric_caps={"-p": 5, "-t": 10, "-l": 10000},
         ),
     )
 )
@@ -207,7 +209,13 @@ async def endpoint_discovery(target: str, include_crawl: bool = False) -> dict[s
     tasks = [
         run_one("gau", ["--subs", "--threads", str(min(concurrency, 20)), domain], timeout=600),
         run_one("waybackurls", [domain], timeout=600),
-        run_one("waymore", ["-i", domain, "-mode", "U", "-p", str(min(concurrency, 10))], timeout=900),
+        # waymore refuses anything above 5 itself: "The number of processes must
+        # be between 1 and 5. Be kind to Wayback Machine". The policy's
+        # numeric_cap said 10, so clamping to the cap still handed it 8 on an
+        # engagement permitting 8 and the tool exited with a usage error —
+        # sourcing the rate from the scope broke it for every scope above 5.
+        # Clamp to what the BINARY accepts, not to what the policy allows.
+        run_one("waymore", ["-i", domain, "-mode", "U", "-p", str(min(concurrency, 5))], timeout=900),
         run_one("paramspider", ["-d", domain], timeout=600),
     ]
     if include_crawl:

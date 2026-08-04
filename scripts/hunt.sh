@@ -38,17 +38,17 @@ ok()   { printf "${G}✓${N} %s\n" "$1"; }
 warn() { printf "${Y}!${N} %s\n" "$1"; }
 die()  { printf "${R}✗${N} %s\n" "$1"; exit 1; }
 
-TARGET=""; FROM=""; ONLY=""; EXPLOIT=no
+TARGETS=""; FROM=""; ONLY=""; EXPLOIT=no
 while [ $# -gt 0 ]; do
     case "$1" in
         --from)    FROM="$2"; shift 2 ;;
         --only)    ONLY="$2"; shift 2 ;;
         --exploit) EXPLOIT=yes; shift ;;
         -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
-        *)         TARGET="$1"; shift ;;
+        *)         TARGETS="$TARGETS $1"; shift ;;
     esac
 done
-[ -n "$TARGET" ] || die "usage: $0 <target> [--from PHASE] [--only PHASE,...] [--exploit]"
+[ -n "$TARGETS" ] || die "usage: $0 <target> [<target>...] [--from PHASE] [--only PHASE,...] [--exploit]"
 
 # Phases that must succeed for the rest to mean anything. A scan of hosts that
 # were never confirmed alive is not a scan, it is a WAF survey.
@@ -60,9 +60,11 @@ printf "\n${D}── Preflight ──${N}\n"
 [ -f "${ROOT}/scope.yaml" ] || die "no scope.yaml — it is the authorization record and must be
     transcribed from the program's published policy. See CLAUDE.md."
 
-"$EH" scope "$TARGET" 2>/dev/null | grep -q "IN SCOPE" \
-    || die "$TARGET is not in scope.yaml. That is the control plane working; do not work around it."
-ok "$TARGET is in scope"
+for T in $TARGETS; do
+    "$EH" scope "$T" 2>/dev/null | grep -q "IN SCOPE" \
+        || die "$T is not in scope.yaml. That is the control plane working; do not work around it."
+done
+ok "$(echo $TARGETS | wc -w) target(s) in scope"
 
 SCOPE_NAME=$("$PY" -c "
 import sys;sys.path.insert(0,'${ROOT}')
@@ -90,6 +92,9 @@ RUN_PHASES="$ALL_PHASES"
 STARTED=no; [ -z "$FROM" ] && STARTED=yes
 
 FAILED=""; EMPTY=""
+for TARGET in $TARGETS; do
+printf "\n${D}══ %s ══${N}\n" "$TARGET"
+STARTED=no; [ -z "$FROM" ] && STARTED=yes
 for phase in $RUN_PHASES; do
     [ "$STARTED" = "no" ] && { [ "$phase" = "$FROM" ] && STARTED=yes || continue; }
 
@@ -101,15 +106,16 @@ for phase in $RUN_PHASES; do
         2) warn "$phase ran but produced nothing"
            EMPTY="$EMPTY $phase"
            case " $REQUIRED " in
-             *" $phase "*) die "$phase is required and produced nothing — later phases would
-    be scanning hosts nobody confirmed exist. Fix this before continuing." ;;
+             *" $phase "*) warn "$phase is required and produced nothing — later phases would
+    be scanning hosts nobody confirmed exist — skipping the rest of $TARGET."; break ;;
            esac ;;
         *) warn "$phase FAILED (exit $rc)"
            FAILED="$FAILED $phase"
            case " $REQUIRED " in
-             *" $phase "*) die "$phase is required and failed. Stopping." ;;
+             *" $phase "*) warn "$phase is required and failed — skipping the rest of $TARGET."; break ;;
            esac ;;
     esac
+done
 done
 
 # ── Summary ──────────────────────────────────────────────────────────────────
@@ -120,5 +126,6 @@ ok "workspace: ${WS}"
 [ -n "$FAILED" ] && warn "failed:${FAILED}"
 printf "${D}  status stream: %s/status.jsonl${N}\n" "$WS"
 printf "${D}  findings are CANDIDATES until a PoC validates them.${N}\n"
+"$PY" "${ROOT}/scripts/summary.py" "$WS" 2>/dev/null || true
 [ -z "$FAILED" ] && [ -z "$EMPTY" ] && ok "every phase produced output"
 exit 0

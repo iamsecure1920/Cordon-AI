@@ -501,6 +501,22 @@ _TESTSSL_SEVERITY = {
     "warn": "low", "fatal": "high",
 }
 
+#: testssl record ids that describe THE SCAN, not the target. `scanProblem` is
+#: emitted with severity FATAL when testssl cannot reach the host at all — and
+#: FATAL maps to HIGH above, so "Can't connect to 52.92.203.227:443" was filed as
+#: a high-severity TLS vulnerability. Measured on a live engagement.
+#:
+#: This is the project's recurring defect stood on its head. Usually a tool that
+#: failed to run reports a clean target; here a tool that failed to run reports a
+#: finding. Both substitute the scanner's own state for a fact about the target,
+#: and the second is worse in a bug bounty: it goes in a report over your name.
+#:
+#: These become a `complete: False` on the result instead, which is what a scan
+#: that could not connect actually means.
+_TESTSSL_SCAN_STATUS_IDS = frozenset({
+    "scanProblem", "scanTime", "engine_problem", "service", "pre_128cipher",
+})
+
 
 @easyhunt_tool(
     phase="http_probe", mode="passive", targets_arg="target", timeout=1200,
@@ -560,7 +576,12 @@ async def tls_audit(target: str, port: int = 443) -> dict[str, Any]:
     entries = _flatten_testssl(data)
 
     findings: list[Finding] = []
+    scan_problems: list[str] = []
     for entry in entries:
+        if str(entry.get("id")) in _TESTSSL_SCAN_STATUS_IDS:
+            if str(entry.get("severity", "")).lower() in {"fatal", "critical", "high"}:
+                scan_problems.append(str(entry.get("finding"))[:160])
+            continue
         severity = _severity_of(entry.get("severity"), _TESTSSL_SEVERITY)
         if severity is Severity.INFO:
             continue
@@ -589,7 +610,7 @@ async def tls_audit(target: str, port: int = 443) -> dict[str, Any]:
     # testssl writes its JSON at the end of the run. A killed process leaves no
     # file at all, so "no entries" and "never finished" look identical unless the
     # distinction is made explicitly.
-    incomplete = run.error == "timed out" or data is None
+    incomplete = run.error == "timed out" or data is None or bool(scan_problems)
     return {
         "ok": not incomplete,
         "status": "INCOMPLETE" if incomplete else "COMPLETE",
@@ -602,6 +623,11 @@ async def tls_audit(target: str, port: int = 443) -> dict[str, Any]:
         ) if incomplete else None,
         "target": uri,
         "checks": len(entries),
+        # A scan that could not connect has not tested anything. Surfacing it
+        # here — and forcing complete=False below — is the honest reading; the
+        # alternative was a HIGH severity "finding" that described testssl's own
+        # failure to reach the host.
+        "scan_problems": scan_problems,
         "findings": _record(findings),
         "detail": entries[:200],
         "tools": [run.to_dict()],

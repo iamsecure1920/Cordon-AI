@@ -566,12 +566,16 @@ class TestArchiveAndInjectionFlagsTrackTheEngagement:
     async def test_waymore_parallelism_tracks_max_concurrency(
         self, engagement, monkeypatch, concurrency: int
     ) -> None:
-        """Regression: ``-p`` was the literal "5". Clamped to its cap of 10."""
+        """Regression: ``-p`` was the literal "5".
+
+        Clamped to 5 — waymore's own limit, not the policy cap. See
+        TestClampToTheBinaryNotThePolicy for why those are different numbers.
+        """
         engagement.scope.rules.max_concurrency = concurrency
         calls = _spy(monkeypatch, "endpoints")
         await REGISTRY["endpoint_discovery"].fn(target="example.com")
 
-        assert _value(_argv_for(calls, "waymore"), "-p") == str(min(concurrency, 10))
+        assert _value(_argv_for(calls, "waymore"), "-p") == str(min(concurrency, 5))
 
     @pytest.mark.parametrize("rps,concurrency", [(0.5, 1), (2, 4), (20, 20)])
     async def test_arjun_had_no_rate_argument_at_all(
@@ -742,3 +746,30 @@ class TestCostIsChargedPerRequest:
         elapsed = time.monotonic() - started
         # Burst covers `rps`; the remaining 4 must be paced by the ceiling.
         assert elapsed >= (4 / rps) * 0.5, f"throughput was not paced at {rps} rps"
+
+
+class TestClampToTheBinaryNotThePolicy:
+    """A scope-derived value must fit what the tool actually accepts.
+
+    waymore's -p was changed from a hardcoded "5" to the engagement's
+    max_concurrency clamped to its policy numeric_cap of 10. On a scope
+    permitting 8 concurrent, waymore received -p 8 and exited with
+
+        argument -p/--processes: The number of processes must be between 1 and 5
+
+    So sourcing the rate from the scope — the correct fix — broke the tool for
+    every engagement above 5. The policy cap is a ceiling WE impose; it is not
+    knowledge of what the binary tolerates, and the two are different facts.
+    """
+
+    @pytest.mark.parametrize("concurrency", [1, 5, 8, 20])
+    async def test_waymore_never_exceeds_its_own_limit(
+        self, engagement, monkeypatch, concurrency: int
+    ) -> None:
+        engagement.scope.rules.max_concurrency = concurrency
+        calls = _spy(monkeypatch, "endpoints")
+        await REGISTRY["endpoint_discovery"].fn(target="example.com")
+
+        value = int(_value(_argv_for(calls, "waymore"), "-p"))
+        assert 1 <= value <= 5, f"waymore rejects -p {value}"
+        assert value == min(concurrency, 5)
