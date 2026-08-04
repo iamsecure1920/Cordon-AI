@@ -362,3 +362,45 @@ class TestAssetStorePersistsAcrossProcesses:
 
         resumed = Engagement(scope, config, workspace=tmp_path / "ws")
         assert resumed.assets.values("subdomain") == ["a.example.com"]
+
+
+class TestEmptyIsNotTheSameAsFiltered:
+    """An empty result and a fully-filtered one had the same shape.
+
+    Measured live: subfinder returned one host, the scope filter dropped it as
+    out of scope, and the phase reported `subdomains: []` with no message —
+    indistinguishable from "no subdomains exist". The fixes are opposite:
+    nothing found means look elsewhere; everything filtered means the scope is
+    narrower than the seed, usually because a HOST was passed where a registrable
+    domain was wanted.
+    """
+
+    def _runs(self, found: int):
+        from easyhunt.tools.common import ToolRun
+
+        return [ToolRun(tool="subfinder", ran=True, values=[f"h{i}.example.com" for i in range(found)])]
+
+    def test_everything_filtered_says_so(self) -> None:
+        from easyhunt.tools.common import grouped_result
+
+        r = grouped_result(kind="subdomains", runs=self._runs(3), values=[], dropped=3)
+        assert r["complete"] is False
+        assert "out of scope" in r["message"]
+        assert "scope mismatch" in r["message"]
+
+    def test_genuinely_empty_says_something_different(self) -> None:
+        from easyhunt.tools.common import grouped_result
+
+        r = grouped_result(kind="subdomains", runs=self._runs(0), values=[], dropped=0)
+        assert "No results from any source" in r["message"]
+        assert r.get("complete") is not False
+
+    def test_a_normal_result_carries_no_alarm(self) -> None:
+        from easyhunt.tools.common import grouped_result
+
+        r = grouped_result(
+            kind="subdomains", runs=self._runs(2), values=["a.example.com"], dropped=1
+        )
+        assert "message" not in r
+        assert r["count"] == 1
+        assert r["dropped_out_of_scope"] == 1

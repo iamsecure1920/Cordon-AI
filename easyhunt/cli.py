@@ -463,10 +463,17 @@ def cmd_scope(args: argparse.Namespace) -> int:
     for warning in scope.validate():
         print(f"{yellow}warning:{reset} {warning}")
 
-    if args.targets:
+    # `easyhunt scope validate` is what README, CLAUDE.md, docs/BOOTSTRAP.md and
+    # bootstrap.sh all tell people to run. It was being parsed as a TARGET named
+    # "validate", which then failed the scope check and printed
+    # "REFUSED validate (unparseable_target)" — a documented command producing an
+    # error that looks like the scope is broken. Treat it as the verb it reads as.
+    targets = [t for t in (args.targets or []) if t.lower() != "validate"]
+
+    if targets:
         print("\nTarget checks:")
         exit_code = 0
-        for target in args.targets:
+        for target in targets:
             verdict = scope.check(target)
             if verdict.in_scope:
                 print(f"  {green}✓ IN SCOPE {reset} {target}  {dim}({verdict.matched}){reset}")

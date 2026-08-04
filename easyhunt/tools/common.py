@@ -388,6 +388,30 @@ def grouped_result(
             f"{len(missing)} tool(s) absent — results are partial. Install them or "
             "run 'easyhunt doctor' to see what is missing."
         )
+
+    # "Found nothing" and "found things, all of them out of scope" are different
+    # answers, and they were reported identically: an empty list and no message.
+    # Measured on a live run — subfinder returned a result, the scope filter
+    # dropped it, and the phase reported `subdomains: []` with nothing to say.
+    #
+    # The distinction matters because the fixes are opposite. Nothing found means
+    # look somewhere else; everything filtered means your scope is narrower than
+    # your seed, which is usually a seed mistake — enumerating subdomains of a
+    # HOST rather than of a domain is the common case.
+    found = sum(len(r.values) for r in runs)
+    if not values and dropped:
+        payload["message"] = (
+            f"{found} result(s) found and all {dropped} were dropped as out of scope. "
+            "This is not an empty result — it is a scope mismatch. Check that the "
+            "seed is a registrable domain rather than a single host, and that the "
+            "hosts you expect are actually listed in scope.yaml."
+        )
+        payload["complete"] = False
+    elif not values and not found:
+        payload["message"] = (
+            "No results from any source. Every tool ran and returned nothing — "
+            "check `tools` below for one that failed rather than found nothing."
+        )
     if extra:
         payload.update(extra)
     return payload
