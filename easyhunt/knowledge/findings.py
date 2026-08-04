@@ -254,8 +254,21 @@ class AssetStore:
     def by_kind(self, kind: str) -> list[Asset]:
         return [a for a in self._assets.values() if a.kind == kind]
 
-    def values(self, kind: str) -> list[str]:
-        return sorted({a.value for a in self._assets.values() if a.kind == kind})
+    def values(self, kind: str, *, tag: str | None = None) -> list[str]:
+        """Deduplicated values of one kind, optionally narrowed to one tag.
+
+        The tag matters more than it looks. `http_probe` stores confirmed-live
+        URLs and `endpoint_discovery` stores archived ones, both as kind "url" —
+        so a phase asking for "url" gets both. Feeding nuclei every archived URL
+        instead of the live hosts turned a scan into 7,393 templates x 500
+        targets: 7.7 million requests, 215 hours at the engagement's ceiling.
+        The sizing gate refused it, correctly, but the request was nonsense in
+        the first place.
+        """
+        return sorted({
+            a.value for a in self._assets.values()
+            if a.kind == kind and (tag is None or tag in a.tags)
+        })
 
     def all(self) -> list[Asset]:
         return list(self._assets.values())

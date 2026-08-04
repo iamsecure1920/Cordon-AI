@@ -57,9 +57,9 @@ PHASES: dict[str, dict[str, Any]] = {
     "tls":       {"tool": "tls_audit",           "count": "checks"},
     "cors":      {"tool": "cors_audit",          "count": None,   "url": True},
     "endpoints": {"tool": "endpoint_discovery",  "count": "urls",     "inherits": True, "wants": ("subdomain",)},
-    "js":        {"tool": "js_analyze",          "count": None,       "inherits": True},
+    "js":        {"tool": "js_analyze",          "count": None,       "inherits": True, "wants": ("url",), "tag": "live"},
     "takeover":  {"tool": "takeover_detect",     "count": None,       "inherits": True, "wants": ("subdomain",)},
-    "scan":      {"tool": "nuclei_scan",         "count": None,       "inherits": True},
+    "scan":      {"tool": "nuclei_scan",         "count": None,       "inherits": True, "wants": ("url",), "tag": "live"},
     "report":    {"tool": "report_generate",     "count": None},
 }
 
@@ -114,10 +114,11 @@ async def main() -> int:
     origin = "argument"
     if spec.get("inherits"):
         for kind in spec.get("wants", ("url", "subdomain")):
-            available = eng.assets.values(kind)
+            tag = spec.get("tag")
+            available = eng.assets.values(kind, tag=tag)
             if available:
                 passed = ",".join(available[:MAX_INHERITED])
-                origin = f"assets:{kind}({len(available)})"
+                origin = f"assets:{kind}{'[' + tag + ']' if tag else ''}({len(available)})"
                 break
     if origin == "argument" and spec.get("url") and "://" not in passed:
         passed = f"https://{passed}/"

@@ -404,3 +404,36 @@ class TestEmptyIsNotTheSameAsFiltered:
         assert "message" not in r
         assert r["count"] == 1
         assert r["dropped_out_of_scope"] == 1
+
+
+class TestLiveAndArchivedUrlsAreNotTheSameInput:
+    """Both are kind "url"; only one is a scan target.
+
+    `http_probe` stores confirmed-live URLs and `endpoint_discovery` stores
+    archived ones, both as kind "url". A phase asking for "url" therefore got
+    both — and feeding nuclei 2,736 archived URLs produced a request for 7,393
+    templates across 500 targets: 7.7 million requests, 215 hours at the
+    engagement's ceiling. The sizing gate refused it, correctly, but the ask was
+    nonsense before it ever reached the gate.
+    """
+
+    def _store(self):
+        from easyhunt.knowledge.findings import Asset, AssetStore
+
+        s = AssetStore()
+        s.add(Asset(value="https://live.example.com/", kind="url",
+                    source="httpx", tags=["live"]))
+        s.add(Asset(value="https://old.example.com/a?x=1", kind="url",
+                    source="archives", tags=["archived"]))
+        s.add(Asset(value="https://old.example.com/b", kind="url",
+                    source="ffuf", tags=["brute-forced"]))
+        return s
+
+    def test_untagged_query_returns_everything(self) -> None:
+        assert len(self._store().values("url")) == 3
+
+    def test_live_tag_returns_only_confirmed_hosts(self) -> None:
+        assert self._store().values("url", tag="live") == ["https://live.example.com/"]
+
+    def test_a_tag_nothing_carries_returns_nothing(self) -> None:
+        assert self._store().values("url", tag="nonexistent") == []
