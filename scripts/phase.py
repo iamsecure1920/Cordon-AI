@@ -75,6 +75,37 @@ PHASES: dict[str, dict[str, Any]] = {
 }
 
 
+#: Phases that only make sense for a name. An IP literal is already resolved.
+_DNS_PHASES = frozenset({"resolve", "recon", "takeover"})
+
+
+def _is_ip_literal(value: str) -> bool:
+    """True when every target is an address, however it was written.
+
+    Must handle the URL form. `172.17.0.1` was detected and
+    `http://172.17.0.1:3000/` was not, so the same target expressed the way a
+    non-default port requires slipped past and the DNS phases ran against it.
+    """
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    seen = False
+    for item in value.replace("\n", ",").split(","):
+        candidate = item.strip()
+        if not candidate:
+            continue
+        seen = True
+        if "://" in candidate:
+            candidate = urlsplit(candidate).hostname or ""
+        elif candidate.count(":") == 1:
+            candidate = candidate.rsplit(":", 1)[0]
+        try:
+            ipaddress.ip_address(candidate)
+        except ValueError:
+            return False
+    return seen
+
+
 def emit(workspace: Path, record: dict[str, Any]) -> None:
     record["at"] = time.strftime("%H:%M:%S")
     line = json.dumps(record, default=str)
@@ -88,6 +119,20 @@ async def main() -> int:
         return 64
     phase, target = sys.argv[1], sys.argv[2]
     extra = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {}
+
+    # A phase can be inapplicable rather than failing. dns_resolve given an IP
+    # literal has nothing to resolve and returns empty — which, because resolve
+    # is a REQUIRED phase, aborted every phase after it and left probe, waf,
+    # tls, cors, endpoints and js unrun against a perfectly good target.
+    #
+    # "Not applicable to this target" is a third answer, distinct from "did its
+    # job" and "produced nothing", and the run should continue on it.
+    if phase in _DNS_PHASES and _is_ip_literal(target):
+        print(
+            f"STATUS {json.dumps({'phase': phase, 'state': 'skipped', 'reason': 'target is an IP literal; nothing to resolve'})}",
+            flush=True,
+        )
+        return 0
 
     spec = PHASES.get(phase)
     if spec is None:

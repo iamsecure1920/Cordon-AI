@@ -59,7 +59,11 @@ done
 PER_TARGET_PHASES="recon resolve probe waf tls cors endpoints js"
 GLOBAL_PHASES_LIST="takeover scan plan report"
 ALL_PHASES="$PER_TARGET_PHASES $GLOBAL_PHASES_LIST"
-REQUIRED="resolve probe"
+# Only probe is genuinely required: if nothing is alive, later phases scan hosts
+# nobody confirmed exist. `resolve` was in here too, so any target already
+# written as an address — where there is nothing to resolve — aborted the whole
+# run at the second phase.
+REQUIRED="probe"
 
 # ── Preflight ────────────────────────────────────────────────────────────────
 printf "\n${D}── Preflight ──${N}\n"
