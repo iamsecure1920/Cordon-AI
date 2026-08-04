@@ -100,7 +100,18 @@ SECRET_PATTERNS: list[tuple[str, str, Severity]] = [
     ("private-key-block", r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", Severity.CRITICAL),
     ("jwt", r"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b", Severity.LOW),
     ("firebase-url", r"https://[a-z0-9-]+\.firebaseio\.com", Severity.MEDIUM),
-    ("basic-auth-url", r"https?://[^:\s/]+:[^@\s/]+@[A-Za-z0-9.-]+", Severity.HIGH),
+    # Userinfo per RFC 3986: unreserved / pct-encoded / sub-delims / ":" — and
+    # crucially NOT quotes or braces. The previous `[^@\s/]+` matched anything up
+    # to the next "@", so on any page carrying JSON-LD it ran from
+    # `https://schema.org` through `","@type"` and reported a HIGH severity
+    # credential leak. Yoast SEO emits that block on every WordPress page, so the
+    # detector fired on a large share of the internet. Measured against a live
+    # target: one HIGH "finding", zero credentials.
+    (
+        "basic-auth-url",
+        r"https?://[A-Za-z0-9._~%!$&'()*+;=-]+:[A-Za-z0-9._~%!$&'()*+;=:-]+@[A-Za-z0-9.-]+",
+        Severity.HIGH,
+    ),
     ("generic-assignment", r"(?i)(?:api[_-]?key|secret|passwd|password|token)\s*[:=]\s*['\"][A-Za-z0-9_\-]{16,}['\"]", Severity.MEDIUM),
 ]
 

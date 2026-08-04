@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# EasyHunt — run a full engagement flow unattended.
+#
+#   ./scripts/hunt.sh <target> [--from PHASE] [--only PHASE,PHASE] [--exploit]
+#
+# WHY THIS EXISTS, and what it deliberately does not do.
+#
+# It does not remove the approval gate. Approval moved from a prompt-per-call to
+# a decision-per-engagement: `approval.backend: policy` plus the `auto_approve`
+# list in config.yaml, reviewed once against the program's published rules. That
+# is a better gate than a prompt, because a human clicking "yes" forty times in a
+# row is not consenting to anything — they are pattern-matching to get on with
+# their evening. Read auto_approve before an engagement, not during it.
+#
+# What it adds instead is a gate the prompts never provided: **each phase has to
+# prove it did something before the next one runs.** Chaining phases multiplies
+# the cost of a stage that reports success while testing nothing, and that defect
+# has been found seventeen times in this codebase alone — nuclei exiting 0 while
+# unable to write its config, commix discarding its own -u flag, Akamai 403s
+# counted as coverage. A pipeline without gates turns one silent failure into a
+# report where every number is wrong.
+#
+# Exit codes from scripts/phase.py: 0 did its job, 2 ran but produced nothing,
+# 3 failed outright. A 2 or 3 on a phase later phases depend on stops the run.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY="${ROOT}/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3)"
+# The console script, not `python -m easyhunt` — the package has no __main__,
+# so that form fails silently and every target then reads as out of scope.
+EH="${ROOT}/.venv/bin/easyhunt"
+[ -x "$EH" ] || EH="$(command -v easyhunt)"
+[ -x "$EH" ] || die "easyhunt CLI not found — run ./install.sh"
+
+G='\033[0;32m'; Y='\033[0;33m'; R='\033[0;31m'; D='\033[2m'; N='\033[0m'
+ok()   { printf "${G}✓${N} %s\n" "$1"; }
+warn() { printf "${Y}!${N} %s\n" "$1"; }
+die()  { printf "${R}✗${N} %s\n" "$1"; exit 1; }
+
+TARGET=""; FROM=""; ONLY=""; EXPLOIT=no
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --from)    FROM="$2"; shift 2 ;;
+        --only)    ONLY="$2"; shift 2 ;;
+        --exploit) EXPLOIT=yes; shift ;;
+        -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+        *)         TARGET="$1"; shift ;;
+    esac
+done
+[ -n "$TARGET" ] || die "usage: $0 <target> [--from PHASE] [--only PHASE,...] [--exploit]"
+
+# Phases that must succeed for the rest to mean anything. A scan of hosts that
+# were never confirmed alive is not a scan, it is a WAF survey.
+ALL_PHASES="resolve probe waf tls cors endpoints js takeover scan report"
+REQUIRED="resolve probe"
+
+# ── Preflight ────────────────────────────────────────────────────────────────
+printf "\n${D}── Preflight ──${N}\n"
+[ -f "${ROOT}/scope.yaml" ] || die "no scope.yaml — it is the authorization record and must be
+    transcribed from the program's published policy. See CLAUDE.md."
+
+"$EH" scope "$TARGET" 2>/dev/null | grep -q "IN SCOPE" \
+    || die "$TARGET is not in scope.yaml. That is the control plane working; do not work around it."
+ok "$TARGET is in scope"
+
+SCOPE_NAME=$("$PY" -c "
+import sys;sys.path.insert(0,'${ROOT}')
+from easyhunt.control_plane.scope import Scope
+s=Scope.load('${ROOT}/scope.yaml');print(s.name)" 2>/dev/null)
+RPS=$("$PY" -c "
+import sys;sys.path.insert(0,'${ROOT}')
+from easyhunt.control_plane.scope import Scope
+s=Scope.load('${ROOT}/scope.yaml');print(s.rules.max_rps)" 2>/dev/null)
+ok "engagement ${SCOPE_NAME}, ceiling ${RPS} rps"
+
+if [ "$EXPLOIT" = "yes" ]; then
+    ALLOWED=$("$PY" -c "
+import sys;sys.path.insert(0,'${ROOT}')
+from easyhunt.control_plane.scope import Scope
+s=Scope.load('${ROOT}/scope.yaml');print('yes' if s.rules.allow_exploitation else 'no')" 2>/dev/null)
+    [ "$ALLOWED" = "yes" ] || die "--exploit given but scope.yaml sets allow_exploitation: false.
+    Change the scope only if the program's policy actually permits it."
+    warn "exploitation ENABLED — proof-of-concept only, never data extraction"
+fi
+
+# ── Phases ───────────────────────────────────────────────────────────────────
+RUN_PHASES="$ALL_PHASES"
+[ -n "$ONLY" ] && RUN_PHASES="${ONLY//,/ }"
+STARTED=no; [ -z "$FROM" ] && STARTED=yes
+
+FAILED=""; EMPTY=""
+for phase in $RUN_PHASES; do
+    [ "$STARTED" = "no" ] && { [ "$phase" = "$FROM" ] && STARTED=yes || continue; }
+
+    printf "\n${D}── %s ──${N}\n" "$phase"
+    "$PY" "${ROOT}/scripts/phase.py" "$phase" "$TARGET"
+    rc=$?
+    case $rc in
+        0) ok "$phase" ;;
+        2) warn "$phase ran but produced nothing"
+           EMPTY="$EMPTY $phase"
+           case " $REQUIRED " in
+             *" $phase "*) die "$phase is required and produced nothing — later phases would
+    be scanning hosts nobody confirmed exist. Fix this before continuing." ;;
+           esac ;;
+        *) warn "$phase FAILED (exit $rc)"
+           FAILED="$FAILED $phase"
+           case " $REQUIRED " in
+             *" $phase "*) die "$phase is required and failed. Stopping." ;;
+           esac ;;
+    esac
+done
+
+# ── Summary ──────────────────────────────────────────────────────────────────
+WS=$(cat "${ROOT}/.easyhunt-run" 2>/dev/null || echo "?")
+printf "\n${D}── Done ──${N}\n"
+ok "workspace: ${WS}"
+[ -n "$EMPTY" ]  && warn "produced nothing:${EMPTY}"
+[ -n "$FAILED" ] && warn "failed:${FAILED}"
+printf "${D}  status stream: %s/status.jsonl${N}\n" "$WS"
+printf "${D}  findings are CANDIDATES until a PoC validates them.${N}\n"
+[ -z "$FAILED" ] && [ -z "$EMPTY" ] && ok "every phase produced output"
+exit 0

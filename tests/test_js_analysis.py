@@ -46,3 +46,44 @@ class TestRetireActuallyRuns:
         for argv in seen:
             assert "--js" not in argv
             sanitize_argv("retire", argv)
+
+
+class TestBasicAuthUrlDetector:
+    """A HIGH severity credential finding that fired on JSON-LD.
+
+    The pattern was `https?://[^:\\s/]+:[^@\\s/]+@[A-Za-z0-9.-]+`. `[^@\\s/]+`
+    matches anything up to the next "@", so on a page carrying JSON-LD it ran
+    from `https://schema.org` through `","@type"` and called the result a
+    credential in a URL. Yoast SEO emits that block on every WordPress page.
+
+    Found on a live target: one HIGH "finding", zero credentials.
+    """
+
+    def _detector(self):
+        import re
+
+        from easyhunt.tools.js_analysis import SECRET_PATTERNS
+
+        for name, pattern, _sev in SECRET_PATTERNS:
+            if name == "basic-auth-url":
+                return re.compile(pattern)
+        raise AssertionError("basic-auth-url detector is gone")
+
+    def test_json_ld_is_not_a_credential(self) -> None:
+        blob = (
+            '{"@context":"https://schema.org","@type":"WebPage",'
+            '"@id":"https://stage-www.example.com/en/"}'
+        )
+        assert self._detector().search(blob) is None
+
+    def test_a_real_credential_url_still_matches(self) -> None:
+        """The control — tightening must not blind the detector."""
+        m = self._detector().search("fetch('https://admin:s3cret@internal.example.com/api')")
+        assert m and m.group(0).startswith("https://admin:s3cret@")
+
+    def test_percent_encoded_password_still_matches(self) -> None:
+        m = self._detector().search("https://svc:p%40ssw0rd@10.0.0.5/")
+        assert m is not None
+
+    def test_a_port_is_not_a_password(self) -> None:
+        assert self._detector().search("https://example.com:8443/path") is None
