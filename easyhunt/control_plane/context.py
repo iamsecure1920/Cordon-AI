@@ -76,6 +76,10 @@ class Engagement:
 
         self.findings = FindingStore(self.workspace / "findings.json")
         self.assets = AssetStore()
+        # Resuming into an existing workspace inherits what earlier phases found.
+        # The pipeline runs one process per phase, so without this every phase
+        # starts blind and "chaining" means nothing.
+        self.assets.load(self.workspace / "assets.json")
         self.jobs = JobManager()
         # The agent's memory of what it meant to do next. Tools call
         # engagement.taskgraph.spawn(...) when a discovery implies follow-up work.

@@ -298,3 +298,67 @@ class TestEngagementWiring:
         summary = engagement.finish()
         assert (engagement.workspace / "findings.json").exists()
         assert summary["audit"]["chain_ok"]
+
+
+class TestAssetStorePersistsAcrossProcesses:
+    """The store was write-only, and the pipeline runs a process per phase.
+
+    Every phase called `assets.save()`; nothing ever loaded it back. Inside one
+    process that is invisible — the store is still in memory. Across processes,
+    which is how `hunt.sh` runs, every phase started blind. Ten tools each
+    deduplicated their own output correctly and none of it reached the next
+    stage: a full run left 52 assets, all of one kind, because the driver had
+    handed every phase the same hostname.
+    """
+
+    def test_load_repopulates_what_save_wrote(self, tmp_path) -> None:
+        from easyhunt.knowledge.findings import Asset, AssetStore
+
+        first = AssetStore()
+        first.add(Asset(value="a.example.com", kind="subdomain", source="subfinder"))
+        first.add(Asset(value="b.example.com", kind="subdomain", source="amass"))
+        first.save(tmp_path / "assets.json")
+
+        second = AssetStore()
+        assert second.load(tmp_path / "assets.json") == 2
+        assert second.values("subdomain") == ["a.example.com", "b.example.com"]
+
+    def test_load_merges_rather_than_replaces(self, tmp_path) -> None:
+        """A resumed run keeps what it already knew."""
+        from easyhunt.knowledge.findings import Asset, AssetStore
+
+        saved = AssetStore()
+        saved.add(Asset(value="a.example.com", kind="subdomain", source="subfinder"))
+        saved.save(tmp_path / "assets.json")
+
+        live = AssetStore()
+        live.add(Asset(value="c.example.com", kind="subdomain", source="live"))
+        live.load(tmp_path / "assets.json")
+        assert live.values("subdomain") == ["a.example.com", "c.example.com"]
+
+    def test_the_same_host_from_two_tools_is_stored_once(self, tmp_path) -> None:
+        """Dedupe is the whole reason several enumerators can run together."""
+        from easyhunt.knowledge.findings import Asset, AssetStore
+
+        store = AssetStore()
+        store.add(Asset(value="a.example.com", kind="subdomain", source="subfinder"))
+        store.add(Asset(value="a.example.com", kind="subdomain", source="amass"))
+        assert len(store.values("subdomain")) == 1
+
+    def test_a_missing_file_is_not_an_error(self, tmp_path) -> None:
+        from easyhunt.knowledge.findings import AssetStore
+
+        assert AssetStore().load(tmp_path / "nope.json") == 0
+
+    def test_an_engagement_resuming_a_workspace_inherits_its_assets(
+        self, scope, config, tmp_path
+    ) -> None:
+        from easyhunt.control_plane.context import Engagement
+        from easyhunt.knowledge.findings import Asset
+
+        first = Engagement(scope, config, workspace=tmp_path / "ws")
+        first.assets.add(Asset(value="a.example.com", kind="subdomain", source="recon"))
+        first.assets.save(first.workspace / "assets.json")
+
+        resumed = Engagement(scope, config, workspace=tmp_path / "ws")
+        assert resumed.assets.values("subdomain") == ["a.example.com"]

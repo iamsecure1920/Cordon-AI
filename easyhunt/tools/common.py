@@ -288,6 +288,42 @@ def split_targets(target: str | list[str]) -> list[str]:
     return [t.strip() for t in items if t and t.strip()]
 
 
+#: What a phase reads when the caller does not name a target. The engagement's
+#: asset store already deduplicates across tools — `values(kind)` is the union
+#: of every subdomain subfinder, amass, assetfinder and findomain found, minus
+#: anything the scope engine rejected.
+AUTO = {"", "auto", "-"}
+
+
+def targets_or_assets(
+    target: str | list[str], *, kind: str, tool: str, limit: int = 5000
+) -> tuple[list[str], str]:
+    """Resolve a phase's input: the caller's targets, or the previous phase's output.
+
+    Returns ``(targets, origin)`` where origin is "argument" or
+    "assets:<kind>", so a wrapper can say in its result where its input came
+    from. A pipeline that silently scans the wrong set is worse than one that
+    scans nothing, and "which hosts did this actually cover" is the first
+    question anyone asks of a report.
+
+    Why this exists: every stage deduplicated its own output correctly, and
+    nothing passed that output to the next stage. A full ten-phase run left 52
+    assets, all of one kind, because the driver handed every phase the same
+    hostname instead of chaining. The components were right; the conveyor
+    between them was missing.
+    """
+    explicit = split_targets(target) if target else []
+    if explicit and not (len(explicit) == 1 and explicit[0].lower() in AUTO):
+        return explicit, "argument"
+
+    engagement = get_engagement()
+    inherited = engagement.assets.values(kind)[:limit]
+    engagement.audit.record(
+        "targets_inherited", tool=tool, kind=kind, count=len(inherited)
+    )
+    return inherited, f"assets:{kind}"
+
+
 def in_scope_only(values: Iterable[str], *, phase: str, tool: str) -> tuple[list[str], int]:
     """Filter tool output through the scope engine.
 

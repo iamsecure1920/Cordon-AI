@@ -24,6 +24,7 @@ from easyhunt.tools.common import (
     run_one,
     split_targets,
     store_assets,
+    targets_or_assets,
 )
 
 __all__ = ["http_probe", "waf_detect"]
@@ -100,7 +101,11 @@ async def http_probe(
     are evaluated against each response, so native detections surface here.
     """
     engagement = get_engagement()
-    hosts = split_targets(target)
+    # Called with no target, this probes whatever recon found. That is the
+    # normal case in a pipeline: subdomain_enum already merged and deduplicated
+    # across subfinder, amass, assetfinder and findomain, and the scope engine
+    # already dropped what the program does not cover.
+    hosts, origin = targets_or_assets(target, kind="subdomain", tool="http_probe")
 
     targets_file = engagement.raw_path("httpx-targets", "txt")
     targets_file.write_text("\n".join(hosts) + "\n", encoding="utf-8")

@@ -21,6 +21,7 @@ from easyhunt.tools.common import (
     HOST_PATTERN,
     URL_PATTERN,
     grouped_result,
+    host_of,
     in_scope_only,
     merge_runs,
     register_spec,
@@ -28,6 +29,7 @@ from easyhunt.tools.common import (
     run_one,
     split_targets,
     store_assets,
+    targets_or_assets,
 )
 
 __all__ = ["content_discovery", "endpoint_discovery", "param_discovery"]
@@ -191,7 +193,16 @@ async def endpoint_discovery(target: str, include_crawl: bool = False) -> dict[s
     keep it off unless the archives came back thin.
     """
     engagement = get_engagement()
-    domain = split_targets(target)[0]
+    # No target means "the hosts http_probe confirmed alive". Archive sources
+    # take one domain, so the first live host is used and the rest are reported.
+    _hosts, origin = targets_or_assets(target, kind="url", tool="endpoint_discovery")
+    if not _hosts:
+        _hosts, origin = targets_or_assets(target, kind="subdomain", tool="endpoint_discovery")
+    if not _hosts:
+        return {"ok": False, "error": "no_targets", "origin": origin,
+                "message": "no target given and no hosts in the asset store — "
+                           "run subdomain_enum or http_probe first."}
+    domain = host_of(_hosts[0]) or _hosts[0]
 
     # Every archive source that is installed contributes; absent ones are
     # reported rather than skipped silently, so partial coverage is visible.

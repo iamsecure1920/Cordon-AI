@@ -269,6 +269,31 @@ class AssetStore:
     def __len__(self) -> int:
         return len(self._assets)
 
+    def load(self, path: Path) -> int:
+        """Repopulate from a saved assets.json. Returns how many were read.
+
+        Without this the store was write-only: every phase saved its output and
+        every phase started empty, so nothing could consume what came before.
+        That is invisible in one process and fatal across several — and the
+        pipeline runs one process per phase.
+
+        Merges rather than replaces, so a run resumed mid-engagement keeps what
+        it already knew.
+        """
+        if not path.exists():
+            return 0
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return 0
+        before = len(self._assets)
+        for item in raw if isinstance(raw, list) else []:
+            try:
+                self.add(Asset(**item))
+            except TypeError:
+                continue
+        return len(self._assets) - before
+
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(

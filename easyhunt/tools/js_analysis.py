@@ -21,7 +21,13 @@ from easyhunt.control_plane.context import get_engagement
 from easyhunt.control_plane.sanitize import ArgPolicy
 from easyhunt.knowledge.findings import Evidence, Finding, Severity, Status
 from easyhunt.tools.base import ToolSpec, easyhunt_tool
-from easyhunt.tools.common import URL_PATTERN, register_spec, run_one, split_targets, store_assets
+from easyhunt.tools.common import (
+    URL_PATTERN,
+    register_spec,
+    run_one,
+    store_assets,
+    targets_or_assets,
+)
 
 __all__ = ["js_analyze"]
 
@@ -168,7 +174,11 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     in the output and are never tested against a live service here.
     """
     engagement = get_engagement()
-    urls = [u for u in split_targets(target) if u.startswith("http")][:max_files]
+    # No target means "the live URLs http_probe recorded". Passing a bare
+    # hostname here used to give `no_urls` in 0.0 seconds, which the pipeline
+    # then printed a green tick over.
+    candidates, origin = targets_or_assets(target, kind="url", tool="js_analyze")
+    urls = [u for u in candidates if u.startswith("http")][:max_files]
     if not urls:
         return {"ok": False, "error": "no_urls", "message": "js_analyze needs http(s) URLs"}
 

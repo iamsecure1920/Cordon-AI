@@ -52,7 +52,7 @@ done
 
 # Phases that must succeed for the rest to mean anything. A scan of hosts that
 # were never confirmed alive is not a scan, it is a WAF survey.
-ALL_PHASES="resolve probe waf tls cors endpoints js takeover scan report"
+ALL_PHASES="recon resolve probe waf tls cors endpoints js takeover scan report"
 REQUIRED="resolve probe"
 
 # ── Preflight ────────────────────────────────────────────────────────────────

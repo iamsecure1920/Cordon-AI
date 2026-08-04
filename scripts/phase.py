@@ -39,16 +39,27 @@ from easyhunt.control_plane.scope import Scope  # noqa: E402
 # `url` marks phases whose tool needs an http(s) URL rather than a bare hostname.
 # Passing a hostname to js_analyze got `ok: false, error: "no_urls"` in 0.0
 # seconds — the tool was right, the caller was wrong.
+# `inherits` marks a phase that takes its input from the asset store rather than
+# from the target argument. That is the difference between ten tools that each
+# work and a pipeline: subdomain_enum merges and deduplicates across four
+# binaries, http_probe reads that list, endpoint_discovery reads the live URLs
+# http_probe confirmed, and nuclei scans those rather than a hostname nobody
+# checked was alive.
+#: Cap on inherited targets handed to one phase. A run that found 85,000
+#: subdomains must not put all of them on a single command line.
+MAX_INHERITED = 500
+
 PHASES: dict[str, dict[str, Any]] = {
-    "resolve":   {"tool": "dns_resolve",         "count": "resolved"},
-    "probe":     {"tool": "http_probe",          "count": "live"},
+    "recon":     {"tool": "subdomain_enum",      "count": "subdomains"},
+    "resolve":   {"tool": "dns_resolve",         "count": "resolved", "inherits": True, "wants": ("subdomain",)},
+    "probe":     {"tool": "http_probe",          "count": "live",     "inherits": True, "wants": ("subdomain", "host")},
     "waf":       {"tool": "waf_detect",          "count": None,   "url": True},
     "tls":       {"tool": "tls_audit",           "count": "checks"},
     "cors":      {"tool": "cors_audit",          "count": None,   "url": True},
-    "endpoints": {"tool": "endpoint_discovery",  "count": "urls"},
-    "js":        {"tool": "js_analyze",          "count": None,   "url": True},
-    "takeover":  {"tool": "takeover_detect",     "count": None},
-    "scan":      {"tool": "nuclei_scan",         "count": None,   "url": True},
+    "endpoints": {"tool": "endpoint_discovery",  "count": "urls",     "inherits": True, "wants": ("subdomain",)},
+    "js":        {"tool": "js_analyze",          "count": None,       "inherits": True},
+    "takeover":  {"tool": "takeover_detect",     "count": None,       "inherits": True, "wants": ("subdomain",)},
+    "scan":      {"tool": "nuclei_scan",         "count": None,       "inherits": True},
     "report":    {"tool": "report_generate",     "count": None},
 }
 
@@ -92,9 +103,24 @@ async def main() -> int:
 
     emit(eng.workspace, {"phase": phase, "state": "start", "tool": spec["tool"], "target": target})
     started = time.time()
+    # An inheriting phase runs against what the previous phase found, not against
+    # the argument. The values are passed explicitly rather than left for the
+    # wrapper to fetch, so every inherited target still goes through the scope
+    # check in the decorator — inheriting input must not mean inheriting trust.
+    #
+    # `wants` is the asset kind this phase consumes, in preference order. On the
+    # first phase the store is empty and the argument seeds the run.
     passed = target
-    if spec.get("url") and "://" not in target:
-        passed = f"https://{target}/"
+    origin = "argument"
+    if spec.get("inherits"):
+        for kind in spec.get("wants", ("url", "subdomain")):
+            available = eng.assets.values(kind)
+            if available:
+                passed = ",".join(available[:MAX_INHERITED])
+                origin = f"assets:{kind}({len(available)})"
+                break
+    if origin == "argument" and spec.get("url") and "://" not in passed:
+        passed = f"https://{passed}/"
     kwargs = {"target": passed, **extra} if entry.targets_arg else dict(extra)
     try:
         result = await entry.fn(**kwargs)
@@ -135,6 +161,11 @@ async def main() -> int:
     emit(eng.workspace, {
         "phase": phase, "state": state, "tool": spec["tool"], "seconds": took,
         "produced": produced, "findings": findings,
+        # Where the input came from. "which hosts did this actually cover" is the
+        # first question anyone asks of a report, and a pipeline that silently
+        # scanned the wrong set is worse than one that scanned nothing.
+        "input": origin,
+        "assets": eng.assets.counts(),
         "message": (result.get("message") or result.get("note") or "")[:180]
         if isinstance(result, dict) else "",
         "workspace": str(eng.workspace),

@@ -433,7 +433,12 @@ async def nuclei_scan(
                 tags=sorted(overlap),
             )
 
-    targets = [t.strip() for t in target.replace("\n", ",").split(",") if t.strip()]
+    # No target means "every live URL http_probe recorded". Scanning hosts that
+    # were never confirmed alive is the most common way a scan reports complete
+    # coverage of nothing.
+    from easyhunt.tools.common import targets_or_assets
+
+    targets, target_origin = targets_or_assets(target, kind="url", tool="nuclei_scan")
 
     # Size the scan before running it. `estimated_requests` on the decorator is a
     # fixed 500, which on a real engagement was 437x too low: 5,148 templates
