@@ -618,14 +618,28 @@ class TestArchiveAndInjectionFlagsTrackTheEngagement:
     async def test_injection_probe_delays_track_the_engagement(
         self, engagement, monkeypatch, probe: str, tool: str, rps: float
     ) -> None:
-        """Regression: both passed ``--delay 1``, right only at exactly 1 rps."""
+        """Regression: both passed ``--delay 1``, right only at exactly 1 rps.
+
+        commix parses --delay as an INTEGER and rejects anything else outright —
+        "option --delay: invalid integer value: '0.02'" — then exits 0, so the
+        wrapper saw a successful run and reported "no injectable parameter" for a
+        scan that never sent a request. sstimap accepts a float. The value is
+        derived from the same ceiling; only its type differs, and asserting one
+        type for both is what let commix ship broken.
+        """
         engagement.scope.rules.max_rps = rps
         calls = _spy(monkeypatch, "injection")
         _approve(engagement, probe)
         await REGISTRY[probe].fn(target="https://www.example.com/?q=1")
 
         argv = _argv_for(calls, tool)
-        assert float(_value(argv, "--delay")) == pytest.approx(min(round(1 / rps, 2), 5))
+        expected = min(round(1 / rps, 2), 5)
+        actual = _value(argv, "--delay")
+        if tool == "commix":
+            assert actual == str(int(expected)), "commix rejects a non-integer delay"
+            assert "." not in actual
+        else:
+            assert float(actual) == pytest.approx(expected)
 
 
 class TestCostIsChargedPerRequest:

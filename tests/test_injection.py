@@ -716,3 +716,48 @@ class TestSsrfmapIsUngovernable:
         from easyhunt.control_plane.sanitize import get_policy
 
         assert get_policy("ssrfmap").numeric_caps["--level"] == 1
+
+
+class TestUsageErrorsAreCrashesNotCleanScans:
+    """A tool that rejected its own arguments has not tested anything.
+
+    commix parses --delay with optparse's int type. Given "0.02" — which is what
+    a 50 rps ceiling implies — it prints
+
+        commix.py: error: option --delay: invalid integer value: '0.02'
+
+    and EXITS 0. The wrapper saw ran=True, exit=0, two lines of output, no hit
+    pattern matched, and reported "commix found no injectable parameter with
+    classic, eval or time-based techniques". Measured against a live target:
+    0.8 seconds before, 120.6 seconds of real testing after.
+
+    The rate fix that introduced it was correct in intent — derive the delay from
+    the engagement rather than hardcode it — and wrong in type.
+    """
+
+    async def test_a_usage_error_is_not_a_clean_scan(self, engagement, monkeypatch) -> None:
+        approve(engagement, "cmdi_probe")
+        capture(monkeypatch, values=[
+            "Usage: python commix.py [option(s)]",
+            "commix.py: error: option --delay: invalid integer value: '0.02'",
+        ])
+        result = await inj.cmdi_probe(target="https://www.example.com/?cmd=1")
+
+        assert result["ok"] is False
+        assert result["error"] == "tool_crashed"
+        assert result["findings"] == []
+
+    @pytest.mark.parametrize("rps", [0.5, 2, 20, 50])
+    async def test_commix_delay_is_always_an_integer(
+        self, engagement, monkeypatch, rps: float
+    ) -> None:
+        """Whatever the ceiling implies, commix must be able to parse it."""
+        engagement.scope.rules.max_rps = rps
+        seen = capture(monkeypatch)
+        approve(engagement, "cmdi_probe")
+        await inj.cmdi_probe(target="https://www.example.com/?cmd=1")
+
+        argv = seen["argv"]
+        delay = argv[argv.index("--delay") + 1]
+        assert "." not in delay, f"commix rejects a non-integer delay, got {delay!r}"
+        int(delay)

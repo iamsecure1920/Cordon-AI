@@ -432,7 +432,7 @@ _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _MAX_LINE = 4000
 
 
-def _delay_for(rules: Any, *, cap: float) -> str:
+def _delay_for(rules: Any, *, cap: float, integer: bool = False) -> str:
     """Inter-request delay implied by the engagement's rate ceiling.
 
     These tools drive their own request loops, and the limiter charges one token
@@ -444,7 +444,18 @@ def _delay_for(rules: Any, *, cap: float) -> str:
     sanitizer, so an uncapped conversion would turn a rate fix into a tool that
     stops running.
     """
-    return str(min(max(0.0, round(1 / max(0.01, rules.max_rps), 2)), cap))
+    value = min(max(0.0, round(1 / max(0.01, rules.max_rps), 2)), cap)
+    if integer:
+        # commix parses --delay with optparse's "int" type and rejects anything
+        # else outright: "option --delay: invalid integer value: '0.02'". It
+        # then exits 0, so the wrapper saw a successful run with two lines of
+        # usage text and reported "no injectable parameter" — a clean scan that
+        # never sent a request.
+        #
+        # A fast engagement implies a sub-second delay, which as an integer is 0.
+        # That is the honest rounding: 0 means "do not wait", not "wait 1s".
+        return str(int(value))
+    return str(value)
 
 
 def _clean(text: str, *, limit: int = 4000) -> list[str]:
@@ -481,6 +492,13 @@ def _merged(result: ProcResult) -> list[str]:
 #:
 #: The scratch mount fixes that instance. This exists so the next one is loud.
 _CRASH_MARKERS = (
+    # Argument rejected by the tool's own parser. optparse and argparse both
+    # print this and several of these tools then exit 0, so without it a usage
+    # error reads as a completed scan with no findings.
+    "error: option",
+    "invalid integer value",
+    "unrecognized arguments",
+    "Usage: python",
     "Traceback (most recent call last)",
     "ModuleNotFoundError",
     "ImportError",
@@ -1069,13 +1087,28 @@ async def cmdi_probe(target: str, parameter: str | None = None, level: int = 1) 
         # Observed against the local lab: commix found the injection, opened
         # os_shell, and looped on "EOF when reading a line" until something
         # killed it. A denied flag is not a denied behaviour.
-        "--answers", "pseudo-terminal=n",
+        # Two prompts, both fatal under --batch, for different reasons.
+        #
+        # "pseudo-terminal" — the default is Y, so a successful detection walked
+        # straight into os_shell, the exploitation half this module denies.
+        #
+        # "ignore" — matches "Do you want to ignore HTTP response code '500' and
+        # proceed with testing?", whose default is N. commix then prints
+        # "Skipping further testing on the target URL" and exits. Any application
+        # that returns a 500 for a malformed parameter — which is most of them —
+        # was therefore never tested at all. Measured against OWASP Juice Shop:
+        # 0.7 seconds and "no injectable parameter" before, 26 seconds of real
+        # testing across all three techniques after.
+        #
+        # A tool that aborts on the first 500 and reports no findings is
+        # indistinguishable from a tool that tested everything and found nothing.
+        "--answers", "pseudo-terminal=n,ignore=Y",
         "--technique", "cet",
         "--level", str(max(1, min(int(level), 2))),
         "--time-sec", "5",
         "--timeout", "20",
         "--retries", "1",
-        "--delay", _delay_for(engagement.scope.rules, cap=5),
+        "--delay", _delay_for(engagement.scope.rules, cap=5, integer=True),
         "--skip-empty",
         "--disable-coloring",
         "--output-dir", str(outdir),
