@@ -19,6 +19,10 @@ scope.*.yaml
 # script in this repo. It has to ship, or nobody else can reproduce the runs
 # that prove the exploit probes parse a finding.
 !scope.lab.yaml
+# The Juice Shop development target: loopback and the Docker bridge only, plus a
+# container anyone can start. Names no real asset, and the next person needs it
+# to exercise the exploit chain — no bug bounty program permits that freely.
+!scope.juiceshop.yaml
 config.yaml
 .easyhunt-pins.json
 *.jsonl

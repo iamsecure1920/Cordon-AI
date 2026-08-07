@@ -123,6 +123,7 @@ produce a partial report when you run out — do that rather than stopping silen
 
 | Question | File |
 |---|---|
+| **Picking this up cold — what exists, what is left** | `HANDOFF.md` |
 | How is it built, what's the flow? | `docs/ARCHITECTURE.md` |
 | Fresh machine setup | `docs/BOOTSTRAP.md`, `./bootstrap.sh` |
 | Every tool, flags, when to use | `tools.md` |
