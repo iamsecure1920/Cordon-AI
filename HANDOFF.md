@@ -27,7 +27,7 @@ The model never holds a shell. A jailbroken prompt cannot reach the network.
 | Code | ~28,500 lines |
 | MCP tools | 73 |
 | Catalogued binaries | 82 |
-| Tests | 1,361 across 35 files |
+| Tests | 1,373 across 36 files |
 | Image | `easyhunt:latest`, 4.54 GB |
 | Commits | 65 |
 
@@ -69,7 +69,7 @@ session*.
 
 ## 3. How it is verified — three layers, each catches what the others cannot
 
-**Unit tests (1,361).** Mock the subprocess. Prove the wrapper's shape. Cannot
+**Unit tests (1,373).** Mock the subprocess. Prove the wrapper's shape. Cannot
 tell you whether a real binary accepts the argv.
 
 **`easyhunt doctor`.** Executes every tool *inside the container it will run
@@ -194,8 +194,13 @@ Still missing:
   scope rule the way exploitation already is.
 - **No form submission and no XHR replay.** Anything reachable only by posting a
   form, or by an API call the pages do not link to, is outside the crawl.
-- **`hunt_plan` does not yet read `authenticated`-tagged assets**, so the
-  authenticated surface does not feed the planner.
+`hunt_plan` now reads it. The authenticated surface is kept in its own section
+rather than merged into the pile — "this URL was only visible to a logged-in
+user" is the most important fact about a URL, and averaging it into 2,700
+anonymous ones throws it away. `reference_candidates_unfetched` carries the
+objects the application named and `auth_crawl` declined to read. Gaps track what
+has actually been done: no session, one identity, or two identities with nothing
+to aim them at are three different answers.
 
 ### 6b. Auth-surface detection — built
 

@@ -72,6 +72,12 @@ Return JSON: {"proposals": [{"title": str, "category": str, "target": str,
 
 "gaps" lists what you would need to see to say more — a logged-in session, the
 JS bundle for a specific route, the API schema.
+
+If the input contains an "authenticated" section, treat it as the primary
+surface. Those URLs were visible only to a logged-in user, and
+"reference_candidates_unfetched" names objects the application disclosed that
+nobody has read — the strongest access-control leads available. Anything under
+the top-level "live_urls" was seen without a session and is public.
 """
 
 
@@ -119,35 +125,93 @@ def _surface(engagement: Any, limit: int) -> dict[str, Any]:
     Deliberately more than a dump. 2,747 URLs is not a surface anyone can hold
     in mind; the same 2,747 split into "these carry object references", "these
     take a URL or a path", and "here is every distinct parameter name" is.
+
+    Authenticated URLs are kept in their own group rather than merged into the
+    pile. The whole reason 36% of WSTG was unreachable is that the valuable
+    categories live behind a login, so "this URL was only visible to a logged-in
+    user" is the single most important fact about a URL — and averaging it into
+    a list of 2,700 anonymous ones throws that fact away.
     """
     assets = engagement.assets
     live = assets.values("url", tag="live")
     archived = assets.values("url", tag="archived")
     endpoints = assets.values("endpoint")
-    return {
-        "live_urls": live[:limit],
+    authed = assets.values("url", tag="authenticated")
+    # Anonymous means "seen without a session", not "seen and not authenticated".
+    anonymous = [u for u in live if u not in set(authed)]
+    identities = engagement.sessions.counts()
+    # Candidates alone are enough to warrant the section. The session store is
+    # per-process and a crawl in an earlier phase may have left references
+    # behind with no live session in this one — the references are still the
+    # sharpest thing here and must not vanish with the session that found them.
+    candidates = assets.values("object_reference")
+
+    surface: dict[str, Any] = {
+        "live_urls": anonymous[:limit],
         "endpoints_from_js": endpoints[:limit],
         "archived_urls": archived[:limit],
         "subdomains": assets.values("subdomain")[:limit],
         "technologies": assets.values("technology")[:50],
         "asset_counts": assets.counts(),
         # The part a scanner will not tell you.
-        "worth_a_look": _interesting(live + archived + endpoints),
+        "worth_a_look": _interesting(anonymous + archived + endpoints),
     }
+
+    if authed or identities or candidates:
+        surface["authenticated"] = {
+            "urls": authed[:limit],
+            "identities": identities,
+            "worth_a_look": _interesting(authed),
+            # Named by the application and deliberately never fetched by
+            # auth_crawl, because reading another user's record is the test
+            # rather than the crawl. These are the sharpest access-control
+            # targets in the whole surface: the app said they exist and nobody
+            # has looked.
+            "reference_candidates_unfetched": candidates[:limit],
+        }
+    return surface
 
 
 def _gaps(surface: dict[str, Any]) -> list[str]:
     """What is missing before anything sharper can be said.
 
     The most useful output on a mature target, and the one a scanner never
-    produces. Every engagement in this project's history has been
-    unauthenticated, and the categories that pay — IDOR, access control,
-    business logic — are almost entirely post-login. Saying so is more honest
-    than proposing five tests against a marketing page.
+    produces. The categories that pay — IDOR, access control, business logic —
+    are almost entirely post-login, so saying "there is no session here" is more
+    honest than proposing five tests against a marketing page.
+
+    It has to track what has actually been done, though. Telling an operator to
+    capture a session they already captured is the advice being wrong rather
+    than the target being thin, and the next gap is a different one: one
+    identity proves an application works, two prove it distinguishes callers.
     """
     gaps: list[str] = []
     look = surface.get("worth_a_look", {})
-    if not look.get("object_reference_candidates"):
+    authed = surface.get("authenticated") or {}
+    identities = authed.get("identities") or {}
+
+    if not authed:
+        gaps.append(
+            "Nothing authenticated. IDOR, access control and business logic are all "
+            "post-login, which is 42 of 115 WSTG tests — run auth_surface to find "
+            "where to register, then session_register and auth_crawl."
+        )
+    elif len(identities) < 2:
+        gaps.append(
+            f"Only {len(identities)} identity registered ({', '.join(identities) or 'none'}). "
+            "One account proves the application works; authorization testing needs a "
+            "second of different privilege so authz_compare has something to compare."
+        )
+    elif not authed.get("reference_candidates_unfetched") and not authed["worth_a_look"].get(
+        "object_reference_candidates"
+    ):
+        gaps.append(
+            "Two identities registered but no object references found behind the login. "
+            "authz_compare needs a URL naming something one user owns — crawl deeper, "
+            "or look for an API the pages call rather than link to."
+        )
+
+    if not look.get("object_reference_candidates") and not authed:
         gaps.append(
             "No object references observed. IDOR and access-control testing needs "
             "authenticated URLs — capture a logged-in session and re-run recon."
@@ -168,6 +232,59 @@ def _gaps(surface: dict[str, Any]) -> list[str]:
             "control tends to fail; a broader surface gives more to compare."
         )
     return gaps
+
+
+def _actionable_authenticated(surface: dict[str, Any]) -> int:
+    """How much post-login surface this engagement holds."""
+    authed = surface.get("authenticated") or {}
+    return (
+        len(authed.get("urls") or [])
+        + len(authed.get("reference_candidates_unfetched") or [])
+        + sum(
+            len(v) for v in (authed.get("worth_a_look") or {}).values()
+            if isinstance(v, list)
+        )
+    )
+
+
+def _actionable(surface: dict[str, Any]) -> int:
+    """Things an agent can act on. Authenticated ones count too, or a run that
+    found only post-login surface reports itself as having produced nothing."""
+    return (
+        sum(len(v) for v in surface["worth_a_look"].values() if isinstance(v, list))
+        + _actionable_authenticated(surface)
+    )
+
+
+def _instructions(surface: dict[str, Any]) -> str:
+    """How the calling agent should read this surface.
+
+    EasyHunt's L5 strategy layer is a model — the Claude CLI driving these tools
+    — so handing it the grouped surface is the intended route, not a fallback.
+    """
+    base = (
+        "No internal LLM is configured, so the surface is returned for the calling "
+        "agent to reason over directly. Work through `worth_a_look`: "
+        "object_reference_candidates are IDOR shapes, server_side_sink_candidates "
+        "are parameters the server acts on (SSRF, open redirect, path traversal, "
+        "SSTI), and distinct_parameter_names is the vocabulary this application "
+        "uses. Propose specific tests naming the endpoint, the parameter, what to "
+        "change, and what result would distinguish a real issue from normal "
+        "behaviour. Nothing here is evidence — a finding still needs a reproducible "
+        "PoC."
+    )
+    authed = surface.get("authenticated")
+    if not authed:
+        return base
+    return (
+        "Start with `authenticated`, not `worth_a_look`. Those URLs were only "
+        "visible to a logged-in user, which is the surface every scanner in this "
+        "toolchain has been blind to and where the categories that pay actually "
+        "live. `reference_candidates_unfetched` is the sharpest list here: the "
+        "application named those objects and auth_crawl deliberately did not read "
+        "them, because reading someone else's record is the test rather than the "
+        "crawl. Point authz_compare at them with two identities. Then: " + base
+    )
 
 
 @easyhunt_tool(
@@ -197,9 +314,14 @@ async def hunt_plan(focus: str | None = None, limit: int = 120) -> dict[str, Any
     engagement = get_engagement()
     surface = _surface(engagement, limit)
 
+    # Count the authenticated surface too. It is a nested dict rather than a
+    # top-level list, and a sum over top-level lists only reported "the asset
+    # store is empty" on a run holding three authenticated URLs and twenty-three
+    # object-reference candidates — the most valuable surface this tool has ever
+    # been handed, discarded by an emptiness check that could not see it.
     observed = sum(
         len(v) for k, v in surface.items() if isinstance(v, list) and k != "technologies"
-    )
+    ) + _actionable_authenticated(surface)
     if observed == 0:
         return {
             "ok": False,
@@ -226,26 +348,13 @@ async def hunt_plan(focus: str | None = None, limit: int = 120) -> dict[str, Any
             "mode": "agent",
             "surface": surface,
             "proposals": [],
-            "instructions": (
-                "No internal LLM is configured, so the surface is returned for the "
-                "calling agent to reason over directly. Work through "
-                "`worth_a_look` first: object_reference_candidates are IDOR shapes, "
-                "server_side_sink_candidates are parameters the server acts on "
-                "(SSRF, open redirect, path traversal, SSTI), and "
-                "distinct_parameter_names is the vocabulary this application uses. "
-                "Propose specific tests naming the endpoint, the parameter, what to "
-                "change, and what result would distinguish a real issue from normal "
-                "behaviour. Nothing here is evidence — a finding still needs a "
-                "reproducible PoC."
-            ),
+            "instructions": _instructions(surface),
             "gaps": _gaps(surface),
             # What this phase actually produced. In agent mode the SURFACE is
             # the output — there are no proposals because no internal model was
             # asked for any — so counting proposals would report a working phase
             # as empty. Count the things an agent can act on.
-            "actionable": sum(
-                len(v) for v in surface["worth_a_look"].values() if isinstance(v, list)
-            ),
+            "actionable": _actionable(surface),
         }
 
     ask = f"Focus on: {focus}\n\n" if focus else ""
@@ -286,6 +395,7 @@ async def hunt_plan(focus: str | None = None, limit: int = 120) -> dict[str, Any
         "ok": True,
         "mode": "llm",
         "actionable": len(grounded),
+        "authenticated_surface": bool(surface.get("authenticated")),
         "proposals": grounded,
         "dropped_ungrounded": len(proposals) - len(grounded),
         "gaps": parsed.get("gaps") or [],

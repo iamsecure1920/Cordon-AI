@@ -399,6 +399,16 @@ async def auth_crawl(
               tags=["authenticated", "live"])
         for p in pages
     )
+    # Deliberately kind "object_reference", not "url". These were never fetched,
+    # and a `url` asset is what the scan and js phases inherit — filing them
+    # there would hand nuclei a list of other people's records to request, which
+    # is precisely the read this tool declined to make.
+    engagement.assets.add_many(
+        Asset(value=u, kind="object_reference", source="auth_crawl", host=host,
+              tags=["authenticated", "not-fetched"],
+              attributes={"reference": _object_reference(u)})
+        for u in item_candidates
+    )
     engagement.assets.save(engagement.workspace / "assets.json")
 
     with_refs = [p for p in pages if p["object_reference"]]
