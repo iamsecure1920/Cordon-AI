@@ -161,7 +161,7 @@ python3 scripts/summary.py                  # digest a finished workspace
 ```
 
 Phases are **per-target** (recon → resolve → probe → waf → tls → cors →
-endpoints → js) or **global**, run once over everything found (takeover, scan,
+endpoints → js → auth) or **global**, run once over everything found (takeover, scan,
 plan, report).
 
 Each phase must prove it did something: exit 0 did its job, 2 produced nothing,

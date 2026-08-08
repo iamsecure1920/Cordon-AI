@@ -56,7 +56,7 @@ done
 # over everything every host contributed — scanning is sized against the real
 # total instead of a set that grows under it, and the report covers the run
 # rather than the last host in it.
-PER_TARGET_PHASES="recon resolve probe waf tls cors endpoints js"
+PER_TARGET_PHASES="recon resolve probe waf tls cors endpoints js auth"
 GLOBAL_PHASES_LIST="takeover scan plan report"
 ALL_PHASES="$PER_TARGET_PHASES $GLOBAL_PHASES_LIST"
 # Only probe is genuinely required: if nothing is alive, later phases scan hosts

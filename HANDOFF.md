@@ -25,9 +25,9 @@ The model never holds a shell. A jailbroken prompt cannot reach the network.
 | | |
 |---|---|
 | Code | ~28,500 lines |
-| MCP tools | 71 |
+| MCP tools | 72 |
 | Catalogued binaries | 82 |
-| Tests | 1,326 across 33 files |
+| Tests | 1,342 across 34 files |
 | Image | `easyhunt:latest`, 4.54 GB |
 | Commits | 65 |
 
@@ -52,6 +52,8 @@ was fixed; it is a bug class that keeps recurring in new forms. Known faces:
    that runs in a container.
 8. **Counted intent, not delivery** — a smuggling scan reporting "802 payloads"
    while a dead connection pool let roughly ten requests reach the wire.
+9. **Read the wrong language** — HTML patterns run over a minified bundle: no
+   `type="password"` to find, and "register" matches `registerOnChange`.
 
 If you change anything, assume you have introduced an instance of this. Two of
 the bugs found on the last day were introduced by earlier fixes *in the same
@@ -61,7 +63,7 @@ session*.
 
 ## 3. How it is verified — three layers, each catches what the others cannot
 
-**Unit tests (1,326).** Mock the subprocess. Prove the wrapper's shape. Cannot
+**Unit tests (1,342).** Mock the subprocess. Prove the wrapper's shape. Cannot
 tell you whether a real binary accepts the argv.
 
 **`easyhunt doctor`.** Executes every tool *inside the container it will run
@@ -171,13 +173,30 @@ Still missing, and this is the larger half:
   were silent, and silence is not permission. It belongs behind an explicit
   scope rule the way exploitation already is.
 
-### 6b. Auth-surface detection — not started
+### 6b. Auth-surface detection — built
 
-Detect signup / login / reset / MFA / OAuth passively while crawling, and rank
-which subdomains are worth an operator creating an account on. This is what
-turns 6a from a primitive into a workflow: the tool says "these four hosts have
-registration and look like the application rather than a marketing page", the
-operator registers two accounts by hand, and the authenticated surface opens.
+`auth_surface` (phase `auth` in `hunt.sh`). Nine GETs per host against
+conventional auth paths, then — if the host is a single-page app — its
+same-origin bundles, because that is the only place an SPA's login exists.
+Reports signup / login / reset / MFA / OAuth / session cookies, ranks hosts by
+whether an account can be obtained legitimately, and extracts the client-side
+route table split into `privileged_routes` and `user_scoped_routes`. The second
+of those is where `authz_compare` should be pointed.
+
+Verified against Juice Shop: score 12, all four auth signals, 44 routes
+including `administration`, `accounting`, `wallet`, `2fa/enter`.
+
+It creates no accounts and submits no forms — every request is a GET. The
+output ends in a recommendation to a human, who registers by hand if the
+program permits it and brings the sessions back via `session_register`.
+
+**Its own first live run was a false negative** and is worth knowing about: it
+read the SPA shell, found no `type="password"` anywhere, and reported "no
+authentication surface found" about an application built entirely around a
+login. An SPA whose bundles cannot be read is now UNEXAMINED, not clean.
+
+Still open here: no headless render, so a route guarded behind a lazily-loaded
+chunk that the shell does not reference is invisible.
 
 ### 6c. A headless browser in the image
 
@@ -247,7 +266,7 @@ containerised tool scans itself, finds nothing, and reports a clean target.
 ./.venv/bin/python scripts/summary.py      # digest a workspace
 ```
 
-Phases are **per-target** (recon → js) or **global** (takeover, scan, plan,
+Phases are **per-target** (recon → js → auth) or **global** (takeover, scan, plan,
 report — once over everything found). Each phase must prove it did something:
 exit 0 did its job, 2 produced nothing, 3 failed. Only `probe` is required.
 

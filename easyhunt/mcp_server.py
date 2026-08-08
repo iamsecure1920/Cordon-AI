@@ -66,6 +66,7 @@ CAPABILITY_MODULES = [
     "easyhunt.tools.injection",
     "easyhunt.tools.webscan",
     "easyhunt.tools.hunt_plan",
+    "easyhunt.tools.auth_surface",
     "easyhunt.tools.sessions",
     "easyhunt.tools.smuggling_framework",
     "easyhunt.tools.llmsec",

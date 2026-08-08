@@ -68,6 +68,9 @@ PHASES: dict[str, dict[str, Any]] = {
     "cors":      {"tool": "cors_audit",          "count": None,   "url": True},
     "endpoints": {"tool": "endpoint_discovery",  "count": "urls",     "inherits": True, "wants": ("subdomain",)},
     "js":        {"tool": "js_analyze",          "count": None,       "inherits": True, "wants": ("url",), "tag": "live"},
+    # After js, before the global phases: it needs live URLs, and what it finds
+    # (a signup form, a route table) is what the operator acts on next.
+    "auth":      {"tool": "auth_surface",        "count": "hosts_examined", "inherits": True, "wants": ("url",), "tag": "live"},
     "takeover":  {"tool": "takeover_detect",     "count": None,       "inherits": True, "wants": ("subdomain",)},
     "scan":      {"tool": "nuclei_scan",         "count": None,       "inherits": True, "wants": ("url",), "tag": "live"},
     "report":    {"tool": "report_generate",     "count": None},
