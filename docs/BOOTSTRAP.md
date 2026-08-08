@@ -97,7 +97,7 @@ work — only the AI triage and narrative report synthesis are unavailable.
 Do not trust "it installed". Check these four:
 
 ```bash
-easyhunt doctor                    # 1. expect ~60/64 tools, 0 broken
+easyhunt doctor                    # 1. expect ~77/81 tools, 0 broken
 ```
 
 ```bash

@@ -158,11 +158,18 @@ Expected output:
 ⚠️ massdns         not found  (required by shuffledns)
 ❌ garak           not installed
 ...
-Summary: 48/53 tools available
+Summary: 77/81 tools working
 ```
 
 > [!NOTE]
-> The `doctor` command checks if each binary is on your PATH. A tool showing ❌ means EasyHunt will skip it rather than crash — the framework degrades gracefully.
+> `doctor` **executes** every tool, inside the container it will actually run in,
+> under the same read-only root and dropped capabilities as a real invocation.
+> It does not check PATH — presence of a filename says nothing about whether the
+> program runs, and several tools shipped broken for days behind exactly that
+> assumption. A working tool prints `@image` when it is containerised.
+>
+> A tool reported missing or broken is skipped rather than crashing the run, and
+> the wrapper reports the surface as UNTESTED rather than clean.
 
 ---
 

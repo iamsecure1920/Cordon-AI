@@ -145,3 +145,30 @@ easyhunt scope validate      # check authorization file
 python3 scripts/vet_payloads.py --fetch     # build the vetted payload store
 python3 scripts/vet_payloads.py --verify    # re-check store for drift
 ```
+
+### The unattended pipeline
+
+You do not have to drive every phase yourself. `scripts/hunt.sh` runs them in
+order, chained — each phase reads what the previous one found from the asset
+store rather than the argument you typed.
+
+```bash
+./scripts/hunt.sh <target> [<target>...]    # all phases
+./scripts/hunt.sh <target> --only probe,scan
+./scripts/hunt.sh <target> --from scan      # resume
+./scripts/hunt.sh <target> --exploit        # refused unless scope permits it
+python3 scripts/summary.py                  # digest a finished workspace
+```
+
+Phases are **per-target** (recon → resolve → probe → waf → tls → cors →
+endpoints → js) or **global**, run once over everything found (takeover, scan,
+plan, report).
+
+Each phase must prove it did something: exit 0 did its job, 2 produced nothing,
+3 failed. Only `probe` is required — if nothing is alive, later phases are
+scanning hosts nobody confirmed exist.
+
+Every phase appends to `status.jsonl` with `input=` showing where its targets
+came from — `argument`, or `assets:url[live](12)`. That is the audit trail for
+"which hosts did this actually cover", which is the first question anyone asks
+of a report.
