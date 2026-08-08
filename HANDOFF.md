@@ -25,9 +25,9 @@ The model never holds a shell. A jailbroken prompt cannot reach the network.
 | | |
 |---|---|
 | Code | ~28,500 lines |
-| MCP tools | 72 |
+| MCP tools | 73 |
 | Catalogued binaries | 82 |
-| Tests | 1,342 across 34 files |
+| Tests | 1,361 across 35 files |
 | Image | `easyhunt:latest`, 4.54 GB |
 | Commits | 65 |
 
@@ -55,6 +55,12 @@ was fixed; it is a bug class that keeps recurring in new forms. Known faces:
 9. **Read the wrong language** — HTML patterns run over a minified bundle: no
    `type="password"` to find, and "register" matches `registerOnChange`.
 
+And its inverse, which is not absence but excess: **discovery that became the
+attack.** `auth_crawl` followed ids from an authenticated `/api/Users/` and read
+thirteen other users' records while merely mapping the site. Enumerate the
+reference; dereference it only under `authz_compare`, with two identities, an
+approval, and a human deciding.
+
 If you change anything, assume you have introduced an instance of this. Two of
 the bugs found on the last day were introduced by earlier fixes *in the same
 session*.
@@ -63,7 +69,7 @@ session*.
 
 ## 3. How it is verified — three layers, each catches what the others cannot
 
-**Unit tests (1,342).** Mock the subprocess. Prove the wrapper's shape. Cannot
+**Unit tests (1,361).** Mock the subprocess. Prove the wrapper's shape. Cannot
 tell you whether a real binary accepts the argv.
 
 **`easyhunt doctor`.** Executes every tool *inside the container it will run
@@ -161,17 +167,35 @@ result; `authz_compare` is GET/HEAD only and refuses two sessions carrying the
 same credentials, because a login-bypass that returns one admin token for any
 email otherwise files a HIGH IDOR candidate about nothing.
 
-Still missing, and this is the larger half:
+**Auth-aware crawling is now built too** — `auth_crawl`. It walks an
+application as a registered session (GET only, forms reported and never
+submitted) and hands `authz_compare` the thing it needs: URLs carrying an
+object reference. Reads HTML links and JSON references, because a single-page
+app's authenticated surface is its API and an API has no `<a href>`.
 
-- **Auth-aware crawling.** Nothing walks the application *as* a session, so the
-  authenticated surface is still undiscovered — the differ can only test URLs
-  someone hands it.
-- **Object-reference harvesting.** `hunt_plan` groups candidates from
-  unauthenticated crawl output only.
+Four guards, each for a way this goes silently wrong:
+
+- **The session is proven first.** Entry point fetched with and without it; if
+  the responses match, the crawl is refused. A dead cookie otherwise yields a
+  tidy list of public pages labelled "the authenticated surface".
+- **Liveness is re-checked** every `liveness_every` pages, and immediately after
+  three responses that look like the anonymous entry page. An app that logs you
+  out at page 40 hands back 80 more that look fine.
+- **Destructive-looking links are skipped**, logout above all — following it is
+  the previous failure arriving by our own hand.
+- **References are enumerated, not dereferenced.** Item URLs synthesised from
+  ids in a collection are recorded and never fetched.
+
+Still missing:
+
 - **Nothing creates accounts, deliberately.** Self-registration is a policy
   question: of four programs read during this project two permitted it and two
   were silent, and silence is not permission. It belongs behind an explicit
   scope rule the way exploitation already is.
+- **No form submission and no XHR replay.** Anything reachable only by posting a
+  form, or by an API call the pages do not link to, is outside the crawl.
+- **`hunt_plan` does not yet read `authenticated`-tagged assets**, so the
+  authenticated surface does not feed the planner.
 
 ### 6b. Auth-surface detection — built
 

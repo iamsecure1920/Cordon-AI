@@ -91,6 +91,10 @@ approval:
       # sources concurrency and pause from the engagement, and it never acts on
       # a successful desync — proving the queue can be poisoned is the finding.
       - smuggling_canary_probe
+      # Browsing an application while logged in. GET only, no forms submitted,
+      # destructive-looking links skipped rather than followed — but it is real
+      # traffic carrying the operator's credentials, so it is gated like one.
+      - auth_crawl
 
     # Never unattended, regardless of the list above.
     auto_deny:

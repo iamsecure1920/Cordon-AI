@@ -124,7 +124,7 @@ mindmap
       sandbox · read-only, caps dropped
       audit · hash-chained
     L2 Execution
-      72 MCP tools
+      73 MCP tools
       82 catalogued binaries
       6 engines
       Docker per invocation
@@ -265,7 +265,7 @@ touching the run:
 | Memory | JSONL findings store · optional **Neo4j** graph · cross-engagement PoC memory |
 | Knowledge | **OWASP WSTG** — 115 tests, pinned, CC BY-SA · 62 vetted payload lists |
 | Audit | Hash-chained JSONL — tampering breaks the chain |
-| Code | ~28,500 lines · **1,342 tests** across 34 files · 84 install recipes |
+| Code | ~28,500 lines · **1,361 tests** across 35 files · 84 install recipes |
 
 ## Isolation
 
@@ -284,7 +284,7 @@ the tool store and makes a dozen tools vanish.
 
 ## Every tool it drives
 
-**72 MCP tools** over **82 catalogued binaries**.
+**73 MCP tools** over **82 catalogued binaries**.
 `·` passive · `!` aggressive · `!!` exploit — the mode decides whether a human is consulted.
 
 | Category | Binaries |
@@ -319,7 +319,7 @@ Run `easyhunt doctor` for the live picture.
 | **Cloud** | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
 | **Contracts** | `contract_static_scan` `contract_toolchain` |
 | **LLM** | `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` |
-| **Method** | `wstg_lookup` `hunt_plan` `auth_surface` `session_register` `session_list` |
+| **Method** | `wstg_lookup` `hunt_plan` `auth_surface` `auth_crawl`! `session_register` `session_list` |
 | **Triage** | `triage_findings` `triage_taskflows` `triage_canary_preview` |
 | **Report** | `report_generate` `findings_list` `finding_detail` `finding_note` |
 | **Control** | `job_status` |
@@ -503,7 +503,7 @@ docs/              architecture · bootstrap · payloads
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 1,342 tests
+.venv/bin/python -m pytest tests/ -q          # 1,361 tests
 .venv/bin/ruff check easyhunt/ tests/
 easyhunt doctor                                # executed, not just found on PATH
 ```
