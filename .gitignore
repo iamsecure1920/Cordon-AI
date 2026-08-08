@@ -41,12 +41,11 @@ payloads/*
 .env.*
 *.pem
 *.key
-scope.yaml
-# Every per-engagement scope, not just the active one. These name real
-# targets, contacts, and authorization references.
-scope.*.yaml
-!scope.example.yaml
-# The loopback validation lab names no real target — it is 127.0.0.1/32 and a
-# script in this repo. It has to ship, or nobody else can reproduce the runs
-# that prove the exploit probes parse a finding.
-!scope.lab.yaml
+# The scope rules live once, above. A second copy of them here re-ignored
+# `scope.*.yaml` *after* the `!scope.juiceshop.yaml` exception, and the last
+# matching pattern wins — so the development target HANDOFF tells you to copy
+# was never actually in the repo. A fresh clone followed the instructions and
+# got "no such file".
+# Session credentials, stored per engagement. `engagements/` already covers
+# these; named explicitly so a workspace configured elsewhere is still caught.
+sessions.json

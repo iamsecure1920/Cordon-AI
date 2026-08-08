@@ -499,6 +499,24 @@ _CONTAINER_MOUNTS: dict[str, list[tuple[str, str]]] = {
 }
 
 
+def register_container_mount(tool: str, host_path: str | Path, container_path: str) -> None:
+    """Declare a read-only mount for a tool whose data lives outside the image.
+
+    The table above is static because those paths are fixed. An
+    operator-supplied tool is not: its location comes from an environment
+    variable or a search path resolved at runtime, so it registers itself at
+    import time instead of being hard-coded here.
+
+    It still goes through the same chokepoint and is still mounted read-only.
+    The alternative — letting such a tool run unsandboxed because the image does
+    not contain it — is how a wrapper quietly stops being governed.
+    """
+    entry = (str(host_path), container_path)
+    existing = _CONTAINER_MOUNTS.setdefault(tool, [])
+    if entry not in existing:
+        existing.append(entry)
+
+
 def _config_mounts(tool: str) -> list[tuple[Path, str, str]]:
     """Read-only mounts carrying a tool's host config and data into its container.
 

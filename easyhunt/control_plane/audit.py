@@ -39,8 +39,29 @@ _SECRET_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 # Argument names whose values are always sensitive regardless of shape.
 _SECRET_KEYS = {
     "api_key", "apikey", "token", "password", "passwd", "secret", "authorization",
-    "cookie", "session", "aws_secret_access_key", "private_key", "bearer",
+    "cookie", "cookies", "session", "sessions", "aws_secret_access_key",
+    "private_key", "bearer", "headers", "auth", "credential", "credentials",
 }
+
+# Name fragments that mark a value as a credential. The patterns above catch
+# things that *look* like secrets, which is most of them — but a session cookie
+# is `sid=a1b2c3` and looks like nothing at all. Only the argument's name says
+# what it is, so a name carrying any of these is redacted whatever its shape.
+#
+# Found by a test asserting the audit log did not contain a token that had just
+# been registered. It did: `session_register` takes `cookies` and `headers`, the
+# decorator records every tool argument verbatim, and the log is hash-chained and
+# kept forever. Over-redacting an audit field costs a little debuggability;
+# under-redacting writes live credentials into a permanent record.
+_SECRET_KEY_FRAGMENTS = (
+    "password", "passwd", "secret", "token", "cookie", "apikey", "api_key",
+    "credential", "authorization",
+)
+
+
+def _is_secret_key(key: Any) -> bool:
+    name = str(key).lower()
+    return name in _SECRET_KEYS or any(f in name for f in _SECRET_KEY_FRAGMENTS)
 
 
 def redact(value: Any) -> Any:
@@ -52,7 +73,7 @@ def redact(value: Any) -> Any:
         return out
     if isinstance(value, dict):
         return {
-            k: ("<redacted>" if str(k).lower() in _SECRET_KEYS else redact(v))
+            k: ("<redacted>" if _is_secret_key(k) else redact(v))
             for k, v in value.items()
         }
     if isinstance(value, (list, tuple)):

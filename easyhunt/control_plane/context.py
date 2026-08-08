@@ -80,6 +80,14 @@ class Engagement:
         # The pipeline runs one process per phase, so without this every phase
         # starts blind and "chaining" means nothing.
         self.assets.load(self.workspace / "assets.json")
+
+        # Authenticated sessions. 42 of 115 WSTG tests need one and had no way
+        # to get one; the authorization tests need two at once. Loaded on resume
+        # like assets, because the pipeline runs a process per phase.
+        from easyhunt.knowledge.sessions import SessionStore
+
+        self.sessions = SessionStore()
+        self.sessions.load(self.workspace / "sessions.json")
         self.jobs = JobManager()
         # The agent's memory of what it meant to do next. Tools call
         # engagement.taskgraph.spawn(...) when a discovery implies follow-up work.

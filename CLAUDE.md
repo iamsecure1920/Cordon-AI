@@ -39,7 +39,7 @@ the user the target is out of scope and stop.
 
 ## 2. What this is
 
-An orchestrator that drives 81 catalogued open-source security tools through a custom MCP
+An orchestrator that drives 82 catalogued open-source security tools through a custom MCP
 server. You supply strategy; the MCP server supplies enforcement; the engines
 supply execution.
 

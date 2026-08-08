@@ -124,8 +124,8 @@ mindmap
       sandbox · read-only, caps dropped
       audit · hash-chained
     L2 Execution
-      67 MCP tools
-      81 catalogued binaries
+      71 MCP tools
+      82 catalogued binaries
       6 engines
       Docker per invocation
     L1 Knowledge
@@ -265,7 +265,7 @@ touching the run:
 | Memory | JSONL findings store · optional **Neo4j** graph · cross-engagement PoC memory |
 | Knowledge | **OWASP WSTG** — 115 tests, pinned, CC BY-SA · 62 vetted payload lists |
 | Audit | Hash-chained JSONL — tampering breaks the chain |
-| Code | ~26,200 lines · **1,288 tests** across 31 files · 83 install recipes |
+| Code | ~28,500 lines · **1,326 tests** across 33 files · 84 install recipes |
 
 ## Isolation
 
@@ -284,7 +284,7 @@ the tool store and makes a dozen tools vanish.
 
 ## Every tool it drives
 
-**67 MCP tools** over **81 catalogued binaries**.
+**71 MCP tools** over **82 catalogued binaries**.
 `·` passive · `!` aggressive · `!!` exploit — the mode decides whether a human is consulted.
 
 | Category | Binaries |
@@ -293,7 +293,7 @@ the tool store and makes a dozen tools vanish.
 | **HTTP / TLS** | `httpx` `whatweb` `wafw00f` `tlsx` `testssl` `katana` `corscanner` `websocat` `graphql-cop` `jwt_tool` |
 | **Content & params** | `ffuf` `feroxbuster` `dirsearch` `gobuster` `arjun` `paramspider` `gau` `waybackurls` `waymore` `linkfinder` `secretfinder` `xsstrike` `jsluice` `retire` `netsanitizer` |
 | **Scanning** | `nuclei` `jaeles` `nikto` `wapiti` `semgrep` `nmap` `naabu` `masscan` `dnsx` |
-| **Exploitation** | `sqlmap` `dalfox` `commix` `ssrfmap` `sstimap` `smuggler` `nosqli` `interactsh-client` `medusa` `strix` |
+| **Exploitation** | `sqlmap` `dalfox` `commix` `ssrfmap` `sstimap` `smuggler` `smuggler-framework` `nosqli` `interactsh-client` `medusa` `strix` |
 | **Takeover** | `subzy` `subjack` `dnsreaper` |
 | **Secrets** | `trufflehog` `gitleaks` `noseyparker` `kingfisher` `gitdorker` |
 | **Cloud** | `prowler` `cloudfox` `kubescape` `s3scanner` `cloud_enum` `cloudpeass` |
@@ -314,12 +314,12 @@ Run `easyhunt doctor` for the live picture.
 | **Ports** | `port_scan`! `service_scan`! |
 | **Takeover** | `takeover_detect`! `takeover_verify` `takeover_poc_plan` `takeover_confirm`!! |
 | **Vuln scan** | `nuclei_scan`! `jaeles_scan`! `nikto_scan`! `wapiti_scan`! `semgrep_scan` |
-| **Exploit** | `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
+| **Exploit** | `authz_compare`!! `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `smuggling_canary_probe`! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
 | **Secrets** | `secret_scan` `secret_validate`! `jwt_inspect` `source_fetch` |
 | **Cloud** | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
 | **Contracts** | `contract_static_scan` `contract_toolchain` |
 | **LLM** | `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` |
-| **Method** | `wstg_lookup` `hunt_plan` |
+| **Method** | `wstg_lookup` `hunt_plan` `session_register` `session_list` |
 | **Triage** | `triage_findings` `triage_taskflows` `triage_canary_preview` |
 | **Report** | `report_generate` `findings_list` `finding_detail` `finding_note` |
 | **Control** | `job_status` |
@@ -503,7 +503,7 @@ docs/              architecture · bootstrap · payloads
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 1,288 tests
+.venv/bin/python -m pytest tests/ -q          # 1,326 tests
 .venv/bin/ruff check easyhunt/ tests/
 easyhunt doctor                                # executed, not just found on PATH
 ```

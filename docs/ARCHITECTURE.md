@@ -2,7 +2,7 @@
 
 ## 1. The one-paragraph version
 
-EasyHunt is a **control plane wrapped around 81 catalogued open-source security tools**.
+EasyHunt is a **control plane wrapped around 82 catalogued open-source security tools**.
 The model decides *what* to test. The MCP server decides *whether that is allowed*
 and enforces it in code. The engines do the work inside a sandbox. Every call is
 audited. The security properties live in the server, never in the prompt — because

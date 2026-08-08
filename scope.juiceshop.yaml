@@ -1,0 +1,91 @@
+# EasyHunt AI — engagement scope: OWASP Juice Shop, local
+#
+# A deliberately vulnerable application running in Docker on this machine.
+# Owned by definition: it is a container the operator started, on loopback and
+# the Docker bridge, reachable from nowhere else.
+#
+# WHY A LOCAL TARGET RATHER THAN A BUG BOUNTY PROGRAM.
+#
+# Every engagement this project has run was against someone else's estate under
+# someone else's rules, and every one of them forbade something. Of four programs
+# read, two banned automated scanners outright and one banned third-party
+# out-of-band infrastructure. The fourth permitted scanning and had nothing left
+# to find.
+#
+# The consequence: the exploitation half of this tool — sqli_validate,
+# xss_validate, and the five injection probes — has never been exercised against
+# something that would actually yield. Those paths were verified against a
+# three-endpoint lab and nothing else. An untested exploit path is the same
+# defect as an untested scanner: it produces nothing, and nothing distinguishes
+# that from a target with no bugs.
+#
+# Juice Shop has known, documented vulnerabilities across every class this tool
+# claims to cover. If the tool cannot find them here, it cannot find them
+# anywhere — and that is worth knowing precisely.
+#
+# Start it with:
+#   docker run -d --name juice-shop \
+#     -p 127.0.0.1:3000:3000 -p 172.17.0.1:3000:3000 bkimminich/juice-shop
+version: 1
+
+engagement:
+  name: juiceshop-local
+  authorization: owned
+  program_url: null
+  approval_ref: null
+  fetched_at: "2026-08-04T00:00:00Z"
+  max_age_days: 3650
+  refuse_when_stale: false
+  researcher_handle: easyhunt-selftest
+  vdp_note: >-
+    Local container on the operator's own machine. Nothing here leaves the host
+    and there is no third party to disclose to.
+
+in_scope:
+  domains: []
+  wildcards: []
+  cidrs:
+    - 127.0.0.1/32
+    # The Docker bridge gateway. Sandboxed tools run with --network bridge,
+    # where 127.0.0.1 is the container itself — without this every containerised
+    # tool would scan itself, find nothing, and report a clean target.
+    - 172.17.0.1/32
+  ip_ranges: []
+  regex: []
+  urls: []
+
+out_of_scope:
+  domains: []
+  wildcards: []
+  cidrs: []
+  ip_ranges: []
+  regex: []
+
+rules:
+  wildcard_includes_apex: false
+  # Left ON deliberately. The two cidrs above are what authorize loopback; this
+  # rule is what makes them the ONLY thing that can.
+  deny_reserved_ips: true
+
+  # No published ceiling because there is no program — this is our own container.
+  # High enough that rate limiting is not what makes a scan fail, so a failure
+  # means something. The limiter itself is still under test, so not unbounded.
+  max_rps: 50
+  max_concurrency: 10
+
+  allow_aggressive: true
+  # The whole point. Nothing here belongs to anyone else, so the exploit chain
+  # can finally be run against something that yields — which is the only way to
+  # know whether it works.
+  allow_exploitation: true
+  no_dos: true
+
+  user_agent: "EasyHunt-AI/2.0 (local-selftest; contact=easyhunt-selftest)"
+  required_headers: []
+  forbidden_paths: []
+
+budget:
+  llm_usd: 0
+  wall_clock_minutes: 240
+  max_requests: 200000
+  max_tool_seconds: 14400

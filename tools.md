@@ -1,8 +1,14 @@
 # EasyHunt AI — Complete Tool Reference
 
 > **Researched from 53 official GitHub repositories.**
-> Every tool EasyHunt uses: what it does, how to install it, how to use it, and what it depends on.
+> Deep profiles for 54 of the 82 catalogued tools: what each does, how to install
+> it, how to use it, and what it depends on.
 > Last updated: 2026-07-30
+>
+> Not the authoritative catalogue — `easyhunt/tools/common.py` is, and
+> `easyhunt doctor` reports what is actually installed and working. The 28 tools
+> without a profile here are catalogued and governed like the rest; they just
+> have no long-form writeup yet.
 
 ---
 

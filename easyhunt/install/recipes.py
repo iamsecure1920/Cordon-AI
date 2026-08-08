@@ -445,6 +445,18 @@ _add(Recipe(tool="smuggler", method="git", category="exploit", license="MIT",
                 "Desync probes are deliberately malformed requests that can poison or wedge "
                 "a shared front-end proxy — never run outside an authorised window."
             )))
+_add(Recipe(tool="smuggler-framework", method="manual", package="",
+            category="exploit", license="operator-supplied",
+            caveat=(
+                "Operator-supplied: not a public package, so there is nothing to "
+                "install. Place the framework at /opt/smuggler_framework or point "
+                "EASYHUNT_SMUGGLER_FRAMEWORK at its directory, and it is bind-mounted "
+                "read-only into the sandbox at run time. Absent, smuggling_canary_probe "
+                "reports UNTESTED rather than a clean target. It proves a desync by "
+                "canary reflection instead of timing, and reports how many requests "
+                "actually reached the wire alongside how many payloads it loaded — "
+                "a pool bug once made those numbers differ by two orders of magnitude."
+            )))
 # `go install …@latest` was verified working here (resolves v0.5.4) even though the
 # Dockerfile builds it from a checkout. The simpler path is kept.
 _add(Recipe(tool="nosqli", method="go", category="exploit", license="AGPL-3.0",

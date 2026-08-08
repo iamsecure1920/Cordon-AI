@@ -65,6 +65,11 @@ approval:
       - cmdi_probe
       - smuggling_probe
       - nosqli_probe
+      # Read-only by construction: GET and HEAD only, refused for anything else.
+      # Proving broken access control never requires writing — reading another
+      # user's record IS the proof, and writing to it modifies data that is not
+      # yours. Still gated on scope.rules.allow_exploitation like the rest.
+      - authz_compare
 
       # The two general-purpose web scanners. Aggressive, and both were refused
       # on every call because nobody listed them — the same defect as the
@@ -81,6 +86,11 @@ approval:
       # reports INCOMPLETE rather than clean.
       - nikto_scan
       - wapiti_scan
+      # Canary-proven smuggling. Aggressive: it sends malformed requests to a
+      # front-end. Bounded by an argument policy that caps --repeat at 10 and
+      # sources concurrency and pause from the engagement, and it never acts on
+      # a successful desync — proving the queue can be poisoned is the finding.
+      - smuggling_canary_probe
 
     # Never unattended, regardless of the list above.
     auto_deny:
