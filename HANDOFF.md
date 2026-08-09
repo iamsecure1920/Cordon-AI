@@ -26,8 +26,8 @@ The model never holds a shell. A jailbroken prompt cannot reach the network.
 |---|---|
 | Code | ~28,500 lines |
 | MCP tools | 73 |
-| Catalogued binaries | 82 |
-| Tests | 1,399 across 37 files |
+| Catalogued binaries | 81 |
+| Tests | 1,786 across 38 files |
 | Image | `easyhunt:latest`, 4.54 GB |
 | Commits | 65 |
 
@@ -69,7 +69,7 @@ session*.
 
 ## 3. How it is verified — three layers, each catches what the others cannot
 
-**Unit tests (1,399).** Mock the subprocess. Prove the wrapper's shape. Cannot
+**Unit tests (1,786).** Mock the subprocess. Prove the wrapper's shape. Cannot
 tell you whether a real binary accepts the argv.
 
 **`easyhunt doctor`.** Executes every tool *inside the container it will run
@@ -248,9 +248,22 @@ installed — `pip install 'easyhunt-ai[llm]'`. `doctor` now reports this.
 
 - `ssrfmap` is ungovernable: ~8,283 requests through its own thread pool, no
   rate flag. Labelled honestly; not fixed.
-- `identity_marker` on 6 of 82 specs. Only names with real installable
-  impostors are covered (nuclei, slither, katana, kingfisher, amass, forge).
-- `shuffledns` and `linkfinder` have specs and no call site.
+- `identity_marker` on **19 of 81** specs, not 6 — the old number was wrong.
+  Audited against Kali's apt Contents index, host PATH and the image's own
+  console_scripts: exactly three names have a real installable impostor
+  (`forge`, `httpx`, `medusa`) and all three are already marked. There is
+  nothing to add, and adding more risks turning a working tool into a
+  permanent "wrong-tool".
+- **16 of 81 tools have no call site**, not 2. Eight were undocumented
+  anywhere. `tests/test_wiring.py` now enumerates them with a per-entry reason
+  and fails when a new one appears or an exemption goes stale.
+  `shuffledns` was deleted rather than wired: its only pacing flag is `-t`,
+  defaulting to 10,000 concurrent massdns resolves, and neither it nor massdns
+  has a requests-per-second control — `dnsx -d -w -rl` already does the job
+  under a real rate ceiling.
+  `linkfinder` is measured and ready to wire: over 12 real bundles it found 422
+  endpoints to the native miner's 210, with **zero** native-only results. Runs
+  over already-saved files, so it costs no extra requests.
 - `RateLimiter` charges declared `estimated_requests`; many wrappers declare
   nothing and charge the floor of 1. Silent under-charge. Needs an audit pass.
 - 24 of 82 tools ran on the host rather than the sandbox — mostly fixed, but

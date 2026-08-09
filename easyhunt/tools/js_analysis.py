@@ -121,8 +121,22 @@ SECRET_PATTERNS: list[tuple[str, str, Severity]] = [
     ("generic-assignment", r"(?i)(?:api[_-]?key|secret|passwd|password|token)\s*[:=]\s*['\"][A-Za-z0-9_\-]{16,}['\"]", Severity.MEDIUM),
 ]
 
+#: The character class carries `?`, `&`, `=` and `%` deliberately. Without them
+#: this pattern could not match a single URL with a query string — `"/api/x?id=1"`
+#: did not match *at all*, because the class stopped at `?` and the closing quote
+#: was then in the wrong place.
+#:
+#: That is not a small omission. Parameters are the thing worth finding: they are
+#: what `hunt_plan` groups into object-reference and server-side-sink candidates,
+#: and what every injection class needs as an entry point. The endpoint miner has
+#: been feeding the planner a view of the application with all its inputs removed.
+#:
+#: Measured against a real engagement's stored bundles: the narrow class found
+#: 210 endpoints where LinkFinder found 422, and every one of the 210 was in
+#: LinkFinder's set — a strict subset, missing exactly the parameterised ones.
 ENDPOINT_PATTERN = re.compile(
-    r"""["'`](/(?:[A-Za-z0-9_\-./]{2,120}))["'`]|["'`](https?://[A-Za-z0-9._\-/]{6,200})["'`]"""
+    r"""["'`](/(?:[A-Za-z0-9_\-./]{2,120}(?:\?[A-Za-z0-9_\-./%&=+,:]{0,160})?))["'`]"""
+    r"""|["'`](https?://[A-Za-z0-9._\-/]{6,200}(?:\?[A-Za-z0-9_\-./%&=+,:]{0,160})?)["'`]"""
 )
 
 
