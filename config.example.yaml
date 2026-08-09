@@ -60,10 +60,10 @@ approval:
       # Their argument policies remain the real boundary: no shells
       # (--os-shell, --eval-code, --lhost), no file read or write, no credential
       # enumeration, no target the scope engine never saw.
-      - ssrf_probe
+      # ssrf_probe is deliberately absent — see auto_deny. Its thread pool is
+      # ungovernable by the rate limiter, so it cannot be run unattended.
       - ssti_probe
       - cmdi_probe
-      - smuggling_probe
       - nosqli_probe
       # Read-only by construction: GET and HEAD only, refused for anything else.
       # Proving broken access control never requires writing — reading another
@@ -86,11 +86,9 @@ approval:
       # reports INCOMPLETE rather than clean.
       - nikto_scan
       - wapiti_scan
-      # Canary-proven smuggling. Aggressive: it sends malformed requests to a
-      # front-end. Bounded by an argument policy that caps --repeat at 10 and
-      # sources concurrency and pause from the engagement, and it never acts on
-      # a successful desync — proving the queue can be poisoned is the finding.
-      - smuggling_canary_probe
+      # NOTE: smuggling_canary_probe, smuggling_probe and ssrf_probe are NOT
+      # listed here. They are in auto_deny below. Listing a tool in both is a
+      # config that contradicts itself and resolves only by check order.
       # Browsing an application while logged in. GET only, no forms submitted,
       # destructive-looking links skipped rather than followed — but it is real
       # traffic carrying the operator's credentials, so it is gated like one.
@@ -107,6 +105,19 @@ approval:
       - strix_deep
       # Cloud mutation paths.
       - cloud_permissions
+
+      # ── Volumetric tooling ──────────────────────────────────────────────
+      # Denied because several programs forbid "any activity that could lead
+      # to disruption of our service, including stress-testing or load-testing
+      # tools", and these cannot be held inside that sentence. Rate limits do
+      # not help: the first two are volumetric by design, and ssrfmap runs its
+      # own thread pool with no rate flag at all, so the limiter — which charges
+      # once per tool call — governs none of its ~8,283 requests.
+      #
+      # Remove an entry only for a program whose policy actually permits it.
+      - smuggling_canary_probe
+      - ssrf_probe
+      - port_scan
 
 auth:
   # OAuth 2.1 + PKCE for the remote (streamable-HTTP) transport.

@@ -545,6 +545,21 @@ class Scope:
                 "rules.user_agent still contains the placeholder 'your-handle' — "
                 "the program cannot identify your traffic."
             )
+        # _TEMPLATE_MARKERS declared these two and nothing read them, so a scope
+        # carrying an unedited handle passed validation in silence. The handle is
+        # the field that matters most here: it is what tells a SOC that traffic
+        # is a researcher rather than an attacker, and unattributed scanning is
+        # how good faith stops being assumed.
+        for label, value, placeholder in (
+            ("engagement.researcher_handle", self.researcher_handle, "your-handle"),
+            ("engagement.program_url", self.engagement.get("program_url"),
+             "https://hackerone.com/example/policy"),
+        ):
+            if value and str(value).strip() == placeholder:
+                found.append(
+                    f"{label} is still the template placeholder {placeholder!r} — "
+                    "fill it in from the program you are actually testing."
+                )
         for domain in ("example.com", "example.org", "example.net"):
             if domain in self._allow.domains:
                 found.append(

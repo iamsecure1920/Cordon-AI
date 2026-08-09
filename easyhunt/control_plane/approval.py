@@ -20,6 +20,7 @@ exception all resolve to *declined*.
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -41,6 +42,8 @@ __all__ = [
     "PolicyBackend",
     "build_backend",
 ]
+
+log = logging.getLogger("easyhunt.approval")
 
 
 class Decision(str, Enum):
@@ -213,6 +216,21 @@ class PolicyBackend:
     def __init__(self, auto_approve: list[str] | None = None, auto_deny: list[str] | None = None) -> None:
         self.auto_approve = set(auto_approve or [])
         self.auto_deny = set(auto_deny or [])
+        # A tool in both lists is a config that contradicts itself. Deny wins
+        # because deny is checked first, but that is an accident of ordering
+        # rather than a decision anybody made, and an operator reading the file
+        # cannot tell which list is in force. Resolve it toward safety and say
+        # so out loud — silently picking one is how a config stops describing
+        # what the system does.
+        both = self.auto_approve & self.auto_deny
+        if both:
+            self.auto_approve -= both
+            log.warning(
+                "approval.policy: %s appear in BOTH auto_approve and auto_deny; "
+                "treating them as DENIED. Remove them from auto_approve to make "
+                "the config say what it does.",
+                ", ".join(sorted(both)),
+            )
 
     async def ask(self, request: ApprovalRequest, ctx: Any | None) -> ApprovalDecision:
         if request.tool in self.auto_deny:

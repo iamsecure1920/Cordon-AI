@@ -486,3 +486,33 @@ class TestHuntPlanSurfaceGrouping:
         g = self._group(["https://x.example.com/", "https://x.example.com/about-us"])
         assert not g["object_reference_candidates"]
         assert not g["server_side_sink_candidates"]
+
+
+class TestApprovalPolicyContradiction:
+    """A tool in both auto_approve and auto_deny.
+
+    Deny wins because deny is checked first — but that is an accident of
+    ordering, not a decision anybody made, and an operator reading the config
+    cannot tell which list is in force. Resolve toward safety, and say so.
+    """
+
+    def test_a_tool_in_both_lists_is_denied(self) -> None:
+        from easyhunt.control_plane.approval import PolicyBackend
+
+        backend = PolicyBackend(auto_approve=["ssrf_probe", "nuclei_scan"],
+                                auto_deny=["ssrf_probe"])
+        assert "ssrf_probe" not in backend.auto_approve
+        assert "ssrf_probe" in backend.auto_deny
+        # The uncontested entry is untouched.
+        assert "nuclei_scan" in backend.auto_approve
+
+    def test_the_contradiction_is_logged(self, caplog) -> None:
+        import logging
+
+        from easyhunt.control_plane.approval import PolicyBackend
+
+        with caplog.at_level(logging.WARNING, logger="easyhunt.approval"):
+            PolicyBackend(auto_approve=["port_scan"], auto_deny=["port_scan"])
+        # Silently picking one is how a config stops describing what runs.
+        assert "port_scan" in caplog.text
+        assert "DENIED" in caplog.text

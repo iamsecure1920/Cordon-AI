@@ -261,3 +261,37 @@ class TestUneditedTemplateIsLoud:
         warnings = " ".join(Scope.load(path).validate()).lower()
         assert "example.com" in warnings
         assert "reserved" in warnings
+
+
+class TestTemplatePlaceholdersAreCaught:
+    """A scope carrying unedited placeholders passed validation in silence.
+
+    `_TEMPLATE_MARKERS` declared a researcher_handle check and nothing read it,
+    so the field that tells a SOC "this is a researcher, not an attacker" could
+    be left as `your-handle` and every check still printed a green tick.
+    """
+
+    def _scope(self, tmp_path, **engagement):
+        import yaml
+
+        from easyhunt.control_plane.scope import Scope
+
+        doc = scope_dict()
+        doc["engagement"].update(engagement)
+        path = tmp_path / "s.yaml"
+        path.write_text(yaml.safe_dump(doc))
+        return Scope.load(path)
+
+    def test_an_unedited_handle_warns(self, tmp_path) -> None:
+        warnings = self._scope(tmp_path, researcher_handle="your-handle").validate()
+        assert any("researcher_handle" in w for w in warnings)
+
+    def test_an_unedited_program_url_warns(self, tmp_path) -> None:
+        warnings = self._scope(
+            tmp_path, program_url="https://hackerone.com/example/policy"
+        ).validate()
+        assert any("program_url" in w for w in warnings)
+
+    def test_a_real_handle_does_not_warn(self, tmp_path) -> None:
+        warnings = self._scope(tmp_path, researcher_handle="realperson").validate()
+        assert not any("researcher_handle" in w for w in warnings)
