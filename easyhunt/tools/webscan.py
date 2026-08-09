@@ -514,8 +514,20 @@ _TESTSSL_SEVERITY = {
 #:
 #: These become a `complete: False` on the result instead, which is what a scan
 #: that could not connect actually means.
+#: ``cmdline_ip-target`` and ``HTTP_status_code`` were added after auditing 47
+#: real testssl reports in this workspace's engagements. Both were measured:
+#:
+#: * ``cmdline_ip-target`` / WARN / "Target is not a server name: results may be
+#:   completely wrong, at minimum trust may show false results." — that sentence
+#:   is about the argument *this wrapper* passed, not about the host.
+#: * ``HTTP_status_code`` / WARN / "Unexpected 503 Service Unavailable @ '/'" —
+#:   testssl's own HTTP GET got an error page. It is a coverage caveat for every
+#:   header-derived check in the same run, not a TLS finding.
+#:
+#: Neither is dropped in silence: non-fatal entries land in ``scan_status_notes``.
 _TESTSSL_SCAN_STATUS_IDS = frozenset({
     "scanProblem", "scanTime", "engine_problem", "service", "pre_128cipher",
+    "cmdline_ip-target", "HTTP_status_code",
 })
 
 #: Tokens that look like an IPv4 address. Deliberately greedy — the point is to
@@ -555,6 +567,40 @@ def _confirms_ipv4_in_header(entry: dict[str, Any]) -> tuple[bool, str]:
     return False, "no internal IPv4 in the header — the pattern matched digits, not an address"
 
 
+#: testssl saying it could not run a check on *this machine*. Measured wording,
+#: from 43 entries across the engagements in this workspace:
+#: ``QUIC / WARN / "not tested due to lack of local OpenSSL support"``.
+#:
+#: ``WARN`` maps to ``low`` above, so every one of those 43 was on its way to
+#: becoming a LOW "TLS: QUIC — not tested due to lack of local OpenSSL support".
+#: A finding whose own text says the check did not run is the purest form of this
+#: project's recurring defect.
+_TESTSSL_LOCAL_LIMITATION = re.compile(
+    # "not tested" is the measured phrase; "lack of local" is the measured reason.
+    # Deliberately not broadened past what was observed.
+    r"not tested|lack of local",
+    re.IGNORECASE,
+)
+
+
+def _confirms_locally_tested(entry: dict[str, Any]) -> tuple[bool, str]:
+    """Did testssl actually perform this check, or report its own missing support?
+
+    testssl emits ``QUIC`` at WARN with the text "not tested due to lack of local
+    OpenSSL support" when the OpenSSL binary it found cannot speak QUIC. That is a
+    statement about the scanning host. Filing it against the target says the
+    opposite of what happened: nothing was tested.
+
+    Anything else under this id — an actual QUIC result — is kept. The wording is
+    the discriminator, not the id, so a testssl release that starts reporting real
+    QUIC posture here still gets through.
+    """
+    text = str(entry.get("finding") or "")
+    if _TESTSSL_LOCAL_LIMITATION.search(text):
+        return False, f"testssl did not run this check on this host: {text[:120]}"
+    return True, "check ran against the target"
+
+
 #: testssl checks that are pattern matches rather than protocol facts, and the
 #: function that decides whether the pattern found what it was looking for.
 #:
@@ -563,6 +609,7 @@ def _confirms_ipv4_in_header(entry: dict[str, Any]) -> tuple[bool, str]:
 #: forwards the hit unexamined is laundering a guess into a severity.
 _TESTSSL_VALIDATORS: dict[str, Any] = {
     "ipv4_in_header": _confirms_ipv4_in_header,
+    "QUIC": _confirms_locally_tested,
 }
 
 
@@ -629,10 +676,17 @@ async def tls_audit(target: str, port: int = 443) -> dict[str, Any]:
     # than dropped in silence — "we looked and it was noise" is a different
     # statement from "we never looked".
     unconfirmed: list[str] = []
+    # Scan-status entries that are not fatal. They are still not findings, but a
+    # 503 on testssl's own GET means every header-derived check in this run looked
+    # at an error page — the operator needs to be told, not to have it deleted.
+    scan_notes: list[str] = []
     for entry in entries:
         if str(entry.get("id")) in _TESTSSL_SCAN_STATUS_IDS:
-            if str(entry.get("severity", "")).lower() in {"fatal", "critical", "high"}:
+            severity_text = str(entry.get("severity", "")).lower()
+            if severity_text in {"fatal", "critical", "high"}:
                 scan_problems.append(str(entry.get("finding"))[:160])
+            elif severity_text not in {"ok", "info", "debug"}:
+                scan_notes.append(f"{entry.get('id')}: {str(entry.get('finding'))[:160]}")
             continue
         severity = _severity_of(entry.get("severity"), _TESTSSL_SEVERITY)
         if severity is Severity.INFO:
@@ -690,6 +744,10 @@ async def tls_audit(target: str, port: int = 443) -> dict[str, Any]:
         # alternative was a HIGH severity "finding" that described testssl's own
         # failure to reach the host.
         "scan_problems": scan_problems,
+        # Non-fatal statements testssl made about its own run rather than about
+        # the host: an unexpected HTTP status on its GET, or a target given as an
+        # IP. Not findings, but they bound what the rest of this result means.
+        "scan_status_notes": scan_notes,
         # Heuristic hits that were checked and did not hold up. Counted rather
         # than hidden: a wrapper that quietly discards is as untrustworthy as one
         # that quietly forwards.
@@ -1255,6 +1313,119 @@ async def websocket_probe(target: str, origin: str | None = None) -> dict[str, A
 #: Both scanners are happy to run for a working day.
 MAX_SCAN_MINUTES = 30
 
+#: The address nikto quotes back in test 999979's message.
+#: Verified against ``/usr/share/nikto/plugins/nikto_headers.plugin``, which
+#: builds it as ``"IP address found in the '$header' header. The IP is \"$ip\"."``
+_NIKTO_QUOTED_IP = re.compile(r'The IP is "([^"]{2,64})"')
+
+
+def _is_internal_address(token: str) -> bool:
+    """Is this an address that has no business appearing on the public internet?
+
+    ``is_reserved`` is applied to IPv4 only, and that asymmetry is the whole point
+    of this function. In IPv6 ``is_reserved`` covers every unassigned block, which
+    is exactly where opaque identifiers land when something parses them as
+    addresses: ``ipaddress.IPv6Address("ad1::b").is_reserved`` is ``True`` and
+    ``.is_private`` is ``False`` (checked). Trusting ``is_reserved`` for v6 would
+    confirm the very false positive this exists to reject. In IPv4 the reserved
+    space (240.0.0.0/4, 255.255.255.255) is small and genuinely never routed, and
+    ``1.0.1.1`` — the Cloudflare cookie substring — is not in it.
+    """
+    try:
+        addr = ipaddress.ip_address(token)
+    except ValueError:
+        return False
+    if addr.is_private or addr.is_loopback or addr.is_link_local:
+        return True
+    return addr.version == 4 and addr.is_reserved
+
+
+def _confirms_nikto_ip_disclosure(vuln: dict[str, Any]) -> tuple[bool, str]:
+    """Is nikto's 999979 hit a leaked back-end address, or a parsed identifier?
+
+    nikto's check is the same idea as testssl's ``ipv4_in_header`` and fails the
+    same way. Read from its source: ``is_ip()`` returns ``(valid, internal,
+    loopback)``, and ``nikto_headers.plugin`` reports whenever ``$valid &&
+    !$loopback`` — the ``internal`` flag only decides whether the message gets an
+    "RFC-1918 " prefix. A public CDN address is therefore filed identically to a
+    back-end one, under a reference titled "Private IP addresses disclosed".
+
+    nikto's author already met the sharp end of this: ``is_ip`` opens with a
+    hard-coded ``if ($ip eq '1.0.1.1') { return 0, 0, 0; }`` and the comment
+    "This is a little hacky but prevents Cloudflare cookies and headers from
+    reporting". A one-value blocklist does not generalise, and this workspace has
+    the proof — on a real Vercel-fronted host nikto filed:
+
+        IP address found in the 'x-vercel-id' header. The IP is "ad1::b".
+        IP address found in the 'x-vercel-id' header. The IP is "1::2".
+
+    from the header value ``iad1::bom1::2t4h7-1785761617739-a35a11b2183b``. Those
+    are the region codes ``iad1``/``bom1`` and a request serial, not addresses.
+    """
+    message = str(vuln.get("msg") or "")
+    match = _NIKTO_QUOTED_IP.search(message)
+    if match is None:
+        # The message did not carry an address in the shape this validator knows
+        # how to check. Keep it — an unrecognised message is not a disproved one.
+        return True, "no quoted address to check; kept unexamined"
+    token = match.group(1)
+    if _is_internal_address(token):
+        return True, f"{token} is an internal address and does not belong in a response header"
+    return False, (
+        f"{token} is not an internal address — either public (the CDN doing its "
+        "job) or an identifier that merely parses as one"
+    )
+
+
+def _confirms_not_scanner_advice(vuln: dict[str, Any]) -> tuple[bool, str]:
+    """Is this about the target, or about how the operator should run nikto?
+
+    ``999106`` and ``800264`` both end in "Recommend proxying via Burp or
+    mitmproxy to avoid TLS fingerprint blocks". That is nikto talking to its user
+    about its own limitations. ``999106`` is guarded in the plugin by
+    ``!$CLI{'useproxy'}`` — it fires on *nikto's configuration*, so the same host
+    scanned through a proxy produces no such "finding".
+
+    Both were measured in this workspace, once per host, under a Cloudflare
+    front. Rejection is keyed on the wording, so if either id is ever reused for
+    something that is about the target, the entry survives.
+    """
+    message = str(vuln.get("msg") or "")
+    if "Recommend proxying via" in message:
+        return False, "advice about running nikto, not an observation about the target"
+    return True, "not scanner advice"
+
+
+def _confirms_not_a_coverage_gap(vuln: dict[str, Any]) -> tuple[bool, str]:
+    """Reject the entries whose own text says nikto did not test something.
+
+    Measured: ``An alt-svc header was found which is advertising HTTP/3. The
+    endpoint is: ':443'. Nikto cannot test HTTP/3 over QUIC.`` The plugin appends
+    that sentence only for the ``h3`` branch; an alt-svc advertising HTTP/2
+    carries no such claim and is kept.
+
+    A tool announcing what it could not reach is a coverage note. Filing it as a
+    finding is this codebase's defect written out in one sentence.
+    """
+    message = str(vuln.get("msg") or "")
+    if "cannot test" in message.lower():
+        return False, "nikto states it did not test this — a coverage gap, not a result"
+    return True, "no untested-protocol claim"
+
+
+#: nikto test id → the function that decides whether the hit is about the target.
+#:
+#: Keyed by id *and* discriminated on the message, in that order. The id narrows
+#: it to entries with measured evidence behind them; the message check means a
+#: renumbered or repurposed test fails the pattern and is kept rather than
+#: dropped. A validator that rejects a real finding is worse than no validator.
+_NIKTO_VALIDATORS: dict[str, Any] = {
+    "999979": _confirms_nikto_ip_disclosure,
+    "999106": _confirms_not_scanner_advice,
+    "800264": _confirms_not_scanner_advice,
+    "011799": _confirms_not_a_coverage_gap,
+}
+
 
 @easyhunt_tool(
     phase="vuln_scan", mode="aggressive", targets_arg="target", timeout=2400,
@@ -1340,7 +1511,16 @@ async def nikto_scan(target: str, max_minutes: int = 10) -> dict[str, Any]:
                     items.append(vuln)
 
     findings: list[Finding] = []
+    # Same contract as tls_audit: a pattern hit that did not survive checking is
+    # counted here, never dropped in silence.
+    unconfirmed: list[str] = []
     for vuln in items[:200]:
+        validator = _NIKTO_VALIDATORS.get(str(vuln.get("id") or ""))
+        if validator is not None:
+            confirmed, why = validator(vuln)
+            if not confirmed:
+                unconfirmed.append(f"{vuln.get('id')}: {why}")
+                continue
         findings.append(
             Finding(
                 asset=url.rstrip("/") + str(vuln.get("url") or "/"),
@@ -1393,6 +1573,11 @@ async def nikto_scan(target: str, max_minutes: int = 10) -> dict[str, Any]:
         "bound_seconds": bound_s,
         "pause_seconds": round(pause, 2),
         "items": len(items),
+        # Entries nikto reported that describe nikto — its proxy advice, the
+        # protocols it cannot speak — or that its IP-shaped pattern found in an
+        # opaque identifier. Visible and counted, so "we checked and it was noise"
+        # stays distinguishable from "we never looked".
+        "unconfirmed_heuristics": unconfirmed,
         "findings": _record(findings),
         "detail": items[:100],
         "tools": [run.to_dict()],

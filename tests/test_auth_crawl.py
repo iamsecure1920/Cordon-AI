@@ -45,6 +45,19 @@ def page(*links: str, extra: str = "") -> str:
     return f"<html><body>welcome back{body}{extra}</body></html>"
 
 
+def shell(*scripts: str) -> str:
+    """A single-page-app shell: no links, no forms, nothing but a script tag.
+
+    This is what most modern applications answer with on every path, and a
+    crawler that only follows `<a href>` sees exactly one page of it.
+    """
+    tags = "".join(f'<script src="{s}" type="module"></script>' for s in scripts)
+    return f'<html><body><app-root ng-version="17.0.0"></app-root>{tags}</body></html>'
+
+
+JS = "application/javascript"
+
+
 def serve(monkeypatch, routes: dict[str, Any], *, anon_body: str = ANON) -> list[str]:
     """Serve `routes` to an authenticated caller and `anon_body` to everyone else."""
     fetched: list[str] = []
@@ -226,6 +239,269 @@ class TestDiscoveryIsNotTheAttack:
         # A logged-in crawl that wanders sends credentials to another server.
         assert "/x" not in fetched
         assert result["coverage"]["skipped"]["off_origin"] == 1
+
+
+class TestTheBundlesAreTheSurface:
+    """An SPA has no links. Everything it does is a string inside a script.
+
+    A link crawler pointed at one fetches the shell, finds no `<a href>`, and
+    reports an authenticated surface of a single page — which is not a small
+    error, it is the entire application missing while the output looks fine.
+    """
+
+    async def test_a_path_from_a_bundle_is_fetched(self, engagement, monkeypatch) -> None:
+        await register(engagement)
+        # Only the call site names this path: it is not api-shaped and not in a
+        # route table, so it can only have come from the fetch() pattern.
+        bundle = 'const r=await fetch("/dashboard/summary",{headers:h});'
+        fetched = serve(monkeypatch, {
+            "/": shell("/main.js"),
+            "/main.js": (bundle, JS),
+            "/dashboard/summary": ('{"a":1}', "application/json"),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        assert "/main.js" in fetched
+        assert "/dashboard/summary" in fetched
+        assert f"{HOST}/dashboard/summary" in [p["url"] for p in result["pages"]]
+        # No link on any page points at it; only the bundle named it.
+        via = {p["url"]: p["via"] for p in result["pages"]}
+        assert via[f"{HOST}/dashboard/summary"] == "js"
+
+    async def test_bare_api_literals_and_route_tables_are_seeded(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        # How a minified Angular build actually looks: the URL is assembled from
+        # a base and a constant, so there is no literal at the call site — only
+        # the bare path, and the route table beside it.
+        bundle = (
+            'const B=this.hostServer;this.http.get(B+"/api/v2/accounts/summary");'
+            'const R=[{path:"order-history",component:x},{path:"wallet",component:y}];'
+        )
+        fetched = serve(monkeypatch, {
+            "/": shell("/main.js"),
+            "/main.js": (bundle, JS),
+            "/api/v2/accounts/summary": ("{}", "application/json"),
+            "/order-history": page(),
+            "/wallet": page(),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        assert "/api/v2/accounts/summary" in fetched
+        assert "/order-history" in fetched
+        assert "/wallet" in fetched
+        assert result["coverage"]["js_pages_crawled"] == 3
+
+    async def test_a_mined_path_carrying_an_id_is_recorded_not_fetched(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        # `/api/orders` is a route the application calls, and fetching it as
+        # ourselves is browsing. `/api/orders/1042` is one record, and it is
+        # very unlikely to be ours — that read is the access-control test, and
+        # it belongs behind authz_compare with two identities and an approval.
+        bundle = 'fetch("/api/orders");fetch("/api/orders/1042");'
+        fetched = serve(monkeypatch, {
+            "/": shell("/main.js"),
+            "/main.js": (bundle, JS),
+            "/api/orders": ("[]", "application/json"),
+            "/api/orders/1042": ('{"total":1}', "application/json"),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        assert "/api/orders" in fetched
+        assert "/api/orders/1042" not in fetched
+        assert f"{HOST}/api/orders/1042" in result["object_reference_candidates"]
+        assert result["coverage"]["js_references_not_fetched"] == 1
+        assert result["coverage"]["skipped"]["js_object_reference_not_fetched"] == 1
+
+    async def test_a_numeric_client_route_is_not_offered_as_a_test_target(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        # Juice Shop declares `path:"403"`. _object_reference reads "403" as a
+        # numeric id, so the guard holds it back — correctly, in the safe
+        # direction — but it is an error page, not somebody's record, and
+        # pointing authz_compare at it wastes the operator's time.
+        bundle = '[{path:"403"}];fetch("/api/orders/1042");'
+        fetched = serve(monkeypatch, {"/": shell("/main.js"), "/main.js": (bundle, JS)})
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        assert "/403" not in fetched
+        assert f"{HOST}/403" not in result["object_reference_candidates"]
+        # The endpoint still is: that one names an object.
+        assert f"{HOST}/api/orders/1042" in result["object_reference_candidates"]
+        assert result["next_step"].count(f"{HOST}/api/orders/1042")
+
+    async def test_a_route_template_is_not_fetched_but_is_reported(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        # There is no URL `/order-completion/:id`. Fetching the literal sends a
+        # credential at a path the application never calls; reporting it tells
+        # the operator an id-bearing route exists.
+        bundle = '[{path:"order-completion/:id"},{path:"about"}]'
+        fetched = serve(monkeypatch, {
+            "/": shell("/main.js"), "/main.js": (bundle, JS), "/about": page(),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        assert not [p for p in fetched if "order-completion" in p]
+        assert "/about" in fetched
+        assert result["coverage"]["skipped"]["js_route_template"] == 1
+        assert "/order-completion/:id" in result["coverage"]["js_route_templates"]
+
+    async def test_an_off_origin_url_in_a_bundle_is_not_fetched(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        bundle = 'fetch("https://evil.example.net/api/steal");fetch("/api/ok");'
+        fetched = serve(monkeypatch, {
+            "/": shell("/main.js"),
+            "/main.js": (bundle, JS),
+            "/api/ok": ("{}", "application/json"),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        # The bundle asks the browser to call a third party. We are not the
+        # browser, and we are carrying the operator's credential.
+        assert "/api/steal" not in fetched
+        assert "/api/ok" in fetched
+        assert result["coverage"]["skipped"]["off_origin"] == 1
+
+    async def test_an_off_origin_script_is_not_fetched(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        fetched = serve(monkeypatch, {
+            "/": shell("https://cdn.example.net/vendor.js", "/main.js"),
+            "/main.js": ('fetch("/api/ok");', JS),
+            "/api/ok": ("{}", "application/json"),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        # A CDN script is not this application's code and its host authorized
+        # nothing.
+        assert "/vendor.js" not in fetched
+        assert result["coverage"]["skipped"]["off_origin_script"] == 1
+        assert result["coverage"]["bundles_read"] == [f"{HOST}/main.js"]
+
+    async def test_a_bundle_that_404s_does_not_crash_the_crawl(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        fetched = serve(monkeypatch, {
+            "/": shell("/gone.js") + '<a href="/inbox">x</a>',
+            "/inbox": page(),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        assert result["ok"] is True
+        assert "/inbox" in fetched
+        assert result["coverage"]["bundles_read"] == []
+        # A bundle that could not be read is a bundle whose routes were never
+        # seen. That is an incomplete crawl, not a clean one.
+        assert any("gone.js" in e for e in result["coverage"]["errors"])
+        assert result["complete"] is False
+
+    async def test_a_bundle_that_never_answers_does_not_crash_the_crawl(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if "authorization" not in request.headers:
+                return httpx.Response(200, text=ANON)
+            if request.url.path == "/dead.js":
+                raise httpx.ReadTimeout("no answer")
+            return httpx.Response(200, text=shell("/dead.js"))
+
+        real = httpx.AsyncClient
+        monkeypatch.setattr(
+            httpx, "AsyncClient",
+            lambda *a, **k: real(*a, **{**k, "transport": httpx.MockTransport(handler)}),
+        )
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+        assert result["ok"] is True
+        assert any("ReadTimeout" in e for e in result["coverage"]["errors"])
+
+    async def test_mined_paths_get_every_guard_a_link_gets(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        # Nothing about coming from JavaScript makes a path safe to fetch.
+        bundle = 'fetch("/api/session/logout");fetch("/api/theme.css");fetch("/api/ok");'
+        fetched = serve(monkeypatch, {
+            "/": shell("/main.js"),
+            "/main.js": (bundle, JS),
+            "/api/ok": ("{}", "application/json"),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        assert "/api/session/logout" not in fetched
+        assert "/api/theme.css" not in fetched
+        assert "/api/ok" in fetched
+        assert result["coverage"]["skipped"]["destructive"] == 1
+        assert result["coverage"]["skipped"]["static_asset"] == 1
+
+    async def test_the_js_derived_count_is_reported(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        bundle = 'fetch("/api/a");fetch("/api/b");'
+        serve(monkeypatch, {
+            "/": shell("/main.js") + '<a href="/linked">x</a>',
+            "/main.js": (bundle, JS),
+            "/api/a": ("{}", "application/json"),
+            "/api/b": ("{}", "application/json"),
+            "/linked": page(),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        coverage = result["coverage"]
+        # An operator has to be able to see which half of the map came from
+        # where: on a real SPA the link half is zero.
+        assert coverage["js_seeds_queued"] == 2
+        assert coverage["js_pages_crawled"] == 2
+        assert coverage["link_pages_crawled"] == 1
+        assert coverage["bundles_read"] == [f"{HOST}/main.js"]
+        assert "script bundle named the path" in result["note"]
+
+    async def test_a_shell_served_in_place_of_a_script_is_not_a_bundle(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        # Measured against Juice Shop: an SPA answers 200 with its shell for
+        # every unknown path, so `src="main.js"` on the client-side route
+        # /address/create resolves to /address/main.js and returns HTML. Three
+        # of six bundle slots went on re-reading index.html.
+        spa = shell("main.js")
+        fetched = serve(monkeypatch, {
+            "/": spa,
+            "/main.js": ('[{path:"address/create"}]', JS),
+            "/address/create": spa,
+            "/address/main.js": spa,
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        assert "/address/main.js" in fetched  # the request was spent
+        assert result["coverage"]["bundles_read"] == [f"{HOST}/main.js"]
+        assert result["coverage"]["skipped"]["script_was_not_javascript"] == 1
+
+    async def test_a_page_that_is_not_a_shell_costs_no_extra_requests(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        # Ordinary server-rendered HTML: no shell marker, so no bundle is
+        # fetched even though the page loads scripts.
+        body = page("/inbox", extra='<script src="/analytics.js"></script>')
+        fetched = serve(monkeypatch, {"/": body, "/inbox": page()})
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+
+        assert "/analytics.js" not in fetched
+        assert result["coverage"]["bundles_read"] == []
+        assert result["coverage"]["js_seeds_queued"] == 0
 
 
 class TestSessionExpiry:

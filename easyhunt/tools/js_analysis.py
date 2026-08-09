@@ -160,6 +160,63 @@ def _scan_text(text: str, url: str) -> tuple[list[dict[str, Any]], list[str]]:
     return secrets, sorted(endpoints)[:2000]
 
 
+#: Bodies that are an edge or origin refusing us, not application JavaScript.
+#: Matched on the response body because the status code alone is not enough —
+#: an interstitial is sometimes served with HTTP 200.
+_BLOCK_PAGE = re.compile(
+    r"""(?i)(?:sorry,\s*you\s*have\s*been\s*blocked
+        | attention\s+required!?\s*\|\s*cloudflare
+        | request\s+rejected
+        | access\s+denied
+        | \bcf-error-details\b
+        | \b__cf\$cv\$params\b
+        | you\s+are\s+unable\s+to\s+access
+        | <title>\s*4\d\d\s+forbidden)""",
+    re.VERBOSE,
+)
+
+
+def _block_marker(body: str) -> bool:
+    """Search both ends of the body, not just the head.
+
+    Cloudflare's interstitial is ~437 KB and puts "Sorry, you have been blocked"
+    at byte 436488 — everything before it is inline CSS and challenge script. A
+    head-only window reported that page as ordinary content, which is the same
+    mistake as the bug this function exists to catch, made one layer up.
+    """
+    return bool(_BLOCK_PAGE.search(body[:16_000]) or _BLOCK_PAGE.search(body[-16_000:]))
+
+#: A document, not a script. Anything served as HTML where JavaScript was asked
+#: for is either an error page, a login redirect, or a shell — none of which
+#: contain the bundle we came for.
+_LOOKS_LIKE_HTML = re.compile(r"""(?is)\A\s*(?:<!doctype\s+html|<html\b|<head\b)""")
+
+
+def _fetch_verdict(status: int, body: str, content_type: str) -> tuple[str, str]:
+    """What did we actually receive? Returns ``(verdict, why)``.
+
+    This exists because `js_analyze` once reported a successful phase over six
+    hosts while receiving a 437 KB Cloudflare "Sorry, you have been blocked"
+    page from each of them. It extracted zero endpoints and zero secrets from
+    those bodies — which is exactly what a genuinely clean bundle produces — and
+    the phase returned ``ok: True``. Minutes earlier `http_probe` had pulled 864
+    KB of real content from the same hosts, so the surface was there and simply
+    never read.
+
+    Zero findings from a body we were refused is not a result about the target.
+    """
+    if status >= 400:
+        return "blocked", f"HTTP {status}"
+    if _block_marker(body):
+        return "blocked", "response body is an edge/WAF interstitial"
+    if "html" in content_type.lower() or _LOOKS_LIKE_HTML.match(body):
+        # Not necessarily a failure: an SPA shell is a legitimate thing to fetch
+        # and mine for script tags. But it is not a bundle, and counting it as
+        # one inflates coverage.
+        return "not_javascript", "served as HTML, not a script"
+    return "ok", ""
+
+
 @easyhunt_tool(
     phase="js_analysis", mode="passive", targets_arg="target", timeout=900,
     name="js_analyze", tags={"js", "secrets"}, estimated_requests=30,
@@ -185,6 +242,10 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     all_secrets: list[dict[str, Any]] = []
     all_endpoints: set[str] = set()
     fetched: list[dict[str, Any]] = []
+    #: Hosts that refused us. Their JavaScript is UNTESTED, not empty.
+    blocked: list[dict[str, Any]] = []
+    #: Fetched, but a document rather than a bundle.
+    not_js: list[dict[str, Any]] = []
 
     async with httpx.AsyncClient(
         timeout=20,
@@ -200,12 +261,30 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
                     continue
 
             body = response.text[: 4 * 1024 * 1024]
+            verdict, why = _fetch_verdict(
+                response.status_code, body, response.headers.get("content-type", "")
+            )
+            record = {
+                "url": url, "status": response.status_code,
+                "bytes": len(body), "verdict": verdict,
+            }
+            if verdict == "blocked":
+                # Do not scan it and do not count it as covered. Scanning a
+                # block page yields zero of everything, which reads as a clean
+                # bundle.
+                record["why"] = why
+                blocked.append(record)
+                fetched.append(record)
+                continue
+
             secrets, endpoints = _scan_text(body, url)
             all_secrets.extend(secrets)
             all_endpoints.update(endpoints)
-            fetched.append(
-                {"url": url, "status": response.status_code, "bytes": len(body), "secrets": len(secrets)}
-            )
+            record["secrets"] = len(secrets)
+            if verdict == "not_javascript":
+                record["why"] = why
+                not_js.append(record)
+            fetched.append(record)
 
             path = engagement.raw_path("js", "js")
             path.write_text(body, encoding="utf-8")
@@ -274,9 +353,24 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     engagement.findings.save()
     engagement.assets.save(engagement.workspace / "assets.json")
 
+    scanned = len(fetched) - len(blocked)
     return {
-        "ok": True,
+        # A phase that was refused by half its targets did not succeed at those.
+        "ok": not blocked,
+        "status": "PARTIAL" if blocked else "COMPLETE",
+        "complete": not blocked,
         "files_fetched": len(fetched),
+        "files_scanned": scanned,
+        "blocked": blocked,
+        "not_javascript": not_js,
+        "coverage_note": (
+            f"{len(blocked)} of {len(fetched)} responses were an edge or origin "
+            "refusing the request, not JavaScript. Those hosts' bundles are "
+            "UNTESTED — zero secrets and zero endpoints from a block page is not "
+            "a statement about the target. Re-run them, or report them as uncovered."
+            if blocked else
+            f"{scanned} of {len(fetched)} responses were scanned."
+        ),
         "fetched": fetched,
         "secret_candidates": len(all_secrets),
         "secrets": all_secrets[:100],

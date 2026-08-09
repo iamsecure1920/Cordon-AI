@@ -28,11 +28,26 @@ sharpest case: following it once silently anonymises every subsequent request,
 which is the previous property's failure mode arriving by our own hand. Paths
 that look destructive are skipped and counted, never fetched.
 
+**It reads the JavaScript, because on a single-page app that is the surface.**
+Following ``<a href>`` on an Angular or React shell finds nothing: there are no
+links, the routes are a table inside a bundle and the API calls are string
+literals next to them. A link crawler pointed at such an application fetches one
+document, finds no links, and reports an authenticated surface of exactly one
+page — which is not a small error, it is the whole application missing. Bundles
+referenced by a shell are fetched and mined for same-origin paths, and those
+paths are seeded into the crawl under every guard below, counted separately so
+an operator can see what came from JavaScript rather than from a link.
+
 What it does not do
 -------------------
 No forms are submitted, no method other than GET is used, and nothing is
 written. Discovered forms are *reported* — they are the state-changing surface,
 and deciding to exercise it is a human's call under the program's rules.
+
+A path mined out of JavaScript is still a path, and the enumerate/dereference
+line holds there too: ``/api/orders`` is a route the application calls and
+fetching it as ourselves is browsing, but ``/api/orders/1042`` names one
+object, and that one is recorded as a candidate and never fetched.
 """
 from __future__ import annotations
 
@@ -84,6 +99,150 @@ _FIELD = re.compile(r"""(?i)<(?:input|select|textarea)\b[^>]*?\bname\s*=\s*["'](
 _BORING = re.compile(
     r"""(?i)\.(?:png|jpe?g|gif|svg|ico|webp|woff2?|ttf|eot|css|map|mp[34]|pdf|zip|gz)$"""
 )
+
+# ── Seeding the crawl from JavaScript ────────────────────────────────────────
+#
+# `auth_surface` already detects an SPA shell and reads its bundles, and these
+# four patterns are deliberate duplicates of `_SPA_SHELL`, `_SCRIPT_SRC`,
+# `_ROUTE` and `_ROUTE_SHAPE` in that module rather than imports of them. They
+# are private names: importing another tool's underscore-prefixed internals
+# couples two tools through an interface neither promises to keep, and the next
+# person to tune auth_surface's detection for its own purposes would silently
+# change what this crawler fetches while logged in. A copy that drifts is
+# visible; a shared private name that drifts is not. If a third caller ever
+# needs these, they belong in `easyhunt/tools/common.py` as a public helper.
+
+#: A single-page app serves the same shell for every path and that shell holds
+#: no links. Reading only its HTML and concluding "one page" is wrong about most
+#: modern applications, and wrong in the direction that looks like a result.
+_SPA_SHELL = re.compile(
+    r"""(?i)(?:<app-root|<div\s+id=["'](?:root|app|__next)["']
+        |ng-version=|__NUXT__|__NEXT_DATA__|data-reactroot)""",
+    re.VERBOSE,
+)
+
+#: Same-origin bundles referenced by a shell. The routes and the API paths are
+#: in here, and nowhere else.
+_SCRIPT_SRC = re.compile(r"""(?i)<script[^>]+src\s*=\s*["']([^"']+)["']""")
+
+#: A route table is the application's own map of itself: `path:"order-history"`
+#: is a declaration, not an incidental substring.
+_ROUTE = re.compile(r"""(?:\bpath\s*[:=]\s*|['"]route['"]\s*:\s*)["']([^"']{0,64})["']""")
+_ROUTE_SHAPE = re.compile(r"^/?[A-Za-z0-9][A-Za-z0-9/_:.-]{1,47}$")
+
+#: A string literal handed to something that performs a request. On a readable
+#: bundle this is the direct evidence of an endpoint; on a minified Angular
+#: build it usually finds nothing, because the URL is assembled from a base and
+#: a constant. `_API_LITERAL` below is what catches those, and both are needed.
+_JS_CALL = re.compile(
+    r"""(?ix)
+    (?: \bfetch \s* \(
+      | \baxios \s* (?: \. \s* (?:get|post|put|patch|delete|head|options|request) )? \s* \(
+      | \. \s* open \s* \( \s* ["'][A-Za-z]{3,7}["'] \s* ,
+      | \b (?: \$?http | httpClient ) \s* \. \s* (?:get|post|put|patch|delete) \s* \(
+    )
+    \s* ["'`] ( / [^"'`\s]{0,200} | https?://[^"'`\s]{1,200} ) ["'`]
+    """
+)
+
+#: A bare path literal shaped like an API route. Narrow on purpose: a bundle is
+#: full of strings, and anything that is not obviously an endpoint is noise that
+#: this crawler would spend authenticated requests on.
+_API_LITERAL = re.compile(
+    r"""(?ix)
+    ["'`]
+    ( / (?: api | rest | graphql | gql | v\d{1,2} | services? | internal )
+        (?: / [A-Za-z0-9._~-]{1,48} ){0,8} /? )
+    (?: \? [^"'`\s]{0,120} )?
+    ["'`]
+    """
+)
+
+#: What a mined literal must look like before it is fetched with a credential.
+_PATH_OK = re.compile(r"^/[A-Za-z0-9][A-Za-z0-9/._~%-]{0,200}$")
+
+#: A route declared with a parameter placeholder — `/order-completion/:id`,
+#: `/user/{id}`, `` `/basket/${n}` ``. There is no such URL: the literal names a
+#: shape, and fetching it sends a credential at a path the application never
+#: calls. Reported so the operator can see the id-bearing routes exist.
+_TEMPLATE = re.compile(r"""[:{}$*]|%[sd]|<[a-z_]+>""")
+
+
+def _js_routes(body: str) -> list[str]:
+    """Client-side routes declared in a bundle."""
+    out: list[str] = []
+    for route in _ROUTE.findall(body):
+        candidate = route.strip()
+        # `path` is also an SVG attribute, a filesystem key and a local variable
+        # in minified code. A route is a slug and nothing else; noise here is
+        # paid for in authenticated requests.
+        if not _ROUTE_SHAPE.match(candidate) or candidate.startswith("http"):
+            continue
+        if candidate in {"/", ""} or candidate in out:
+            continue
+        out.append(candidate)
+    return out
+
+
+def _js_paths(
+    body: str, base: str, limit: int = 150
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Same-origin paths a bundle names: ``([(url, source)], templates)``.
+
+    ``source`` is ``"endpoint"`` for a request the code makes and ``"route"``
+    for a client-side route declaration. They are not the same kind of thing and
+    the caller has to be able to tell them apart: an endpoint returns data, and
+    a route on an SPA returns the shell no matter what it is. Endpoints are
+    listed first, because the page budget is finite.
+
+    Nothing is filtered for origin or scope here. An off-origin literal is
+    returned as an absolute URL so the caller's existing checks reject it *and
+    count it*; dropping it silently inside the extractor would make a bundle
+    full of third-party endpoints look like a bundle with nothing in it.
+    """
+    sample = body[:2_000_000]
+    raw: list[tuple[str, str]] = []
+    for pattern in (_JS_CALL, _API_LITERAL):
+        raw.extend((hit, "endpoint") for hit in pattern.findall(sample))
+    raw.extend(
+        (r if r.startswith("/") else f"/{r}", "route") for r in _js_routes(sample)
+    )
+
+    urls: list[tuple[str, str]] = []
+    seen_urls: set[str] = set()
+    templates: list[str] = []
+    for literal, source in raw:
+        text = literal.strip()
+        if not text or len(text) > 200:
+            continue
+        if not text.startswith(("/", "http://", "https://")):
+            continue
+        path = urlsplit(text).path or "/"
+        if not _PATH_OK.match(path):
+            if _TEMPLATE.search(path) and text not in templates:
+                templates.append(text)
+            continue
+        url = _canonical(urljoin(base, text))
+        if url not in seen_urls:
+            seen_urls.add(url)
+            urls.append((url, source))
+        if len(urls) >= limit:
+            break
+    return urls, templates
+
+
+def _bundle_urls(body: str, base: str, limit: int = 6) -> list[str]:
+    """Scripts referenced by a shell, absolute. Origin is the caller's to judge."""
+    out: list[str] = []
+    for src in _SCRIPT_SRC.findall(body[:200_000]):
+        if src.lower().startswith(("data:", "javascript:")):
+            continue
+        url = _canonical(urljoin(base, src.strip()))
+        if url not in out:
+            out.append(url)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _canonical(url: str) -> str:
@@ -189,14 +348,17 @@ def _links(body: str, base: str) -> list[str]:
     timeout=1800,
     name="auth_crawl",
     tags={"auth", "crawl", "idor"},
-    estimated_requests=140,
+    estimated_requests=150,
     risk_notes=[
         "Browses an application while logged in as the operator's account. GET only, "
         "no forms submitted, but it visits real pages with real credentials.",
         "Links that look destructive — logout, delete, cancel, revoke — are skipped "
         "rather than fetched, because GET does not guarantee a page is read-only.",
-        "Volume: up to max_pages requests against one application, rate-limited by "
-        "the engagement.",
+        "On a single-page app it fetches the shell's own script bundles and seeds the "
+        "crawl with the same-origin paths they name. Those paths are fetched under "
+        "every guard a link gets; ones carrying an object id are recorded, not fetched.",
+        "Volume: up to max_pages requests against one application, plus up to "
+        "max_bundles scripts, rate-limited by the engagement.",
     ],
     rationale="Discover the surface that only exists behind a login.",
 )
@@ -206,6 +368,7 @@ async def auth_crawl(
     max_pages: int = 120,
     max_depth: int = 3,
     liveness_every: int = 10,
+    max_bundles: int = 6,
     timeout: int = 15,
 ) -> dict[str, Any]:
     """Crawl an application as a registered session and map what is behind the login.
@@ -217,6 +380,13 @@ async def auth_crawl(
     the two responses are identical the session authenticates nothing, and the
     crawl is refused — a list of public pages labelled "authenticated surface"
     would poison every conclusion drawn from it.
+
+    When a page turns out to be a single-page-app shell, its same-origin script
+    bundles are fetched and mined for paths — API literals, request call sites,
+    and the route table. Those become crawl seeds under the same guards as a
+    link, and are counted separately in ``coverage`` so it is visible how much
+    of the map a link crawler alone would have missed. ``max_bundles`` bounds
+    the extra requests.
 
     Returns the discovered URLs, the forms found (reported, never submitted),
     and — the useful part — the URLs carrying an object reference, which is what
@@ -303,6 +473,12 @@ async def auth_crawl(
         # Item URLs synthesised from ids in a collection. Recorded, never
         # fetched — see _json_refs.
         item_candidates: list[str] = []
+        # Where each URL came from, so the report can separate the surface a
+        # link crawler would have found from the surface only the bundles name.
+        came_from: dict[str, str] = dict.fromkeys(seeds, "seed")
+        bundles_seen: set[str] = set()
+        bundles_read: list[str] = []
+        route_templates: list[str] = []
         errors: list[str] = []
         session_died_at: int | None = None
         # Responses that look exactly like the anonymous entry page. Most
@@ -321,6 +497,114 @@ async def auth_crawl(
 
         def skip(reason: str) -> None:
             skipped[reason] = skipped.get(reason, 0) + 1
+
+        def enqueue(found: list[str], depth: int, via: str) -> None:
+            """The only way anything enters the queue. One gate, one set of rules.
+
+            Links and JavaScript-derived paths go through exactly this code:
+            a mined path is not more trusted than a linked one, and giving it a
+            second, laxer route into the queue is how a guard stops applying.
+            """
+            for link in found:
+                if link in seen:
+                    continue
+                seen.add(link)
+                link_host = urlsplit(link).hostname or ""
+                if link_host != host:
+                    # Same origin only. A logged-in crawl that wanders is a
+                    # credentialed request to somebody else's server.
+                    skip("off_origin")
+                    continue
+                if not engagement.scope.check(link_host).in_scope:
+                    skip("out_of_scope")
+                    continue
+                if _DESTRUCTIVE.search(link):
+                    skip("destructive")
+                    continue
+                if _BORING.search(urlsplit(link).path):
+                    skip("static_asset")
+                    continue
+                came_from[link] = via
+                queue.append((link, depth + 1))
+
+        async def read_bundles(body: str, page_url: str, depth: int) -> None:
+            """Mine an SPA shell's scripts for paths, and seed them.
+
+            The shell itself says nothing — that is what a shell is. Everything
+            this application does is in the bundles, so not reading them is the
+            difference between mapping the app and reporting one page.
+            """
+            for bundle in _bundle_urls(body, page_url):
+                # Two ceilings, because they bound different things: bundles
+                # actually read, and requests spent trying. Every client-side
+                # route re-offers the same relative `src`, resolved against a
+                # different path, so an unbounded attempt count is a request per
+                # route for scripts that do not exist.
+                if len(bundles_read) >= max_bundles or len(bundles_seen) >= max_bundles * 3:
+                    return
+                if bundle in bundles_seen:
+                    continue
+                bundles_seen.add(bundle)
+                bundle_host = urlsplit(bundle).hostname or ""
+                if bundle_host != host:
+                    # A CDN or analytics script is not this application's code,
+                    # and it is not on a host anyone authorized.
+                    skip("off_origin_script")
+                    continue
+                if not engagement.scope.check(bundle_host).in_scope:
+                    skip("out_of_scope")
+                    continue
+                async with engagement.limiter.slot(host=bundle):
+                    try:
+                        script = await client.get(bundle, headers=auth_headers)
+                    except httpx.HTTPError as exc:
+                        errors.append(f"{bundle}: {type(exc).__name__}")
+                        continue
+                if script.status_code >= 400:
+                    # A bundle that could not be read is a bundle whose routes
+                    # were never seen. Recorded as an error so `complete` says
+                    # so, rather than an empty result reading as a clean one.
+                    errors.append(f"{bundle}: HTTP {script.status_code}")
+                    continue
+                content_type = script.headers.get("content-type", "").lower()
+                if "javascript" not in content_type and "ecmascript" not in content_type:
+                    # An SPA answers 200 with its shell for *every* unknown path,
+                    # so a relative `src="main.js"` on the client-side route
+                    # `/address/create` resolves to `/address/main.js` and comes
+                    # back as HTML. Measured on Juice Shop: three of six bundle
+                    # slots spent re-reading index.html. Not an error — the
+                    # server answered — but it is not a bundle and must not be
+                    # counted as one or listed as though its routes were read.
+                    skip("script_was_not_javascript")
+                    continue
+                bundles_read.append(bundle)
+                mined, templates = _js_paths(script.text or "", bundle)
+                for template in templates:
+                    skip("js_route_template")
+                    if template not in route_templates:
+                        route_templates.append(template)
+                seeds_from_js: list[str] = []
+                for url, source in mined:
+                    # THE GUARD. A mined path that carries an identifier names
+                    # one object, and that object usually belongs to somebody
+                    # else — the same line _json_refs draws for item URLs, in
+                    # the same place, for the same reason. `/api/orders` is a
+                    # route we may browse; `/api/orders/1042` is a record, and
+                    # reading it is the access-control test, not the crawl.
+                    if _object_reference(url) is not None:
+                        skip("js_object_reference_not_fetched")
+                        # Only an endpoint is worth handing to authz_compare. A
+                        # *client-side* route that happens to contain digits is
+                        # not an object: Juice Shop declares `path:"403"`, which
+                        # _object_reference reads as a numeric id and which
+                        # returns the SPA shell to anyone who asks. Not fetched
+                        # either way — but naming it as the thing to test would
+                        # send an operator at an error page.
+                        if source == "endpoint" and url not in item_candidates:
+                            item_candidates.append(url)
+                        continue
+                    seeds_from_js.append(url)
+                enqueue(seeds_from_js, depth, "js")
 
         while queue and len(pages) < max_pages and session_died_at is None:
             url, depth = queue.popleft()
@@ -354,6 +638,7 @@ async def auth_crawl(
                 "depth": depth,
                 "bytes": len(body),
                 "kind": kind,
+                "via": came_from.get(url, "seed"),
                 "object_reference": _object_reference(url),
             })
             if kind == "html":
@@ -363,6 +648,10 @@ async def auth_crawl(
 
             if depth >= max_depth:
                 continue
+            # An SPA shell: no links, no forms, and the entire application
+            # inside the scripts it loads.
+            if kind == "html" and _SPA_SHELL.search(body[:200_000]):
+                await read_bundles(body, url, depth)
             if kind == "json":
                 found: list[str] = []
                 try:
@@ -372,26 +661,7 @@ async def auth_crawl(
                     found = []
             else:
                 found = _links(body, url)
-            for link in found:
-                if link in seen:
-                    continue
-                seen.add(link)
-                link_host = urlsplit(link).hostname or ""
-                if link_host != host:
-                    # Same origin only. A logged-in crawl that wanders is a
-                    # credentialed request to somebody else's server.
-                    skip("off_origin")
-                    continue
-                if not engagement.scope.check(link_host).in_scope:
-                    skip("out_of_scope")
-                    continue
-                if _DESTRUCTIVE.search(link):
-                    skip("destructive")
-                    continue
-                if _BORING.search(urlsplit(link).path):
-                    skip("static_asset")
-                    continue
-                queue.append((link, depth + 1))
+            enqueue(found, depth, "link")
 
     # 3. Record what was found, tagged so later phases know it needed a login.
     engagement.assets.add_many(
@@ -412,6 +682,7 @@ async def auth_crawl(
     engagement.assets.save(engagement.workspace / "assets.json")
 
     with_refs = [p for p in pages if p["object_reference"]]
+    js_pages = sum(1 for p in pages if p.get("via") == "js")
     # Candidates we never visited are the sharpest access-control targets we
     # have: the application named them, and we deliberately did not look.
     unvisited_refs = [u for u in item_candidates if u not in seen]
@@ -445,6 +716,18 @@ async def auth_crawl(
             "not_dereferenced": len(unvisited_refs),
             "html_pages": sum(1 for p in pages if p.get("kind") == "html"),
             "json_documents": sum(1 for p in pages if p.get("kind") == "json"),
+            # What the JavaScript bought. Separated from link-derived discovery
+            # because on an SPA the first number is the whole map and the
+            # second is zero, and an operator has to be able to see that.
+            "bundles_read": bundles_read,
+            "js_seeds_queued": sum(1 for v in came_from.values() if v == "js"),
+            "js_pages_crawled": js_pages,
+            "link_pages_crawled": sum(1 for p in pages if p.get("via") == "link"),
+            # Mined, id-bearing, deliberately not fetched — the same line
+            # _json_refs draws, drawn again on the JavaScript.
+            "js_references_not_fetched": skipped.get("js_object_reference_not_fetched", 0),
+            "js_route_templates": route_templates[:40],
+            "max_bundles": max_bundles,
             "stopped_because": (
                 "session_expired" if session_died_at is not None
                 else "page_budget" if len(pages) >= max_pages
@@ -453,7 +736,7 @@ async def auth_crawl(
         },
         "session_verified": True,
         "session_died_after_pages": session_died_at,
-        "note": _note(session_died_at, len(pages), len(with_refs), len(queue)),
+        "note": _note(session_died_at, len(pages), len(with_refs), len(queue), js_pages),
         "next_step": _next_step(unvisited_refs, with_refs),
     }
 
@@ -479,7 +762,7 @@ def _next_step(candidates: list[str], visited_refs: list[dict[str, Any]]) -> str
     )
 
 
-def _note(died_at: int | None, pages: int, refs: int, queued: int) -> str:
+def _note(died_at: int | None, pages: int, refs: int, queued: int, js_pages: int = 0) -> str:
     if died_at is not None:
         return (
             f"The session stopped authenticating after {died_at} pages. Everything "
@@ -487,15 +770,25 @@ def _note(died_at: int | None, pages: int, refs: int, queued: int) -> str:
             "continuing anonymously and reporting public pages as the authenticated "
             "surface. Re-capture the session and resume."
         )
+    via_js = (
+        f" {js_pages} of them were reached only because a script bundle named the "
+        "path — no link on any page points at them."
+        if js_pages else ""
+    )
     if queued:
         return (
             f"{pages} pages crawled, {refs} carrying an object reference. {queued} URLs "
             "were queued and not visited — this is a PARTIAL map of the authenticated "
-            "surface, bounded by max_pages/max_depth, not the whole of it."
+            "surface, bounded by max_pages/max_depth, not the whole of it." + via_js
         )
+    reach = (
+        "links, plus the paths the script bundles name."
+        if js_pages else
+        "links only. Anything reached solely by a form submission or an XHR the "
+        "pages do not link to is not in here."
+    )
     return (
         f"{pages} pages crawled, {refs} carrying an object reference. The queue "
         "emptied, so this is the reachable authenticated surface from this entry "
-        "point — links only. Anything reached solely by a form submission or an "
-        "XHR the pages do not link to is not in here."
+        f"point — {reach}" + via_js
     )

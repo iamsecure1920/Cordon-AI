@@ -207,6 +207,74 @@ def _routes(body: str) -> list[str]:
     return out
 
 
+#: Evidence that THIS host authenticates callers with a bearer token or API key.
+#:
+#: The word boundary is load-bearing. Without it, `api[_-]?key` matches inside
+#: `googleAPIKey`, and a bank's login page carrying a Google Maps key was scored
+#: as having an API-auth surface on that basis alone — a signal invented out of a
+#: third party's config field name.
+#: Unambiguous: these name an authentication *mechanism*, not a config field.
+#: A page carrying one of these is asking callers to authenticate, whatever else
+#: it also happens to ship.
+_API_AUTH_STRONG = re.compile(
+    r"""(?ix)
+    (?: authorization \s* [:=] \s* ["']? \s* bearer
+      | \b x-api-key \b
+      | \b x-auth-token \b
+    )"""
+)
+
+#: Ambiguous on its own. `apiKey` is the field name in a Firebase web config,
+#: which is public by design, and it is also the field name in a real
+#: credential. Only the surrounding text can tell them apart.
+_API_AUTH_WEAK = re.compile(
+    r"""(?ix)
+    (?: \b api[_-]?key \b
+      | \b access[_-]?token \b \s* [:=]
+    )"""
+)
+
+#: Vendors whose browser-side keys are public by design. A key named for one of
+#: these is configuration, not an authentication mechanism, and programs
+#: routinely exclude them by name ("Public Google API keys used for Maps
+#: disclosure", "public API keys intentionally exposed for analytics").
+_VENDOR_KEY = re.compile(
+    r"""(?ix)\b(?: google | maps | firebase | datadog | sentry | segment | mixpanel
+        | amplitude | recaptcha | stripe[_-]?publishable | algolia | intercom
+        | launchdarkly | optimizely | hotjar | pendo | fullstory )"""
+)
+
+
+def _api_auth_evidence(sample: str) -> bool:
+    """Does this page authenticate callers with a token, or merely mention one?
+
+    Two tiers, because one rule cannot serve both cases and trying to make it
+    produced a check that was wrong in both directions at once:
+
+    A **strong** marker names a mechanism — ``Authorization: Bearer``,
+    ``X-Api-Key``. It is never suppressed. An earlier version looked backwards
+    from every match for a vendor name and so let a Google Maps key sitting
+    earlier on the page hide a real bearer token later on it.
+
+    A **weak** marker is a field name that both a credential and a public vendor
+    config would use. It counts only when nothing vendor-shaped sits near it.
+    The window is symmetric because the giveaway is as often after the field as
+    before: ``{"apiKey":"…","authDomain":"…firebaseapp.com"}`` identifies itself
+    only in the sibling that follows.
+
+    The original bug this replaces: ``api[_-]?key`` with no word boundary matched
+    inside ``googleAPIKey``, so a bank's login page was scored as having an
+    API-auth surface because it loads a map.
+    """
+    if _API_AUTH_STRONG.search(sample):
+        return True
+    for match in _API_AUTH_WEAK.finditer(sample):
+        window = sample[max(0, match.start() - 120) : match.end() + 120]
+        if not _VENDOR_KEY.search(window):
+            return True
+    return False
+
+
 def _classify(body: str, headers: Any, *, kind: str = "html") -> set[str]:
     """Which signals this one response carries.
 
@@ -240,7 +308,7 @@ def _classify(body: str, headers: Any, *, kind: str = "html") -> set[str]:
     for value in _header_values(headers, "www-authenticate"):
         if value:
             found.add("api_auth")
-    if re.search(r"""(?i)(?:authorization:\s*bearer|["']?api[_\-]?key["']?\s*[:=])""", sample):
+    if _api_auth_evidence(sample):
         found.add("api_auth")
 
     # A login form is implied by a registration form, but not the reverse. Do

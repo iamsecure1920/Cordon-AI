@@ -22,7 +22,6 @@ such rather than left looking governed.
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from easyhunt.control_plane.context import get_engagement
@@ -30,6 +29,7 @@ from easyhunt.control_plane.sanitize import ArgPolicy
 from easyhunt.tools.base import ToolSpec, easyhunt_tool
 from easyhunt.tools.common import (
     HOST_PATTERN,
+    ToolRun,
     in_scope_only,
     register_spec,
     run_one,
@@ -86,24 +86,82 @@ CDNCHECK = register_spec(
     )
 )
 
-#: Registered but not invoked by any wrapper in this module. Left in the catalog
-#: so `easyhunt doctor` still reports on it. If it is ever wired up, note that its
-#: `-t` defaults to **10,000** concurrent massdns resolves and it has no
-#: requests-per-second flag at all — `-t` from `max_concurrency` is the only
-#: governor available, and it is a weak one.
-SHUFFLEDNS = register_spec(
-    ToolSpec(
-        name="shuffledns", binary="shuffledns", license="MIT",
-        homepage="https://github.com/projectdiscovery/shuffledns", version_args=["-version"],
-        arg_policy=ArgPolicy(
-            tool="shuffledns",
-            allowed_flags={"-d", "-list", "-r", "-mode", "-silent", "-duc", "-t", "-o", "-nc"},
-            boolean_flags={"-silent", "-duc", "-nc"},
-            value_patterns={"-d": HOST_PATTERN, "-mode": re.compile(r"bruteforce|resolve|filter")},
-            numeric_caps={"-t": 5000},
+# shuffledns was catalogued here for months with no call site, and it is removed
+# rather than wired. Three independent blockers, each verified against the real
+# binaries rather than inferred:
+#
+# 1. It cannot be paced. `shuffledns -h` lists exactly one flag under RATE-LIMIT:
+#    "-t int  Number of concurrent massdns resolves (default 10000)". There is no
+#    requests-per-second control, and there is none underneath it either —
+#    `massdns --help` offers `-s/--hashmap-size` ("Number of concurrent lookups",
+#    default 10000) and `-i/--interval` ("Interval in milliseconds to wait between
+#    multiple resolves of the same domain"), which are concurrency and retry
+#    spacing, not a global rate. Wiring it would mean declaring that it honours
+#    `scope.rules.max_rps` when no layer of the stack has a mechanism to do so.
+# 2. It is redundant with a tool that CAN be paced. dnsx takes `-d` (domains to
+#    bruteforce) and `-w` (wordlist) alongside both `-rl` (dns requests/second)
+#    and `-t` (threads) — all four already on DNSX's allowlist above. The same
+#    capability, governed.
+# 3. Its prerequisites are unmet. It requires `-r <resolvers file>`; no vetted
+#    resolver list exists in the payload store, and the store holds no subdomain
+#    bruteforce wordlist either. Invariant 6 requires third-party lists be vetted
+#    and pinned, so supplying either ad hoc is not available as a shortcut.
+#
+# The install recipe still builds shuffledns and massdns. Removing the spec means
+# `easyhunt doctor` no longer reports on a binary the installer still places on
+# disk — see the note in tests/test_wiring.py.
+
+
+def _dnsx_pacing(rules: Any) -> list[str]:
+    """dnsx's rate and concurrency flags, clamped to its own policy ceilings.
+
+    Both numbers come from the engagement and never from a literal. They are then
+    clamped to ``DNSX.arg_policy.numeric_caps``, because an engagement permitting
+    more than a per-tool ceiling is not permission to exceed it — and passing a
+    larger number does not run faster. It is refused by ``sanitize_argv``, that
+    refusal is caught by ``run_one``, and the call comes back ``ran=False``. The
+    wrapper then returns ``resolved: 0`` with ``ok: True``: a tool that never ran,
+    shaped exactly like a domain whose hosts do not resolve.
+
+    Latent rather than observed — no scope.yaml in this repo sets ``max_rps``
+    above the ``-rl`` cap of 300 — but an owned-asset engagement legitimately can,
+    and the same clamp is already applied for the same reason in
+    ``endpoints.endpoint_discovery``.
+    """
+    caps = DNSX.arg_policy.numeric_caps  # type: ignore[union-attr]
+    return [
+        "-rl", str(min(max(1, int(rules.max_rps)), int(caps["-rl"]))),
+        "-t", str(min(max(1, int(rules.max_concurrency)), int(caps["-t"]))),
+    ]
+
+
+def _untested(tool: str, run: ToolRun, *, what: str) -> dict[str, Any]:
+    """The response for a DNS tool that did not run.
+
+    Measured, not theorised: with dnsx absent, ``dns_resolve`` returned
+    ``ok: true``, ``resolved: 0``, ``records: []`` and the next step "Probe the
+    resolved hosts with http_probe." The only trace of the failure was
+    ``tools[0].ran = false``, four keys down. Every later phase reads that as a
+    domain whose hosts do not resolve, which is the same shape as a domain that
+    resolves to nothing — and the pipeline then scans an empty host list and
+    reports a clean estate.
+
+    Absence is not a clean result, so it is returned as a refusal rather than as
+    an empty success.
+    """
+    return {
+        "ok": False,
+        "complete": False,
+        "error": "tool_unavailable",
+        "untested": True,
+        "message": (
+            f"{tool} could not run ({run.error or 'unavailable'}), so {what} was "
+            "not performed. This is UNTESTED, not clean — an empty result here "
+            "would be indistinguishable from a target with nothing to find. "
+            "Install it or run 'easyhunt doctor' to see what is missing."
         ),
-    )
-)
+        "tools": [run.to_dict()],
+    }
 
 
 def _write_list(name: str, values: list[str]) -> str:
@@ -145,12 +203,11 @@ async def dns_resolve(target: str, record_types: list[str] | None = None) -> dic
             argv.append(f"-{record}")
     # The engagement ceiling, not a multiple of it. dnsx defaults to 100 threads
     # and no rate limit at all, so both flags have to be set or neither binds.
-    argv += [
-        "-rl", str(max(1, int(rules.max_rps))),
-        "-t", str(max(1, int(rules.max_concurrency))),
-    ]
+    argv += _dnsx_pacing(rules)
 
     run = await run_one("dnsx", argv, timeout=600)
+    if not run.ran:
+        return _untested("dnsx", run, what="DNS resolution")
 
     resolved: list[dict[str, Any]] = []
     dangling: list[dict[str, Any]] = []
@@ -233,13 +290,20 @@ async def dns_permute(target: str, limit: int = 20000) -> dict[str, Any]:
         ["-l", _write_list("alterx-input", known), "-silent", "-duc", "-limit", str(min(limit, 100_000))],
         timeout=300,
     )
+    # "alterx is not installed" and "alterx ran and generated nothing" were both
+    # reported as ok:True with a parenthetical guess in a note. They are different
+    # answers: the first means this surface is untested, the second means the
+    # permutation space is genuinely empty.
+    if not generate.ran:
+        return _untested("alterx", generate, what="permutation generation")
     if not generate.values:
         return {
             "ok": True,
+            "complete": True,
             "generated": 0,
             "resolved": [],
             "tools": [generate.to_dict()],
-            "note": "alterx produced no permutations (is it installed?)",
+            "note": "alterx ran and produced no permutations for this input.",
         }
 
     rules = engagement.scope.rules
@@ -248,11 +312,12 @@ async def dns_permute(target: str, limit: int = 20000) -> dict[str, Any]:
         [
             "-l", _write_list("alterx-permutations", generate.values),
             "-silent", "-nc", "-duc", "-a", "-resp",
-            "-rl", str(max(1, int(rules.max_rps))),
-            "-t", str(max(1, int(rules.max_concurrency))),
+            *_dnsx_pacing(rules),
         ],
         timeout=1500,
     )
+    if not resolve.ran:
+        return _untested("dnsx", resolve, what="resolution of the generated permutations")
 
     found = [line.split()[0] for line in resolve.values if line.strip()]
     kept, dropped = in_scope_only(found, phase="dns", tool="dns_permute")
@@ -293,6 +358,8 @@ async def cdn_check(target: str) -> dict[str, Any]:
         ["-l", _write_list("cdncheck-input", hosts), "-json", "-silent", "-duc", "-resp", "-nc"],
         timeout=180,
     )
+    if not run.ran:
+        return _untested("cdncheck", run, what="CDN identification")
 
     behind_cdn: list[dict[str, Any]] = []
     direct: list[str] = []
