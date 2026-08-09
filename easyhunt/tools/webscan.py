@@ -31,6 +31,7 @@ delay argument. An argument the agent can set is a limit the agent can raise.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 from pathlib import Path
@@ -517,6 +518,53 @@ _TESTSSL_SCAN_STATUS_IDS = frozenset({
     "scanProblem", "scanTime", "engine_problem", "service", "pre_128cipher",
 })
 
+#: Tokens that look like an IPv4 address. Deliberately greedy — the point is to
+#: catch every candidate and then decide, not to match only the real ones.
+_IPV4_TOKEN = re.compile(r"(?<![\d.])((?:\d{1,3}\.){3}\d{1,3})(?![\d.])")
+
+
+def _confirms_ipv4_in_header(entry: dict[str, Any]) -> tuple[bool, str]:
+    """Is testssl's ``ipv4_in_header`` hit an actual internal address?
+
+    The check exists to catch a back-end's own address leaking through a proxy,
+    which tells an attacker about the network behind it. testssl finds it with a
+    pattern, and a pattern cannot tell an address from four numbers that happen
+    to have dots between them.
+
+    Measured against a real target: every one of 32 MEDIUM findings was
+    ``1.0.1.1`` sitting inside a Cloudflare bot-management cookie —
+    ``__cf_bm=...-1786241965.9966922-1.0.1.1-W9WzYfaG...``. Not an address, not a
+    leak, and filed at MEDIUM over the researcher's name.
+
+    Two conditions have to hold before this is worth anybody's time: the token
+    must parse as an IPv4 address, and it must be one that should never appear
+    on the public internet. A routable public address in a header is the load
+    balancer doing its job.
+    """
+    text = str(entry.get("finding") or "")
+    internal: list[str] = []
+    for token in _IPV4_TOKEN.findall(text):
+        try:
+            addr = ipaddress.IPv4Address(token)
+        except ValueError:
+            continue
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+            internal.append(token)
+    if internal:
+        return True, f"internal address(es) in header: {', '.join(sorted(set(internal)))}"
+    return False, "no internal IPv4 in the header — the pattern matched digits, not an address"
+
+
+#: testssl checks that are pattern matches rather than protocol facts, and the
+#: function that decides whether the pattern found what it was looking for.
+#:
+#: "No PoC, no finding" applies to a scanner's own heuristics too. A check that
+#: greps for a shape will match that shape wherever it occurs, and a wrapper that
+#: forwards the hit unexamined is laundering a guess into a severity.
+_TESTSSL_VALIDATORS: dict[str, Any] = {
+    "ipv4_in_header": _confirms_ipv4_in_header,
+}
+
 
 @easyhunt_tool(
     phase="http_probe", mode="passive", targets_arg="target", timeout=1200,
@@ -577,6 +625,10 @@ async def tls_audit(target: str, port: int = 443) -> dict[str, Any]:
 
     findings: list[Finding] = []
     scan_problems: list[str] = []
+    # Heuristic hits that did not survive validation. Reported as a count rather
+    # than dropped in silence — "we looked and it was noise" is a different
+    # statement from "we never looked".
+    unconfirmed: list[str] = []
     for entry in entries:
         if str(entry.get("id")) in _TESTSSL_SCAN_STATUS_IDS:
             if str(entry.get("severity", "")).lower() in {"fatal", "critical", "high"}:
@@ -585,6 +637,13 @@ async def tls_audit(target: str, port: int = 443) -> dict[str, Any]:
         severity = _severity_of(entry.get("severity"), _TESTSSL_SEVERITY)
         if severity is Severity.INFO:
             continue
+        validator = _TESTSSL_VALIDATORS.get(str(entry.get("id")))
+        if validator is not None:
+            confirmed, why = validator(entry)
+            if not confirmed:
+                unconfirmed.append(f"{entry.get('id')}: {why}")
+                continue
+            entry = {**entry, "_validated": why}
         findings.append(
             Finding(
                 asset=f"https://{uri}",
@@ -593,7 +652,10 @@ async def tls_audit(target: str, port: int = 443) -> dict[str, Any]:
                 severity=severity,
                 status=Status.CANDIDATE,
                 description=str(entry.get("finding"))[:1000],
-                how_found=f"testssl check '{entry.get('id')}' reported {entry.get('severity')}",
+                how_found=(
+                    f"testssl check '{entry.get('id')}' reported {entry.get('severity')}"
+                    + (f"; validated: {entry['_validated']}" if entry.get("_validated") else "")
+                ),
                 source_tool="testssl",
                 confidence=0.6,
                 tags=["tls"],
@@ -628,6 +690,10 @@ async def tls_audit(target: str, port: int = 443) -> dict[str, Any]:
         # alternative was a HIGH severity "finding" that described testssl's own
         # failure to reach the host.
         "scan_problems": scan_problems,
+        # Heuristic hits that were checked and did not hold up. Counted rather
+        # than hidden: a wrapper that quietly discards is as untrustworthy as one
+        # that quietly forwards.
+        "unconfirmed_heuristics": unconfirmed,
         "findings": _record(findings),
         "detail": entries[:200],
         "tools": [run.to_dict()],

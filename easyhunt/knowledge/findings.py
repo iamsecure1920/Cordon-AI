@@ -318,15 +318,55 @@ class AssetStore:
 class FindingStore:
     """Deduplicating findings store with severity-ordered reads."""
 
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(self, path: Path | None = None, *, classifier: Any = None) -> None:
         self.path = path
         self._findings: dict[str, Finding] = {}
         self._lock = threading.Lock()
+        #: Optional callable taking a Finding and returning ``{"match", "reason"}``
+        #: when the program has declared that class ineligible, else ``None``.
+        #: Applied on the way in so every consumer — report, listing, summary —
+        #: agrees about what is reportable, instead of each deciding separately.
+        self.classifier = classifier
         if path and path.exists():
             self.load(path)
 
+    def _classify(self, finding: Finding) -> Finding:
+        """Mark, never drop.
+
+        A finding the program will not accept can still matter to the operator,
+        and silently discarding results is the exact failure this codebase keeps
+        finding in itself. It gets a tag and a recorded reason; deciding what to
+        submit happens at report time, in the open.
+        """
+        if self.classifier is None:
+            return finding
+        try:
+            verdict = self.classifier(finding)
+        except Exception:  # noqa: BLE001 — classification must never lose a finding
+            return finding
+        if verdict:
+            if "program-excluded" not in finding.tags:
+                finding.tags.append("program-excluded")
+            finding.extra["program_exclusion"] = verdict
+        return finding
+
+    def reportable(self) -> list[Finding]:
+        """Everything except what the program said it will not accept.
+
+        Not a severity filter and not a confidence filter — those are judgement
+        calls that belong to a human. This is only the program's own published
+        exclusion list, applied so a report does not hand a triager the exact
+        categories their policy asks researchers not to send.
+        """
+        return [f for f in self.all() if "program-excluded" not in (f.tags or [])]
+
+    def program_excluded(self) -> list[Finding]:
+        """The other side of :meth:`reportable`. Kept, never deleted."""
+        return [f for f in self.all() if "program-excluded" in (f.tags or [])]
+
     def add(self, finding: Finding) -> Finding:
         """Insert or merge. Re-scanning a target updates rather than duplicates."""
+        finding = self._classify(finding)
         with self._lock:
             existing = self._findings.get(finding.id)
             if existing is None:

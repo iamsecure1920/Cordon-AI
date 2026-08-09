@@ -74,7 +74,12 @@ class Engagement:
             user_agent=scope.rules.user_agent,
         )
 
-        self.findings = FindingStore(self.workspace / "findings.json")
+        # The scope carries the program's published list of ineligible
+        # vulnerability classes; the store applies it as findings arrive, so
+        # everything downstream agrees on what is reportable.
+        self.findings = FindingStore(
+            self.workspace / "findings.json", classifier=scope.excluded_finding
+        )
         self.assets = AssetStore()
         # Resuming into an existing workspace inherits what earlier phases found.
         # The pipeline runs one process per phase, so without this every phase

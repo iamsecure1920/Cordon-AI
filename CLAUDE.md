@@ -108,6 +108,12 @@ produce a partial report when you run out — do that rather than stopping silen
   INFO. Test `isinstance(x, Severity)`.
 - **`llm_usd: 0` means LLM disabled, not "budget exhausted."** Check the
   `llm_disabled` property; do not treat it as an exhausted engagement.
+- **A scanner's heuristic is not a finding.** testssl's `ipv4_in_header` matched
+  `1.0.1.1` inside a Cloudflare cookie and filed 32 MEDIUMs. Validate pattern
+  hits before filing them; `_TESTSSL_VALIDATORS` in `tools/webscan.py` is where.
+- **Read the program's out-of-scope vulnerability list.** `out_of_scope.
+  finding_classes` in `scope.yaml` marks findings the program has said it will
+  not accept. They are withheld from the report, never deleted.
 - **Tool absence ≠ negative result.** If a validator's binary is missing, the
   finding is UNTESTED, not disproven. Never report "not vulnerable" because a
   tool failed to run.

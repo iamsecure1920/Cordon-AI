@@ -163,6 +163,82 @@ def _parse_port(text: str) -> int | None:
 
 
 @dataclass(frozen=True)
+class _ExcludedClass:
+    """One vulnerability class the program has declared ineligible."""
+
+    pattern: re.Pattern[str]
+    raw: str
+    reason: str
+
+    def matches(self, text: str) -> bool:
+        return bool(self.pattern.search(text))
+
+
+class _ExcludedClasses:
+    """Vulnerability classes a program will not accept, from its own policy.
+
+    Every bug bounty program publishes a list of things it does not want:
+    missing security headers, SSL/TLS best practice, self-XSS, public API keys,
+    IP disclosure. A program read during this project published about thirty.
+    Until this existed, a scan of 20 hosts produced 111 "findings" of which
+    every single one was either a false positive or something the program had
+    said in writing it would not accept.
+
+    That is worse than noise. The policy also says scanner output that has not
+    been validated is out of scope, so submitting it is not a neutral act — it
+    is the specific thing the program asked researchers not to do, and it is
+    what gets a report closed as informative and a researcher's signal marked
+    down.
+
+    Matching is on the finding's text: title, description, tags and source tool.
+    A plain string is a case-insensitive substring; prefix a pattern with ``re:``
+    for a regex. Deliberately simple — this is transcribed by hand from a policy
+    page, and a syntax an operator gets wrong silently is worse than none.
+    """
+
+    def __init__(self, entries: list[_ExcludedClass]) -> None:
+        self.entries = entries
+        self.invalid: list[str] = []
+
+    @classmethod
+    def from_dict(cls, data: Any, *, source: str = "<dict>") -> _ExcludedClasses:
+        out: list[_ExcludedClass] = []
+        invalid: list[str] = []
+        for item in data or []:
+            if isinstance(item, str):
+                item = {"match": item, "reason": "declared out of scope by the program"}
+            if not isinstance(item, dict):
+                invalid.append(repr(item))
+                continue
+            raw = str(item.get("match") or item.get("pattern") or "").strip()
+            reason = str(item.get("reason") or "declared out of scope by the program")
+            if not raw:
+                invalid.append(repr(item))
+                continue
+            try:
+                if raw.startswith("re:"):
+                    pattern = re.compile(raw[3:], re.IGNORECASE)
+                else:
+                    pattern = re.compile(re.escape(raw), re.IGNORECASE)
+            except re.error as exc:
+                invalid.append(f"{raw} ({exc})")
+                continue
+            out.append(_ExcludedClass(pattern=pattern, raw=raw, reason=reason))
+        obj = cls(out)
+        obj.invalid = invalid
+        return obj
+
+    def match(self, text: str) -> _ExcludedClass | None:
+        for entry in self.entries:
+            if entry.matches(text):
+                return entry
+        return None
+
+    def __len__(self) -> int:
+        return len(self.entries)
+
+
+@dataclass(frozen=True)
 class Verdict:
     """Result of a scope check. Always audited, whether allowed or refused."""
 
@@ -370,6 +446,9 @@ class Scope:
         self.budget: dict[str, Any] = dict(data.get("budget") or {})
         self._allow = _RuleSet.from_dict(data.get("in_scope"), side="in_scope")
         self._deny = _RuleSet.from_dict(data.get("out_of_scope"), side="out_of_scope")
+        self._excluded_classes = _ExcludedClasses.from_dict(
+            (data.get("out_of_scope") or {}).get("finding_classes"), source=source
+        )
 
         if self._allow.is_empty():
             raise ConfigError(
@@ -484,6 +563,35 @@ class Scope:
             raise StaleScopeError(message, source=self.source, age_days=age, max_age_days=max_age)
         return message
 
+    def excluded_finding(self, finding: Any) -> dict[str, str] | None:
+        """The program's own reason for not accepting this finding, if any.
+
+        Returns ``None`` when the finding is eligible. Otherwise a dict with the
+        matched pattern and the reason, both taken verbatim from the transcribed
+        policy so a report can quote why something was withheld.
+
+        This never deletes anything. A finding the program will not pay for can
+        still matter to the operator — and silently dropping results is the
+        failure mode this codebase has spent its whole life fixing. It is marked,
+        counted, and kept out of the reportable set.
+        """
+        if not self._excluded_classes:
+            return None
+        parts = [
+            str(getattr(finding, "title", "") or ""),
+            str(getattr(finding, "description", "") or ""),
+            str(getattr(finding, "source_tool", "") or ""),
+            " ".join(str(t) for t in (getattr(finding, "tags", None) or [])),
+        ]
+        hit = self._excluded_classes.match(" ".join(parts))
+        if hit is None:
+            return None
+        return {"match": hit.raw, "reason": hit.reason}
+
+    @property
+    def excluded_class_count(self) -> int:
+        return len(self._excluded_classes)
+
     def validate(self) -> list[str]:
         """Non-fatal problems worth showing the operator before a run starts."""
         warnings: list[str] = []
@@ -491,6 +599,11 @@ class Scope:
         warnings.extend(
             f"unparseable DENY entry ignored — this WIDENS your effective scope: {e}"
             for e in self._deny.invalid
+        )
+        warnings.extend(
+            "unparseable out_of_scope.finding_classes entry ignored — findings that "
+            f"class covers will be reported as eligible: {e}"
+            for e in self._excluded_classes.invalid
         )
         if not self.rules.wildcard_includes_apex:
             for pattern in self._allow.wildcards:

@@ -96,9 +96,11 @@ def _severity_table(findings: list[Finding]) -> str:
 
 
 def _markdown(engagement: Any, summary: dict[str, Any], executive: str) -> str:
-    confirmed = engagement.findings.confirmed()
-    review = engagement.findings.needs_review()
-    candidates = engagement.findings.candidates()
+    reportable = {f.id for f in engagement.findings.reportable()}
+    confirmed = [f for f in engagement.findings.confirmed() if f.id in reportable]
+    review = [f for f in engagement.findings.needs_review() if f.id in reportable]
+    candidates = [f for f in engagement.findings.candidates() if f.id in reportable]
+    excluded = engagement.findings.program_excluded()
     scope = engagement.scope
 
     parts: list[str] = [
@@ -229,6 +231,26 @@ def _markdown(engagement: Any, summary: dict[str, Any], executive: str) -> str:
         closing_statement(exploitation_ran=any(f.poc for f in engagement.findings.all())),
         "",
     ]
+    if excluded:
+        by_reason: dict[str, int] = {}
+        for f in excluded:
+            reason = str((f.extra or {}).get("program_exclusion", {}).get("reason", "unspecified"))
+            by_reason[reason] = by_reason.get(reason, 0) + 1
+        parts += [
+            "",
+            "## Withheld — classes this program does not accept",
+            "",
+            f"{len(excluded)} finding(s) matched the program's own published "
+            "out-of-scope list and are not reported above. They are listed here so "
+            "nothing is hidden, not because they are submittable.",
+            "",
+            "| n | The program's stated reason |",
+            "| --- | --- |",
+        ]
+        parts += [f"| {n} | {reason} |" for reason, n in sorted(
+            by_reason.items(), key=lambda kv: -kv[1]
+        )]
+
     return "\n".join(parts)
 
 
@@ -294,6 +316,25 @@ async def generate_report(
 
     summary = engagement.summary()
 
+    # Findings the program has declared ineligible, matched against its own
+    # published exclusion list. Separated rather than deleted: they are reported
+    # in their own section with the program's reason quoted, so an operator sees
+    # what was withheld and why instead of wondering where it went.
+    #
+    # This matters more than it looks. A first pass over 20 hosts produced 111
+    # findings, every one of them a class the program had said in writing it
+    # would not accept. Putting them in a report is the specific thing the policy
+    # asks researchers not to do.
+    excluded = [f for f in engagement.findings.all() if "program-excluded" in (f.tags or [])]
+    summary["program_excluded"] = len(excluded)
+    summary["excluded_reasons"] = sorted(
+        {
+            str((f.extra or {}).get("program_exclusion", {}).get("reason", ""))
+            for f in excluded
+        }
+        - {""}
+    )
+
     executive = ""
     try:
         from easyhunt.llm.openrouter import LLMClient
@@ -325,7 +366,7 @@ async def generate_report(
 
     if "csv" in formats:
         path = reports_dir / "Report.csv"
-        _write_csv(path, engagement.findings.all())
+        _write_csv(path, engagement.findings.reportable())
         written["csv"] = str(path)
 
     if "json" in formats:
@@ -339,7 +380,8 @@ async def generate_report(
                     "partial_reason": partial_reason,
                     "scope": engagement.scope.summary(),
                     "summary": summary,
-                    "findings": [f.to_dict() for f in engagement.findings.all()],
+                    "findings": [f.to_dict() for f in engagement.findings.reportable()],
+                    "program_excluded": [f.to_dict() for f in excluded],
                 },
                 indent=2,
                 default=str,

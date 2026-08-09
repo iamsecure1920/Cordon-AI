@@ -41,6 +41,22 @@ in_scope:
     - https://app.example.com/v2/
 
 out_of_scope:
+  # Vulnerability classes the program has published as ineligible. Transcribe
+  # them from the policy's "out of scope" section — every program has one.
+  #
+  # Findings matching these are MARKED, never deleted: they are kept out of the
+  # report's reportable set and listed in a "Withheld" section quoting the
+  # program's own reason. A scan that hands a triager the exact categories their
+  # policy asks researchers not to send is worse than a scan that found nothing.
+  #
+  # Plain strings match case-insensitively anywhere in a finding's title,
+  # description, tags or source tool. Prefix with `re:` for a regex.
+  finding_classes:
+    - match: "re:\\bHSTS\\b"
+      reason: "Missing best practices in SSL/TLS configuration — out of scope."
+    - match: "clickjacking"
+      reason: "Clickjacking on pages with no sensitive actions — out of scope."
+
   # Denylist always wins over the allowlist, at every level.
   domains:
     - blog.example.com
