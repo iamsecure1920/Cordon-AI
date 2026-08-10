@@ -306,8 +306,8 @@ async def takeover_detect(target: str) -> dict[str, Any]:
     #    which subjack found NOTHING produced 141 takeover candidates — one per
     #    host, each sourced from the line saying it was fine.
     # 2. `host in line` is a substring test. The line for
-    #    `ads.arkose-client.chime.com` also "matched" `arkose-client.chime.com`
-    #    and `chime.com`, so one host's verdict was attributed to two others.
+    #    `ads.cdn-vendor.example.com` also "matched" `cdn-vendor.example.com`
+    #    and the apex, so one host's verdict was attributed to two others.
     #
     # A takeover report is an assertion that somebody else can claim your DNS.
     # 141 of those, every one false, is not noise — it is the whole output being

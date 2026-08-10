@@ -5,12 +5,12 @@ every line the detectors printed. Two bugs lived in that one expression, and
 both were measured against a real 141-host estate rather than reasoned about:
 
 **Every host became a candidate.** subjack prints one line per host it examines,
-including `[Not Vulnerable] account.chime.com` for the ones that are fine. A run
+including `[Not Vulnerable] account.example.com` for the ones that are fine. A run
 in which subjack found *nothing* produced 141 takeover candidates — one per host,
 each sourced from the line saying it was clean.
 
-**Hostnames matched as substrings.** The line for `ads.arkose-client.chime.com`
-also "contained" `arkose-client.chime.com` and `chime.com`, so one host's verdict
+**Hostnames matched as substrings.** The line for `ads.cdn-vendor.example.com`
+also "contained" `cdn-vendor.example.com` and the apex, so one host's verdict
 was attributed to two unrelated others.
 
 Why this is worse than ordinary noise: a takeover report asserts that somebody
@@ -36,7 +36,7 @@ class TestClearedHostsAreNotHits:
     @pytest.mark.parametrize(
         "line",
         [
-            "[Not Vulnerable] account.chime.example",
+            "[Not Vulnerable] account.example.com",
             "[NOT VULNERABLE] app.example.com",
             "app.example.com is not vulnerable",
             "[Not Found] ghost.example.com",
