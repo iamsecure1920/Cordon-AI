@@ -238,10 +238,36 @@ _API_AUTH_WEAK = re.compile(
 #: these is configuration, not an authentication mechanism, and programs
 #: routinely exclude them by name ("Public Google API keys used for Maps
 #: disclosure", "public API keys intentionally exposed for analytics").
+#: Kept deliberately long. Each name here was either observed in the wild or is
+#: a direct competitor of one that was — the list being *short* is what lets a
+#: false positive through, and the cost of a missing name is a fabricated
+#: "API-auth surface" on somebody's marketing page.
+#:
+#: `rollbar` earned its place the hard way: `var _rollbarConfig = { accessToken:
+#: "..." }` on a live host matched the weak `access_token` marker, was not
+#: suppressed, and produced exactly the signal this check had just been fixed to
+#: stop producing. Error-reporting and analytics tokens are meant to ship to the
+#: browser, and programs exclude them by name.
+#: The leading guard is a lookbehind, not `\b`. `_` is a word character, so
+#: `\brollbar` does NOT match `_rollbarConfig` — which is exactly how the live
+#: token got through after this list was extended to include it. Blocking only
+#: letters and digits lets a vendor name be found inside `_rollbarConfig` and
+#: `googleAPIKey` while still refusing "maps" inside "sitemaps".
 _VENDOR_KEY = re.compile(
-    r"""(?ix)\b(?: google | maps | firebase | datadog | sentry | segment | mixpanel
-        | amplitude | recaptcha | stripe[_-]?publishable | algolia | intercom
-        | launchdarkly | optimizely | hotjar | pendo | fullstory )"""
+    r"""(?ix)(?<![a-z0-9])(?:
+        # Names must be distinctive. A trailing guard is not an option — it
+        # would break `googleAPIKey`, where the vendor name runs straight into
+        # the field — so generic English words are excluded instead. `heap`
+        # matched "heaps of data"; `maps` matched prose; `drift` is a word.
+          google[_-]?maps | google | firebase | recaptcha | gtag | gtm
+        | datadog | sentry | rollbar | bugsnag | newrelic | new_relic | raygun
+        | logrocket | honeybadger | airbrake | trackjs | elastic[_-]?apm
+        | segment | mixpanel | amplitude | posthog | matomo
+        | hotjar | pendo | fullstory | quantummetric | contentsquare
+        | stripe[_-]?publishable | algolia | intercom | zendesk
+        | launchdarkly | optimizely | split[_-]?io | statsig
+        | mapbox | cloudinary | contentful | prismic | onetrust
+    )"""
 )
 
 

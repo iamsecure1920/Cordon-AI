@@ -223,3 +223,51 @@ class TestLiveBehaviour:
         result = await asf.auth_surface("https://www.example.com/", max_hosts=0)
         assert result["ok"] is True
         assert result["hosts_examined"] <= 1
+
+class TestVendorKeysAreNotAnAuthSurface:
+    """A public analytics token is not evidence that a host authenticates callers.
+
+    Both halves of this were live false positives on a real bank's hosts. First
+    `api[_-]?key` with no word boundary matched inside `googleAPIKey`, scoring a
+    login page as having API-auth because it loads a map. Then, after a vendor
+    list was added to suppress exactly that, `var _rollbarConfig = { accessToken:
+    "..." }` produced the same signal — because `\brollbar` cannot match
+    `_rollbarConfig`: `_` is a word character, so there is no boundary there.
+
+    The guard is a lookbehind on letters and digits rather than `\b`, and a
+    trailing guard is deliberately absent: it would break `googleAPIKey`, where
+    the vendor name runs straight into the field name. Generic English words are
+    kept out of the list instead, since `heap` matched "heaps of data".
+    """
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            'var _rollbarConfig = { accessToken: "0123456789abcdef0123456789abcdef" }',
+            '{"googleAPIKey":"AIzaSyFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE0"}',
+            '{"datadogClientToken":"pub123"}',
+            '{"bugsnagApiKey":"abc123"}',
+            '{"apiKey":"x","authDomain":"y.firebaseapp.com"}',
+        ],
+    )
+    def test_a_public_vendor_token_is_not_api_auth(self, body: str) -> None:
+        assert asf._api_auth_evidence(body) is False
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9",
+            'headers: {"X-Api-Key": userSuppliedKey}',
+            '"api_key": config.secret',
+            # A vendor token nearby must never hide a real mechanism.
+            'var _rollbarConfig={accessToken:"x"}; Authorization: Bearer real',
+        ],
+    )
+    def test_a_real_mechanism_still_registers(self, body: str) -> None:
+        assert asf._api_auth_evidence(body) is True
+
+    @pytest.mark.parametrize("word", ["sitemaps", "heaps of data", "drifting apart"])
+    def test_generic_words_are_not_vendors(self, word: str) -> None:
+        # A false vendor match suppresses a real signal, so the list must not
+        # contain ordinary English.
+        assert asf._VENDOR_KEY.search(word) is None
