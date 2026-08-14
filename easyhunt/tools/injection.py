@@ -37,11 +37,12 @@ Everything these tools produce is a :attr:`Status.CANDIDATE` finding. None of
 them emits a PoC. Promotion to ``confirmed`` runs through ``validate_findings``
 or a human's ``poc_record`` exactly as it does for every other candidate.
 
-A note on where they run: ``config.yaml``'s ``sandbox.images`` has no entry for
-any of these five, so :meth:`Sandbox.plan` resolves them on the host. They are in
-the EasyHunt container image, but the control plane never launches that image, so
-on a host without them installed these tools report UNTESTED rather than running.
-That is the honest outcome, and it is fixed by an image mapping, not here.
+A note on where they run: ``sandbox.images`` has no entry for any of these five,
+but ``sandbox.default_image`` is ``easyhunt:latest``, so :meth:`Sandbox.plan`
+resolves them into that image (after probing that the binary is executable
+inside it). They run sandboxed. On a machine with no image at all,
+``fallback_to_host`` is the backstop and each wrapper still reports UNTESTED
+rather than a clean result when the tool is absent everywhere.
 """
 
 from __future__ import annotations

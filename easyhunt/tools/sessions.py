@@ -23,7 +23,7 @@ from easyhunt.knowledge.sessions import Session, mask
 from easyhunt.tools.base import easyhunt_tool
 from easyhunt.tools.common import split_targets
 
-__all__ = ["authz_compare", "session_list", "session_register"]
+__all__ = ["account_register", "authz_compare", "session_list", "session_register"]
 
 
 def _parse_pairs(raw: str | None) -> dict[str, str]:
@@ -135,6 +135,155 @@ async def session_register(
             "authz_compare to test whether the server distinguishes them."
             if len(roles) < 2
             else "Two or more roles registered — authz_compare can now test authorization."
+        ),
+    }
+
+
+@easyhunt_tool(
+    phase="method",
+    mode="aggressive",
+    targets_arg="host",
+    timeout=60,
+    name="account_register",
+    tags={"auth", "session"},
+    estimated_requests=4,
+    risk_notes=[
+        "Creates a test account on the target. This is a state change — the "
+        "account persists after the scan and is someone else's data to hold.",
+        "Refused outright unless scope.rules.allow_self_registration is true, "
+        "which is only ever true because the program's published policy says "
+        "self-registration is permitted. Silence is not permission.",
+    ],
+    rationale="Create a test account where the program's policy permits it.",
+)
+async def account_register(
+    host: str,
+    signup_url: str,
+    username_field: str,
+    password_field: str,
+    email_field: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    email: str | None = None,
+    role: str = "user",
+    name: str = "",
+) -> dict[str, Any]:
+    """Create a test account and register the resulting session.
+
+    This is the one action in the authenticated toolchain that *creates* state
+    rather than reading it, so it is refused unless the program said it may
+    happen: ``rules.allow_self_registration`` in ``scope.yaml``, which is
+    transcribed from the program's published policy and defaults to false.
+
+    ``signup_url`` is the form's action (where the signup POST goes).
+    ``username_field``/``password_field``/``email_field`` name the form fields.
+    Credentials default to generated values; pass them to register a specific
+    account. The session that comes back (cookies + headers) is registered
+    under ``name`` so ``authz_compare`` can use it immediately.
+
+    The response is masked; the generated credentials are returned once so the
+    operator can store them, and never logged.
+    """
+    import secrets
+
+    import httpx
+
+    engagement = get_engagement()
+    if not engagement.scope.rules.allow_self_registration:
+        return {
+            "ok": False,
+            "error": "self_registration_not_permitted",
+            "message": (
+                "rules.allow_self_registration is false, so no account will be "
+                "created. Creating an account is a state change on the target, and "
+                "silence in the program's policy is not permission. If the policy "
+                "actually permits self-registration, set it true in scope.yaml — "
+                "otherwise register by hand and bring the session back via "
+                "session_register."
+            ),
+        }
+
+    clean_host = (host or "").strip().lower()
+    verdict = engagement.scope.check(clean_host)
+    if not verdict.in_scope:
+        return {
+            "ok": False, "error": "scope_denied",
+            "message": f"{clean_host} is not in scope ({verdict.reason}).",
+        }
+
+    parsed = urlsplit(signup_url)
+    if parsed.hostname != clean_host:
+        return {
+            "ok": False, "error": "signup_host_mismatch",
+            "message": (
+                f"signup_url is on {parsed.hostname or 'no host'} but the session was "
+                f"declared for {clean_host}. The signup POST would send credentials "
+                "somewhere the operator did not name."
+            ),
+        }
+
+    user = username or f"easyhunt_{secrets.token_hex(6)}"
+    pw = password or secrets.token_urlsafe(18)
+    mail = email or f"{user}@example.com"
+    data = {username_field: user, password_field: pw}
+    if email_field:
+        data[email_field] = mail
+
+    session_name = name or f"{role}-{user}"
+    rules = engagement.scope.rules
+    async with httpx.AsyncClient(
+        timeout=30, follow_redirects=True,
+        headers={"User-Agent": rules.user_agent},
+    ) as client:
+        try:
+            async with engagement.limiter.slot(host=clean_host):
+                response = await client.post(signup_url, data=data)
+        except httpx.HTTPError as exc:
+            return {
+                "ok": False, "error": "signup_failed",
+                "message": f"signup POST to {signup_url} failed: {type(exc).__name__}",
+            }
+
+    session = Session(
+        name=session_name,
+        role=role,
+        host=clean_host,
+        cookies=dict(response.cookies),
+        note=f"created by account_register at {signup_url}",
+    )
+    if not session.cookies and not session.headers:
+        return {
+            "ok": False, "error": "no_session_returned",
+            "status": response.status_code,
+            "message": (
+                f"The signup POST returned HTTP {response.status_code} with no session "
+                "cookies. The account may have been created but the session could not "
+                "be captured — log in by hand and use session_register."
+            ),
+        }
+
+    engagement.sessions.add(session)
+    engagement.sessions.save(engagement.workspace / "sessions.json")
+    engagement.audit.record(
+        "account_registered",
+        host=clean_host, role=role, signup_url=signup_url,
+        session=session_name, status=response.status_code,
+    )
+
+    return {
+        "ok": True,
+        "status": response.status_code,
+        "session": session.safe(),
+        # The generated credentials are returned once — the operator needs them
+        # to log in again if the session expires. Never written to the audit log.
+        "credentials": {
+            "username": user,
+            "password": pw,
+            **({"email": mail} if email_field else {}),
+        },
+        "next_step": (
+            "Register a second account with a different role, then authz_compare "
+            "can test whether the server distinguishes them."
         ),
     }
 

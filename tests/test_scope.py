@@ -87,6 +87,20 @@ class TestDenylistWins:
         assert verdict.reason == "forbidden_path"
 
 
+class TestSelfRegistrationRule:
+    """Creating a test account is a state change; it needs explicit permission."""
+
+    def test_defaults_to_false(self, scope: Scope) -> None:
+        # Silence is not permission. A scope that does not mention
+        # self-registration must not let account_register create accounts.
+        assert scope.rules.allow_self_registration is False
+
+    def test_true_parses_from_the_policy(self) -> None:
+        data = scope_dict()
+        data["rules"] = {**data["rules"], "allow_self_registration": True}
+        assert Scope(data, source="<test>").rules.allow_self_registration is True
+
+
 class TestFailClosed:
     def test_unknown_host_refused(self, scope: Scope) -> None:
         assert not scope.check("someone-elses.com").in_scope

@@ -277,6 +277,11 @@ class ScopeRules:
     max_concurrency: int = 5
     allow_aggressive: bool = True
     allow_exploitation: bool = True
+    #: Whether the program's published policy permits creating test accounts.
+    #: Default False because silence is not permission: of four programs read
+    #: during this project, two explicitly allowed self-registration and two
+    #: said nothing — and a created account is a state change on the target.
+    allow_self_registration: bool = False
     no_dos: bool = True
     user_agent: str = "EasyHunt-AI/2.0 (authorized-testing)"
     forbidden_paths: list[str] = field(default_factory=list)
@@ -305,6 +310,7 @@ class ScopeRules:
             max_concurrency=int(data.get("max_concurrency", 5)),
             allow_aggressive=bool(data.get("allow_aggressive", True)),
             allow_exploitation=bool(data.get("allow_exploitation", True)),
+            allow_self_registration=bool(data.get("allow_self_registration", False)),
             no_dos=bool(data.get("no_dos", True)),
             user_agent=str(data.get("user_agent") or cls.user_agent),
             forbidden_paths=[str(p) for p in (data.get("forbidden_paths") or [])],
@@ -851,6 +857,7 @@ class Scope:
                 "max_concurrency": self.rules.max_concurrency,
                 "allow_aggressive": self.rules.allow_aggressive,
                 "allow_exploitation": self.rules.allow_exploitation,
+                "allow_self_registration": self.rules.allow_self_registration,
                 "deny_reserved_ips": self.rules.deny_reserved_ips,
                 "wildcard_includes_apex": self.rules.wildcard_includes_apex,
             },

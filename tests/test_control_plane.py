@@ -238,6 +238,24 @@ class TestAudit:
         assert out["a"][0]["password"] == "<redacted>"
         assert "<redacted:github-token>" in out["a"][1]
 
+    def test_account_credentials_are_redacted(self, tmp_path) -> None:
+        log = AuditLog(tmp_path / "audit.jsonl")
+        log.record(
+            "tool_call",
+            args={
+                "username": "alice",
+                "email": "alice@example.com",
+                "password": "hunter2",
+                "username_field": "username",
+            },
+        )
+        written = (tmp_path / "audit.jsonl").read_text()
+        # The test account's login pair is a credential; the field *name* is not.
+        assert "alice@example.com" not in written
+        assert "\"username\": \"alice\"" not in written
+        assert "hunter2" not in written
+        assert "username_field" in written
+
 
 class TestBudget:
     def test_llm_ceiling_aborts(self, tmp_path) -> None:

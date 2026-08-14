@@ -191,6 +191,23 @@ CLOUDPEASS = register_spec(
     )
 )
 
+GF = register_spec(
+    ToolSpec(
+        name="gf", binary="gf", license="MIT",
+        homepage="https://github.com/tomnomnom/gf", version_args=["-h"],
+        arg_policy=ArgPolicy(
+            tool="gf",
+            # gf's whole CLI is three boolean flags plus a pattern name and
+            # optional files. `-save` writes a pattern into ~/.gf/ — a local
+            # convenience, not something the sanitizer needs to defend against.
+            allowed_flags={"-save", "-list", "-dump"},
+            boolean_flags={"-save", "-list", "-dump"},
+            allow_positional=True,
+            positional_pattern=re.compile(r"[A-Za-z0-9._/-]{1,512}"),
+        ),
+    )
+)
+
 XSSTRIKE = register_spec(
     ToolSpec(
         name="xsstrike", binary="xsstrike", license="GPL-3.0",
@@ -212,5 +229,5 @@ XSSTRIKE = register_spec(
 #: Everything defined here, for tests and documentation.
 EXTRA_SPECS = [
     UNCOVER, SECRETFINDER, GOBUSTER, DIRSEARCH, SUBJACK, SUBDOMINATOR,
-    SUBDOMAINSLEUTH, GITDORKER, CLOUDPEASS, XSSTRIKE,
+    SUBDOMAINSLEUTH, GITDORKER, CLOUDPEASS, XSSTRIKE, GF,
 ]

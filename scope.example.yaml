@@ -82,6 +82,11 @@ rules:
   # Aggressive tools additionally require per-call human approval.
   allow_aggressive: true
   allow_exploitation: true
+  # Whether the program's policy permits creating test accounts. Creating an
+  # account is a state change on the target, so this defaults to false and only
+  # the program's own words — transcribed here — may turn it on. Silence is not
+  # permission.
+  allow_self_registration: false
   # Anything whose purpose is volumetric disruption stays off, always.
   no_dos: true
   user_agent: "EasyHunt-AI/2.0 (authorized-testing; handle=your-handle)"

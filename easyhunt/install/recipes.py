@@ -252,6 +252,15 @@ _add(Recipe(tool="secretfinder", method="git", category="js", license="GPL-3.0",
             package="https://github.com/m4ll0k/SecretFinder",
             clone_to="/opt/secretfinder",
             post_install=_python_repo_setup("secretfinder", "SecretFinder.py")))
+_add(Recipe(tool="gf", method="go", package="github.com/tomnomnom/gf@latest",
+            category="js", license="MIT",
+            caveat=(
+                "A grep wrapper whose value is its pattern library, not the binary. "
+                "EasyHunt's pattern_scan runs the same vetted rules/gf/ patterns "
+                "natively, so gf is only needed for interactive use — and then only "
+                "with a ~/.gf/ (or ~/.config/gf/) pattern directory, without which "
+                "it does nothing."
+            )))
 
 # --------------------------------------------------------------------------- #
 # Ports — all three want raw sockets at run time

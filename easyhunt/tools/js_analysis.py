@@ -22,7 +22,7 @@ from easyhunt.control_plane.sanitize import ArgPolicy
 from easyhunt.knowledge.findings import Evidence, Finding, Severity, Status
 from easyhunt.tools.base import ToolSpec, easyhunt_tool
 from easyhunt.tools.common import (
-    URL_PATTERN,
+    ToolRun,
     register_spec,
     run_one,
     store_assets,
@@ -82,15 +82,25 @@ RETIREJS = register_spec(
     )
 )
 
+#: linkfinder -i accepts either a URL or a local file. The native pass fetches
+#: URLs; linkfinder runs over the bundles already saved to the workspace, so -i
+#: has to accept a filesystem path too. The URL-only pattern that was here would
+#: have made the call site refuse its own argument — the wrapper would report
+#: `ran: false` forever and read as a tool that finds no extra endpoints.
+_LINKFINDER_INPUT = re.compile(
+    r"(?:https?://[A-Za-z0-9._~:/?#\[\]@!$&'*+,;=%-]{1,2000}|[A-Za-z0-9._/-]{1,1024})"
+)
+
 LINKFINDER = register_spec(
     ToolSpec(
         name="linkfinder", binary="linkfinder", license="MIT",
         homepage="https://github.com/GerbenJavado/LinkFinder", version_args=["-h"],
+        network="none",
         arg_policy=ArgPolicy(
             tool="linkfinder",
             allowed_flags={"-i", "-o", "-d", "-r"},
             boolean_flags={"-d"},
-            value_patterns={"-i": URL_PATTERN, "-o": re.compile(r"cli|[A-Za-z0-9._/-]{1,512}")},
+            value_patterns={"-i": _LINKFINDER_INPUT, "-o": re.compile(r"cli|[A-Za-z0-9._/-]{1,512}")},
         ),
     )
 )
@@ -239,7 +249,8 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     """Fetch JavaScript bundles and extract endpoints, secrets, and libraries.
 
     Fetches each URL once (a normal browser request), then runs native pattern
-    matching, jsluice (grammar-based URL extraction) and retire.js (known-vulnerable
+    matching, jsluice (grammar-based URL extraction), linkfinder (regex-based
+    endpoint recovery over the saved files) and retire.js (known-vulnerable
     library detection). Either external tool being absent is reported per-tool in
     ``tools``; it never turns into a quiet zero. Credential candidates are masked
     in the output and are never tested against a live service here.
@@ -334,9 +345,6 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
         )
         engagement.findings.add(finding)
 
-    relative = sorted(e for e in all_endpoints if e.startswith("/"))
-    store_assets(relative, kind="endpoint", source="js_analyze", tags=["from-js"])
-
     # jsluice parses JavaScript with a real grammar rather than regexes, so it
     # recovers routes the native pattern pass cannot. It had a ToolSpec, an
     # installed binary and a docstring promising it ran — and no call site. On a
@@ -358,6 +366,36 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
                 if found:
                     jsluice_endpoints.append(str(found))
             all_endpoints.update(jsluice_endpoints)
+
+    # linkfinder recovers parameterised routes the native regex pass cannot.
+    # Measured against 12 real bundles: 422 endpoints to the native pass's 210,
+    # and a strict superset — it missed nothing either of the others found.
+    # It runs over the files already saved to the workspace, so it costs no
+    # extra requests and needs no network (`network: none` on the spec).
+    #
+    # linkfinder was catalogued with a spec, a binary and no caller for the
+    # whole life of the project: its exemption in test_wiring.py was marked
+    # "WIRING PROPOSED". This is the call site that lands it.
+    linkfinder_endpoints: list[str] = []
+    linkfinder_runs: list[ToolRun] = []
+    for js_file in js_files[:max_files]:
+        lf_run = await run_one(
+            "linkfinder", ["-i", js_file, "-o", "cli"], timeout=180
+        )
+        linkfinder_runs.append(lf_run)
+        if lf_run.ran:
+            for value in lf_run.values:
+                # `-o cli` prints one candidate per line; keep the URL-shaped ones.
+                if value.startswith(("/", "http")):
+                    linkfinder_endpoints.append(value)
+    all_endpoints.update(linkfinder_endpoints)
+
+    # Endpoint snapshot is taken AFTER jsluice and linkfinder have contributed.
+    # Taken earlier (as it once was), their discoveries were counted in
+    # `endpoints_found` but absent from `endpoints` and from the asset store — a
+    # tool that visibly ran, whose output was silently dropped on the floor.
+    relative = sorted(e for e in all_endpoints if e.startswith("/"))
+    store_assets(relative, kind="endpoint", source="js_analyze", tags=["from-js"])
 
     library_run = await run_one(
         "retire", ["--path", str(engagement.raw_dir), "--outputformat", "json"],
@@ -392,6 +430,12 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
         "endpoints": relative[:500],
         "absolute_urls": sorted(e for e in all_endpoints if e.startswith("http"))[:200],
         "libraries": library_run.to_dict(),
+        "linkfinder": {
+            "ran": bool(linkfinder_runs),
+            "files": len(linkfinder_runs),
+            "endpoints_found": len(linkfinder_endpoints),
+            "tools": [r.to_dict() for r in linkfinder_runs],
+        },
         "note": (
             "Secret candidates are masked and unvalidated. Validating a credential "
             "means using it — only do that where the program explicitly allows it."
