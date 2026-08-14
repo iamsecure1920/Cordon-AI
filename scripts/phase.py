@@ -57,7 +57,7 @@ MAX_INHERITED = 500
 # was handed 3 targets, then 4, then 6 ... then 12, failing the sizing gate every
 # single time as the set grew underneath it. Twelve refusals for one scan that
 # should have been sized once against the real total.
-GLOBAL_PHASES = frozenset({"scan", "takeover", "report", "plan"})
+GLOBAL_PHASES = frozenset({"scan", "takeover", "report", "plan", "exploit"})
 
 PHASES: dict[str, dict[str, Any]] = {
     "recon":     {"tool": "subdomain_enum",      "count": "subdomains"},
@@ -73,6 +73,10 @@ PHASES: dict[str, dict[str, Any]] = {
     "auth":      {"tool": "auth_surface",        "count": "hosts_examined", "inherits": True, "wants": ("url",), "tag": "live"},
     "takeover":  {"tool": "takeover_detect",     "count": None,       "inherits": True, "wants": ("subdomain",)},
     "scan":      {"tool": "nuclei_scan",         "count": None,       "inherits": True, "wants": ("url",), "tag": "live"},
+    # Chain the exploit validators over the injection points the earlier phases
+    # discovered. Only wired into hunt.sh when --exploit is passed, and only runs
+    # then because every sub-validator is itself approval-gated.
+    "exploit":   {"tool": "exploit_chain",        "count": "tested",    "inherits": True, "wants": ("url",)},
     "report":    {"tool": "report_generate",     "count": None},
     "plan":      {"tool": "hunt_plan",           "count": "actionable"},
 }

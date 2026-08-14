@@ -126,7 +126,7 @@ mindmap
       sandbox · read-only, caps dropped
       audit · hash-chained
     L2 Execution
-      76 MCP tools
+      79 MCP tools
       82 catalogued binaries
       6 engines
       Docker per invocation
@@ -241,7 +241,9 @@ In Claude Code: `/easyhunt`.
 ./scripts/hunt.sh target.example.com --only probe,scan
 ./scripts/hunt.sh target.example.com --from scan
 
-# Exploitation — refused unless scope.yaml permits it
+# Exploitation — refused unless scope.yaml permits it. Adds the `exploit` phase
+# after `scan`: chains web_injection_probe (and, when include_heavy is set,
+# sqli_validate/xss_validate) over the discovered injection points.
 ./scripts/hunt.sh target.example.com --exploit
 ```
 
@@ -267,7 +269,7 @@ touching the run:
 | Memory | JSONL findings store · optional **Neo4j** graph · cross-engagement PoC memory |
 | Knowledge | **OWASP WSTG** — 115 tests, pinned, CC BY-SA · 62 vetted payload lists |
 | Audit | Hash-chained JSONL — tampering breaks the chain |
-| Code | ~32,500 lines · **1,893 tests** across 46 files · 85 install recipes |
+| Code | ~32,500 lines · **1,942 tests** across 48 files · 85 install recipes |
 
 ## Isolation
 
@@ -286,7 +288,7 @@ the tool store and makes a dozen tools vanish.
 
 ## Every tool it drives
 
-**76 MCP tools** over **82 catalogued binaries**.
+**79 MCP tools** over **82 catalogued binaries**.
 `·` passive · `!` aggressive · `!!` exploit — the mode decides whether a human is consulted.
 
 | Category | Binaries |
@@ -316,7 +318,7 @@ Run `easyhunt doctor` for the live picture.
 | **Ports** | `port_scan`! `service_scan`! |
 | **Takeover** | `takeover_detect`! `takeover_verify` `takeover_poc_plan` `takeover_confirm`!! |
 | **Vuln scan** | `nuclei_scan`! `jaeles_scan`! `nikto_scan`! `wapiti_scan`! `semgrep_scan` |
-| **Exploit** | `authz_compare`!! `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `smuggling_canary_probe`! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
+| **Exploit** | `authz_compare`!! `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `smuggling_canary_probe`! `web_injection_probe`!! `exploit_chain`!! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
 | **Secrets** | `secret_scan` `secret_validate`! `jwt_inspect` `source_fetch` |
 | **Cloud** | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
 | **Contracts** | `contract_static_scan` `contract_toolchain` |
@@ -505,7 +507,7 @@ docs/              architecture · bootstrap · payloads
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 1,893 tests
+.venv/bin/python -m pytest tests/ -q          # 1,942 tests
 .venv/bin/ruff check easyhunt/ tests/
 easyhunt doctor                                # executed, not just found on PATH
 ```

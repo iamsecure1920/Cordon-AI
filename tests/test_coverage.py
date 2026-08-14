@@ -68,7 +68,10 @@ class TestCoverageIndex:
     def test_get_returns_one_row(self) -> None:
         index = self._index()
         assert index.get("sql-injection")["validation"] == "sqli_validate (sqlmap)"
-        assert index.get("xxe-injection")["status"] == "detect-only"
+        # The native web_injection_probe promoted the no-scanner classes to auto.
+        assert index.get("xxe-injection")["status"] == "auto"
+        assert index.get("xxe-injection")["validation"] == "web_injection_probe (xxe)"
+        assert index.get("http-parameter-pollution")["status"] == "detect-only"
         assert index.get("business-logic-errors")["status"] == "manual"
 
 
@@ -96,6 +99,25 @@ class TestCoverageReferences:
         for row in self._index().all():
             for pack in row.get("gf", []):
                 assert pack in packs, f"{row['class']} references missing gf pack {pack!r}"
+
+    def test_auto_validators_are_registered_tools(self) -> None:
+        """A row claiming a validator owns it must point at a real MCP tool.
+
+        The native web_injection_probe promoted XXE/CRLF/LFI/open-redirect from
+        detect-only to auto. If the tool is not registered, that promotion is a
+        false promise — the exact lie this suite exists to catch.
+        """
+        import re
+
+        for row in self._index().all():
+            if row["status"] != "auto":
+                continue
+            named = re.findall(r"[a-z][a-z0-9_]+", row["validation"])
+            registered = [t for t in named if t in REGISTRY]
+            assert registered, (
+                f"{row['class']} claims auto validation by {row['validation']!r}, "
+                f"which names no registered tool"
+            )
 
     def test_payloads_exist_in_the_manifest(self) -> None:
         manifest = ROOT / "payloads" / "manifest.json"

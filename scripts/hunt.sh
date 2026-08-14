@@ -12,6 +12,13 @@
 # row is not consenting to anything — they are pattern-matching to get on with
 # their evening. Read auto_approve before an engagement, not during it.
 #
+# --exploit adds an `exploit` phase after `scan`: it chains the exploit
+# validators (web_injection_probe, and sqli_validate/xss_validate when asked)
+# over the injection points earlier phases discovered, so a client run proves
+# what it finds instead of leaving it to an agent. It only runs with --exploit,
+# and each validator it drives is itself in the auto_approve list — approving
+# exploit_chain does not approve sqlmap.
+#
 # What it adds instead is a gate the prompts never provided: **each phase has to
 # prove it did something before the next one runs.** Chaining phases multiplies
 # the cost of a stage that reports success while testing nothing, and that defect
@@ -57,7 +64,10 @@ done
 # total instead of a set that grows under it, and the report covers the run
 # rather than the last host in it.
 PER_TARGET_PHASES="recon resolve probe waf tls cors endpoints js auth"
-GLOBAL_PHASES_LIST="takeover scan plan report"
+# exploit is listed so --from/--only can name it, but it only *runs* when
+# --exploit is passed: its validators are individually approval-gated and must
+# never fire on a run the operator did not explicitly authorise for exploitation.
+GLOBAL_PHASES_LIST="takeover scan exploit plan report"
 ALL_PHASES="$PER_TARGET_PHASES $GLOBAL_PHASES_LIST"
 # Only probe is genuinely required: if nothing is alive, later phases scan hosts
 # nobody confirmed exist. `resolve` was in here too, so any target already
@@ -142,6 +152,10 @@ done
 FIRST=$(echo $TARGETS | awk '{print $1}')
 for phase in $GLOBAL_PHASES_LIST; do
     case " $RUN_PHASES " in *" $phase "*) ;; *) continue ;; esac
+    if [ "$phase" = "exploit" ] && [ "$EXPLOIT" != "yes" ]; then
+        warn "exploit phase skipped — re-run with --exploit to fire the validators"
+        continue
+    fi
     printf "\n${D}══ all targets ══${N}\n${D}── %s ──${N}\n" "$phase"
     "$PY" "${ROOT}/scripts/phase.py" "$phase" "$FIRST"
     rc=$?

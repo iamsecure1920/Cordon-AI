@@ -65,6 +65,8 @@ CAPABILITY_MODULES = [
     "easyhunt.tools.cloud",
     "easyhunt.tools.exploitation",
     "easyhunt.tools.injection",
+    "easyhunt.tools.web_injection",
+    "easyhunt.tools.exploit_chain",
     "easyhunt.tools.webscan",
     "easyhunt.tools.hunt_plan",
     "easyhunt.tools.auth_crawl",

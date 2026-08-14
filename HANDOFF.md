@@ -39,9 +39,9 @@ The model never holds a shell. A jailbroken prompt cannot reach the network.
 | | |
 |---|---|
 | Code | ~32,500 lines |
-| MCP tools | 76 |
+| MCP tools | 79 |
 | Catalogued binaries | 82 |
-| Tests | 1,893 across 46 files |
+| Tests | 1,942 across 48 files |
 | Image | `easyhunt:latest`, 4.54 GB |
 | Commits | 89 |
 
@@ -83,7 +83,7 @@ session*.
 
 ## 3. How it is verified — three layers, each catches what the others cannot
 
-**Tests (1,893).** Mock the subprocess. Prove the wrapper's shape. Cannot
+**Tests (1,942).** Mock the subprocess. Prove the wrapper's shape. Cannot
 tell you whether a real binary accepts the argv.
 
 **`easyhunt doctor`.** Executes every tool *inside the container it will run

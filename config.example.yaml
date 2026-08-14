@@ -65,6 +65,13 @@ approval:
       - ssti_probe
       - cmdi_probe
       - nosqli_probe
+      # The native read-only validator (open redirect, CRLF, LFI, XXE) and the
+      # chain that fans the validators out over discovered injection points.
+      # exploit_chain drives sqli_validate/xss_validate/web_injection_probe, so
+      # each of those must be listed here for the chain to run unattended —
+      # approving the chain does not approve the validators it drives.
+      - web_injection_probe
+      - exploit_chain
       # Read-only by construction: GET and HEAD only, refused for anything else.
       # Proving broken access control never requires writing — reading another
       # user's record IS the proof, and writing to it modifies data that is not
