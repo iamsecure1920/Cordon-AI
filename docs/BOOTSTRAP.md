@@ -101,7 +101,7 @@ easyhunt doctor                    # 1. expect ~79/82 tools, 0 broken
 ```
 
 ```bash
-.venv/bin/python -m pytest -q      # 2. expect 1,942 passed
+.venv/bin/python -m pytest -q      # 2. expect 1,947 passed
 ```
 
 ```bash

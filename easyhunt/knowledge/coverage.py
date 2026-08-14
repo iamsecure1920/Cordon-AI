@@ -168,15 +168,17 @@ COVERAGE: list[dict[str, Any]] = [
     },
     {
         "class": "http-parameter-pollution", "title": "HTTP Parameter Pollution", "phase": "input_validation",
-        "detection": "param_discovery (arjun)", "validation": "none",
-        "payloads": [], "gf": [], "status": "detect-only",
+        "detection": "param_discovery (arjun) + gf", "validation": "web_injection_probe (hpp)",
+        "payloads": [], "gf": [], "status": "auto",
         "bypass": "http-parameter-pollution",
+        "note": "Native read-only probe: the parameter is duplicated with a canary and the app reflecting the second value is the HPP primitive.",
     },
     {
         "class": "upload-insecure-files", "title": "File Upload", "phase": "input_validation",
-        "detection": "gf:upload + endpoint review", "validation": "none",
-        "payloads": [], "gf": ["upload"], "status": "detect-only",
+        "detection": "gf:upload + upload_surface (live form/field detection)", "validation": "manual — proof requires uploading a file",
+        "payloads": [], "gf": ["upload"], "status": "manual",
         "bypass": "upload-insecure-files",
+        "note": "Detecting the upload surface is now read-only and automatic; confirming an insecure upload is state-changing and stays behind the approval gate.",
     },
     {
         "class": "insecure-deserialization", "title": "Insecure Deserialization", "phase": "input_validation",

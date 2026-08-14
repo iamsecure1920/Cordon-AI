@@ -71,7 +71,8 @@ class TestCoverageIndex:
         # The native web_injection_probe promoted the no-scanner classes to auto.
         assert index.get("xxe-injection")["status"] == "auto"
         assert index.get("xxe-injection")["validation"] == "web_injection_probe (xxe)"
-        assert index.get("http-parameter-pollution")["status"] == "detect-only"
+        assert index.get("http-parameter-pollution")["status"] == "auto"
+        assert index.get("http-parameter-pollution")["validation"] == "web_injection_probe (hpp)"
         assert index.get("business-logic-errors")["status"] == "manual"
 
 

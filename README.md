@@ -126,7 +126,7 @@ mindmap
       sandbox · read-only, caps dropped
       audit · hash-chained
     L2 Execution
-      79 MCP tools
+      80 MCP tools
       82 catalogued binaries
       6 engines
       Docker per invocation
@@ -269,7 +269,7 @@ touching the run:
 | Memory | JSONL findings store · optional **Neo4j** graph · cross-engagement PoC memory |
 | Knowledge | **OWASP WSTG** — 115 tests, pinned, CC BY-SA · 62 vetted payload lists |
 | Audit | Hash-chained JSONL — tampering breaks the chain |
-| Code | ~32,500 lines · **1,942 tests** across 48 files · 85 install recipes |
+| Code | ~32,500 lines · **1,947 tests** across 48 files · 85 install recipes |
 
 ## Isolation
 
@@ -288,7 +288,7 @@ the tool store and makes a dozen tools vanish.
 
 ## Every tool it drives
 
-**79 MCP tools** over **82 catalogued binaries**.
+**80 MCP tools** over **82 catalogued binaries**.
 `·` passive · `!` aggressive · `!!` exploit — the mode decides whether a human is consulted.
 
 | Category | Binaries |
@@ -507,7 +507,7 @@ docs/              architecture · bootstrap · payloads
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 1,942 tests
+.venv/bin/python -m pytest tests/ -q          # 1,947 tests
 .venv/bin/ruff check easyhunt/ tests/
 easyhunt doctor                                # executed, not just found on PATH
 ```

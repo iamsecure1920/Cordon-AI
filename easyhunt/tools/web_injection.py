@@ -1,10 +1,11 @@
 """Native HTTP validator for the bug classes no scanner binary covers.
 
-Four classes — open redirect, CRLF, LFI and XXE — were ``detect-only``: the gf
-pattern found the sink and a human had to confirm, because no catalogued binary
-owns them. This validator closes that gap through the control plane's own HTTP
-path (rate limiter, scope, approval), firing a small curated set of *read-only*
-payloads and filing a CANDIDATE when the response shows the class's signature.
+Five classes — open redirect, CRLF, LFI, XXE and HTTP parameter pollution — were
+``detect-only``: the gf pattern found the sink and a human had to confirm,
+because no catalogued binary owns them. This validator closes that gap through
+the control plane's own HTTP path (rate limiter, scope, approval), firing a
+small curated set of *read-only* payloads and filing a CANDIDATE when the
+response shows the class's signature.
 
 Detection is **differential**: the signature must appear in the injected
 response and not in the baseline, so a page whose own text happens to contain
@@ -24,9 +25,9 @@ import httpx
 from easyhunt.control_plane.context import get_engagement
 from easyhunt.knowledge.findings import Evidence, Finding, Severity, Status
 from easyhunt.tools.base import easyhunt_tool
-from easyhunt.tools.common import URL_PATTERN, split_targets
+from easyhunt.tools.common import URL_PATTERN, split_targets, targets_or_assets
 
-__all__ = ["web_injection_probe"]
+__all__ = ["web_injection_probe", "upload_surface"]
 
 #: A canary hostname in the RFC 2606 ``.invalid`` TLD — guaranteed to never
 #: resolve, so no external request is ever made; the only thing we observe is
@@ -122,10 +123,35 @@ _CLASSES: dict[str, dict[str, Any]] = {
             "documents declaring a DOCTYPE."
         ),
     },
+    "hpp": {
+        # HTTP parameter pollution is read-only by construction: the same
+        # parameter is sent twice with two different canary values and we
+        # observe which one the application reflects. The duplicate *appends*
+        # (does not replace), which is the whole technique.
+        "payloads": ["easyhunt-hpp-canary"],
+        "duplicate": True,
+        "safe": "",
+        "where": "body",
+        "signature": re.compile(r"easyhunt-hpp-canary"),
+        "follow": False,
+        "severity": Severity.INFO,
+        "title": "HTTP parameter pollution",
+        "description": (
+            "When a parameter was duplicated, the application reflected the "
+            "second (attacker-appended) value. This behaviour is the primitive "
+            "HPP chains on: a WAF may inspect the first value while the backend "
+            "uses the second, so it is a lead for bypassing a filter rather than "
+            "a standalone vulnerability."
+        ),
+        "remediation": (
+            "Take the first occurrence of a parameter, reject duplicated keys, or "
+            "fail the request when a parameter appears more than once."
+        ),
+    },
 }
 
 
-def _inject(url: str, parameter: str, payload: str, safe: str) -> str:
+def _inject(url: str, parameter: str, payload: str, safe: str, duplicate: bool = False) -> str:
     """Substitute ``payload`` into ``parameter``, URL-quoting it once for the wire.
 
     The payload goes into the query raw and ``urlencode`` does the single layer
@@ -133,11 +159,18 @@ def _inject(url: str, parameter: str, payload: str, safe: str) -> str:
     then passing the result to ``urlencode`` double-encodes: ``%`` becomes
     ``%25``, so a CRLF arrives as the literal string ``%250d%250a`` instead of a
     line break, and an open-redirect canary arrives as its own percent-encoding.
+
+    ``duplicate`` appends the payload as a second occurrence of ``parameter``
+    instead of replacing the first — that is the HTTP parameter pollution
+    technique, where which occurrence the application honours is the signal.
     """
     parsed = urlsplit(url)
-    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    query[parameter] = payload
-    return url.replace(parsed.query, urlencode(query, quote_via=quote, safe=safe))
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    if duplicate:
+        pairs.append((parameter, payload))
+    else:
+        pairs = [(k, payload if k == parameter else v) for k, v in pairs]
+    return url.replace(parsed.query, urlencode(pairs, quote_via=quote, safe=safe))
 
 
 def _signature_hit(response: httpx.Response, where: str, signature: re.Pattern[str]) -> bool:
@@ -184,13 +217,13 @@ def _candidate_for(url: str, cls: str, spec: dict[str, Any], excerpt: str) -> Fi
     tags={"exploitation", "injection"},
     estimated_requests=20,
     risk_notes=[
-        "Injects read-only payloads (open redirect, CRLF, LFI, XXE) into one parameter.",
+        "Injects read-only payloads (open redirect, CRLF, LFI, XXE, HPP) into one parameter.",
         "The LFI/XXE payloads read /etc/passwd through the target — the standard "
         "proof — and nothing else. No out-of-band callback, no command execution.",
     ],
     rationale=(
         "Prove the bug classes no scanner binary covers: open redirect, CRLF, "
-        "LFI and XXE, differentially against a baseline."
+        "LFI, XXE and HTTP parameter pollution, differentially against a baseline."
     ),
 )
 async def web_injection_probe(
@@ -198,11 +231,11 @@ async def web_injection_probe(
     parameter: str,
     bug_class: str = "open-redirect",
 ) -> dict[str, Any]:
-    """Detect open redirect, CRLF, LFI or XXE in one parameter.
+    """Detect open redirect, CRLF, LFI, XXE or HPP in one parameter.
 
     ``target`` is the full URL carrying the parameter to test (one parameter —
     ``&`` is refused project-wide). ``parameter`` names it. ``bug_class`` is one
-    of ``open-redirect``, ``crlf``, ``lfi``, ``xxe``.
+    of ``open-redirect``, ``crlf``, ``lfi``, ``xxe``, ``hpp``.
 
     Every result is a CANDIDATE: the class signature must appear in the injected
     response and not in the baseline request. Nothing is confirmed here.
@@ -254,7 +287,7 @@ async def web_injection_probe(
         findings: list[Finding] = []
         hits: list[dict[str, Any]] = []
         for payload in spec["payloads"]:
-            injected = _inject(url, parameter, payload, spec["safe"])
+            injected = _inject(url, parameter, payload, spec["safe"], spec.get("duplicate", False))
             async with engagement.limiter.slot(host=url):
                 try:
                     response = await client.get(injected)
@@ -289,5 +322,87 @@ async def web_injection_probe(
             if findings else
             "No class signature appeared. This parameter is clean for "
             f"{bug_class} under these payloads, not necessarily in general."
+        ),
+    }
+
+
+#: A file input or a multipart form in a page — the two things that make an
+#: endpoint an upload surface. Nothing here uploads; it only *finds* the surface
+#: so a human (or an approved validator) can test it.
+_FILE_INPUT = re.compile(r"""(?is)<input[^>]+type\s*=\s*["']file["']""")
+_MULTIPART = re.compile(r"""(?is)<form[^>]+enctype\s*=\s*["']multipart/form-data["']""")
+_UPLOAD_ACTION = re.compile(
+    r"""(?i)(upload|attachment|avatar|photo|image|img|logo|doc|document|import|
+    import_file|file_upload|filename|file_name|attachment_id)""",
+    re.VERBOSE,
+)
+
+
+@easyhunt_tool(
+    phase="method",
+    mode="passive",
+    targets_arg="target",
+    timeout=600,
+    name="upload_surface",
+    tags={"recon", "upload"},
+    estimated_requests=40,
+    rationale=(
+        "Find where a target accepts files before any upload is attempted — the "
+        "read-only half of the file-upload class, so the state-changing proof is "
+        "aimed, not sprayed."
+    ),
+)
+async def upload_surface(target: str, max_urls: int = 40) -> dict[str, Any]:
+    """Detect file-upload surfaces (multipart forms, file inputs, upload paths).
+
+    Fetches the discovered pages read-only and reports which URLs carry a file
+    input, a multipart form, or an upload-shaped action/parameter. Nothing is
+    uploaded — this is detection only, and every entry is a lead for a human or
+    an approved validator, not a finding.
+    """
+    engagement = get_engagement()
+    candidates, origin = targets_or_assets(target, kind="url", tool="upload_surface")
+    urls = [u for u in candidates if u.startswith("http")][:max_urls]
+    if not urls:
+        return {
+            "ok": False, "error": "no_urls",
+            "message": "no URLs supplied and none inherited from an earlier phase",
+        }
+
+    headers = {"User-Agent": engagement.scope.rules.user_agent}
+    surfaces: list[dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers=headers) as client:
+        for url in urls:
+            async with engagement.limiter.slot(host=url):
+                try:
+                    response = await client.get(url)
+                except httpx.HTTPError:
+                    continue
+            body = response.text[:40000]
+            file_inputs = len(_FILE_INPUT.findall(body))
+            multipart = bool(_MULTIPART.search(body))
+            actions = sorted({m.group(0).lower() for m in _UPLOAD_ACTION.finditer(body)})[:12]
+            if file_inputs or multipart or actions:
+                surfaces.append({
+                    "url": url,
+                    "status": response.status_code,
+                    "file_inputs": file_inputs,
+                    "multipart_form": multipart,
+                    "upload_shaped_tokens": actions,
+                })
+
+    return {
+        "ok": True,
+        "origin": origin,
+        "scanned": len(urls),
+        "count": len(surfaces),
+        "surfaces": surfaces,
+        "note": (
+            "Detection only — no file was uploaded. Each surface is a lead; "
+            "confirm an insecure upload with an approved, state-changing validator "
+            "and record the proof with poc_record()."
+            if surfaces else
+            "No upload surface detected on the scanned pages. That does not rule "
+            "out an upload endpoint behind authentication or not linked from these pages."
         ),
     }

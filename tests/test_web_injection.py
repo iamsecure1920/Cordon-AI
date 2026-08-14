@@ -41,8 +41,13 @@ class TestRegistration:
         assert spec.estimated_requests == 20
         assert spec.risk_notes, "an approval prompt with no risk notes tells the human nothing"
 
+    def test_upload_surface_is_passive_and_registered(self) -> None:
+        spec = REGISTRY["upload_surface"]
+        assert spec.mode == "passive"
+        assert spec.phase == "method"
+
     def test_every_class_has_a_shape(self) -> None:
-        assert set(w._CLASSES) == {"open-redirect", "crlf", "lfi", "xxe"}
+        assert set(w._CLASSES) == {"open-redirect", "crlf", "lfi", "xxe", "hpp"}
         for name, spec in w._CLASSES.items():
             assert spec["payloads"], name
             assert spec["where"] in {"headers", "location", "body"}, name
@@ -76,6 +81,15 @@ class TestInjector:
         # One layer of quoting: %0D%0A, not %250D%250A.
         assert "%0D%0A" in injected.upper()
         assert "%250D" not in injected.upper()
+
+    def test_hpp_duplicates_instead_of_replacing(self) -> None:
+        url = "https://www.example.com/search?q=original"
+        injected = w._inject(url, "q", "easyhunt-hpp-canary", safe="", duplicate=True)
+        # The original value is preserved and the canary is appended as a second
+        # occurrence of the same parameter — the HPP primitive.
+        assert injected.count("q=") == 2
+        assert "q=original" in injected
+        assert "easyhunt-hpp-canary" in injected
 
 
 class TestSignatureHit:
