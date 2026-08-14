@@ -10,6 +10,7 @@ Two very different cost profiles, so they are two different tools:
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -33,6 +34,27 @@ from easyhunt.tools.common import (
 )
 
 __all__ = ["content_discovery", "endpoint_discovery", "param_discovery"]
+
+
+def _is_ip_literal(value: str) -> bool:
+    """True when ``value`` is an IP address rather than a registrable domain.
+
+    Archive sources (gau, waybackurls, waymore) index by domain, so for an IP
+    literal they return unrelated historical URLs from whatever else was ever
+    served from that address. Detecting the literal lets the caller skip the
+    archives and crawl instead. Handles IPv4, ``v4:port``, bracketed and bare
+    IPv6.
+    """
+    host = value
+    if host.startswith("[") and "]" in host:
+        host = host[1 : host.index("]")]
+    elif host.count(":") == 1:
+        host = host.rsplit(":", 1)[0]
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
 
 KATANA = register_spec(
     ToolSpec(
@@ -217,32 +239,45 @@ async def endpoint_discovery(target: str, include_crawl: bool = False) -> dict[s
     # concurrent is not permission to exceed a per-tool ceiling, and passing a
     # value above the cap does not run fast — it is refused by the sanitizer,
     # which would turn a rate fix into a tool that no longer runs at all.
-    tasks = [
-        run_one("gau", ["--subs", "--threads", str(min(concurrency, 20)), domain], timeout=600),
-        run_one("waybackurls", [domain], timeout=600),
-        # waymore refuses anything above 5 itself: "The number of processes must
-        # be between 1 and 5. Be kind to Wayback Machine". The policy's
-        # numeric_cap said 10, so clamping to the cap still handed it 8 on an
-        # engagement permitting 8 and the tool exited with a usage error —
-        # sourcing the rate from the scope broke it for every scope above 5.
-        # Clamp to what the BINARY accepts, not to what the policy allows.
-        run_one("waymore", ["-i", domain, "-mode", "U", "-p", str(min(concurrency, 5))], timeout=900),
-        run_one("paramspider", ["-d", domain], timeout=600),
-    ]
-    if include_crawl:
-        url = domain if domain.startswith("http") else f"https://{domain}"
-        tasks.append(
-            run_one(
-                "katana",
-                [
-                    "-u", url, "-d", "2", "-jc", "-silent", "-nc", "-duc",
-                    "-c", str(max(1, engagement.scope.rules.max_concurrency)),
-                    "-rl", str(max(1, int(engagement.scope.rules.max_rps))),
-                    "-ct", "300",
-                ],
-                timeout=600,
-            )
+    def _katana(url: str) -> Any:
+        return run_one(
+            "katana",
+            [
+                "-u", url, "-d", "2", "-jc", "-silent", "-nc", "-duc",
+                "-c", str(max(1, engagement.scope.rules.max_concurrency)),
+                "-rl", str(max(1, int(engagement.scope.rules.max_rps))),
+                "-ct", "300",
+            ],
+            timeout=600,
         )
+
+    # Archives index URLs by *domain*. For an IP literal they return a flood of
+    # unrelated historical URLs — every site that was ever served from that
+    # address — which is not this target's attack surface. Measured: a local
+    # 127.0.0.1 seed produced 49,172 archived URLs, of which effectively none
+    # belonged to the app under test. For an IP seed the archives are skipped
+    # and the surface is crawled actively instead; the seed keeps its port,
+    # which host_of() dropped and which is the only thing that distinguishes
+    # this host for an IP.
+    if _is_ip_literal(domain):
+        seed_url = _hosts[0] if "://" in _hosts[0] else f"http://{_hosts[0]}"
+        tasks = [_katana(seed_url)]
+    else:
+        tasks = [
+            run_one("gau", ["--subs", "--threads", str(min(concurrency, 20)), domain], timeout=600),
+            run_one("waybackurls", [domain], timeout=600),
+            # waymore refuses anything above 5 itself: "The number of processes must
+            # be between 1 and 5. Be kind to Wayback Machine". The policy's
+            # numeric_cap said 10, so clamping to the cap still handed it 8 on an
+            # engagement permitting 8 and the tool exited with a usage error —
+            # sourcing the rate from the scope broke it for every scope above 5.
+            # Clamp to what the BINARY accepts, not to what the policy allows.
+            run_one("waymore", ["-i", domain, "-mode", "U", "-p", str(min(concurrency, 5))], timeout=900),
+            run_one("paramspider", ["-d", domain], timeout=600),
+        ]
+        if include_crawl:
+            url = domain if domain.startswith("http") else f"https://{domain}"
+            tasks.append(_katana(url))
 
     runs = await run_many(tasks)
     merged = [u for u in merge_runs(runs) if u.startswith("http")]
