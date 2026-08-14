@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections import deque
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -147,6 +149,7 @@ SECRET_PATTERNS: list[tuple[str, str, Severity]] = [
 ENDPOINT_PATTERN = re.compile(
     r"""["'`](/(?:[A-Za-z0-9_\-./]{2,120}(?:\?[A-Za-z0-9_\-./%&=+,:]{0,160})?))["'`]"""
     r"""|["'`](https?://[A-Za-z0-9._\-/]{6,200}(?:\?[A-Za-z0-9_\-./%&=+,:]{0,160})?)["'`]"""
+    r"""|\}(/(?:[A-Za-z0-9_\-./]{2,120})(?:\?[A-Za-z0-9_\-./%&=+,:]{0,160})?)(?=\$\{)"""
 )
 
 
@@ -180,7 +183,7 @@ def _scan_text(text: str, url: str) -> tuple[list[dict[str, Any]], list[str]]:
 
     endpoints: set[str] = set()
     for match in ENDPOINT_PATTERN.finditer(text):
-        endpoints.add(match.group(1) or match.group(2))
+        endpoints.add(match.group(1) or match.group(2) or match.group(3))
     return secrets, sorted(endpoints)[:2000]
 
 
@@ -214,6 +217,35 @@ def _block_marker(body: str) -> bool:
 #: for is either an error page, a login redirect, or a shell — none of which
 #: contain the bundle we came for.
 _LOOKS_LIKE_HTML = re.compile(r"""(?is)\A\s*(?:<!doctype\s+html|<html\b|<head\b)""")
+
+
+#: A ``<script src=...>`` in an HTML shell. The SPA index page is not a bundle,
+#: but it names the bundles that are — and the routes live in those, not in the
+#: shell. Without following these, js_analyze fetched exactly the shell URL it
+#: was handed, saw "served as HTML, not a script", and extracted nothing from
+#: the 22 chunk files the application actually runs.
+_SCRIPT_SRC = re.compile(r"""(?is)<script[^>]+src=["']([^"']+)["']""")
+#: ES module preloads, which SPA shells also use to name their bundles.
+_MODULE_PRELOAD = re.compile(r"""(?is)<link[^>]+rel=["']modulepreload["'][^>]+href=["']([^"']+)["']""")
+
+
+def _script_urls(body: str, base: str) -> list[str]:
+    """The bundle URLs an HTML shell references, resolved against the page.
+
+    Absolute only, http(s) only, deduplicated. Relative ``src="main.js"`` is
+    resolved with urljoin so a shell served from a path resolves correctly.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for match in _SCRIPT_SRC.finditer(body):
+        out.append(urljoin(base, match.group(1)))
+    for match in _MODULE_PRELOAD.finditer(body):
+        out.append(urljoin(base, match.group(1)))
+    for url in out:
+        parsed = urlsplit(url)
+        if parsed.scheme in {"http", "https"} and parsed.netloc and url not in seen:
+            seen.add(url)
+            yield url
 
 
 def _fetch_verdict(status: int, body: str, content_type: str) -> tuple[str, str]:
@@ -272,12 +304,23 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     #: Fetched, but a document rather than a bundle.
     not_js: list[dict[str, Any]] = []
 
+    # A shell names its bundles via <script src>, and the routes live in those
+    # bundles, not in the shell. Fetch the shell, then follow what it names —
+    # bounded by max_files so an SPA that references a thousand chunks is still
+    # capped, not followed without limit.
+    queue: deque[str] = deque(urls)
+    seen: set[str] = set()
+
     async with httpx.AsyncClient(
         timeout=20,
         follow_redirects=True,
         headers={"User-Agent": engagement.scope.rules.user_agent},
     ) as client:
-        for url in urls:
+        while queue and len(fetched) < max_files * 4:
+            url = queue.popleft()
+            if url in seen:
+                continue
+            seen.add(url)
             async with engagement.limiter.slot(host=url):
                 try:
                     response = await client.get(url)
@@ -309,6 +352,10 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
             if verdict == "not_javascript":
                 record["why"] = why
                 not_js.append(record)
+                # An HTML shell's value is the bundles it names.
+                for script_url in _script_urls(body, url):
+                    if script_url not in seen and len(fetched) < max_files * 4:
+                        queue.append(script_url)
             fetched.append(record)
 
             path = engagement.raw_path("js", "js")

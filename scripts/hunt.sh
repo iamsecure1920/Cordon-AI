@@ -157,7 +157,13 @@ for phase in $GLOBAL_PHASES_LIST; do
         continue
     fi
     printf "\n${D}══ all targets ══${N}\n${D}── %s ──${N}\n" "$phase"
-    "$PY" "${ROOT}/scripts/phase.py" "$phase" "$FIRST"
+    EXTRA=""
+    if [ "$phase" = "exploit" ] && [ "$EXPLOIT" = "yes" ]; then
+        # --exploit means "fire the heavy validators too": sqlmap and dalfox on
+        # the first few injection points, not just the read-only native probes.
+        EXTRA='{"include_heavy": true}'
+    fi
+    "$PY" "${ROOT}/scripts/phase.py" "$phase" "$FIRST" "$EXTRA"
     rc=$?
     case $rc in
         0) ok "$phase" ;;

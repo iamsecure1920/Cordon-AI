@@ -154,3 +154,51 @@ class TestBasicAuthUrlDetector:
 
     def test_a_port_is_not_a_password(self) -> None:
         assert self._detector().search("https://example.com:8443/path") is None
+
+
+class TestTemplateLiteralRoutes:
+    """The endpoint miner must see the routes an SPA builds in template literals.
+
+    ``this.http.get(`${this.hostServer}/rest/products/search?q=${e}`)`` is how
+    modern frontends call their APIs, and it was invisible to the previous
+    pattern: the route sits between a ``}`` and a ``${``, not between quotes.
+    That one gap is why the unattended run never aimed a validator at the
+    search endpoint an authenticated human would test first.
+    """
+
+    def test_extracts_template_literal_route_with_param(self) -> None:
+        from easyhunt.tools.js_analysis import _scan_text
+
+        blob = (
+            'search(e){return this.http.get(`${this.hostServer}/rest/products/search?q=${e}`)'
+            '.pipe(W(i=>i.data))}'
+        )
+        _secrets, endpoints = _scan_text(blob, "http://x")
+        assert "/rest/products/search?q=" in endpoints
+
+    def test_plain_quoted_route_still_matches(self) -> None:
+        from easyhunt.tools.js_analysis import _scan_text
+
+        blob = 'findBy(e){return this.http.get(this.hostServer+"/rest/user/security-question?email="+e)}'
+        _secrets, endpoints = _scan_text(blob, "http://x")
+        assert "/rest/user/security-question?email=" in endpoints
+
+
+class TestScriptUrls:
+    """An HTML shell's value is the bundles it names; js_analyze must follow them."""
+
+    def test_relative_script_src_resolves_against_the_page(self) -> None:
+        from easyhunt.tools.js_analysis import _script_urls
+
+        body = '<html><script src="main.js"></script><script src="/assets/app.js"></script></html>'
+        urls = list(_script_urls(body, "http://127.0.0.1:3000/"))
+        assert "http://127.0.0.1:3000/main.js" in urls
+        assert "http://127.0.0.1:3000/assets/app.js" in urls
+
+    def test_modulepreload_is_followed_too(self) -> None:
+        from easyhunt.tools.js_analysis import _script_urls
+
+        body = '<link rel="modulepreload" href="chunk-x.js">'
+        assert "http://127.0.0.1:3000/chunk-x.js" in list(
+            _script_urls(body, "http://127.0.0.1:3000/")
+        )

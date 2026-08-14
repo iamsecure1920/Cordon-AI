@@ -269,7 +269,7 @@ touching the run:
 | Memory | JSONL findings store · optional **Neo4j** graph · cross-engagement PoC memory |
 | Knowledge | **OWASP WSTG** — 115 tests, pinned, CC BY-SA · 62 vetted payload lists |
 | Audit | Hash-chained JSONL — tampering breaks the chain |
-| Code | ~32,500 lines · **1,947 tests** across 48 files · 85 install recipes |
+| Code | ~32,500 lines · **1,957 tests** across 48 files · 85 install recipes |
 
 ## Isolation
 
@@ -507,7 +507,7 @@ docs/              architecture · bootstrap · payloads
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 1,947 tests
+.venv/bin/python -m pytest tests/ -q          # 1,957 tests
 .venv/bin/ruff check easyhunt/ tests/
 easyhunt doctor                                # executed, not just found on PATH
 ```

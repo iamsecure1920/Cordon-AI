@@ -159,7 +159,7 @@ async def main() -> int:
         print("usage: phase.py <phase> <target> [extra-json]", file=sys.stderr)
         return 64
     phase, target = sys.argv[1], sys.argv[2]
-    extra = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {}
+    extra = json.loads(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else {}
 
     # A phase can be inapplicable rather than failing. dns_resolve given an IP
     # literal has nothing to resolve and returns empty — which, because resolve
