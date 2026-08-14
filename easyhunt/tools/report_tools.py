@@ -10,7 +10,10 @@ from easyhunt.knowledge.findings import Severity, Status
 from easyhunt.report.synthesize import generate_report
 from easyhunt.tools.base import easyhunt_tool
 
-__all__ = ["findings_list", "job_status", "report_generate", "technique_lookup", "wstg_lookup"]
+__all__ = [
+    "coverage_report", "findings_list", "job_status", "report_generate",
+    "technique_lookup", "wstg_lookup",
+]
 
 
 @easyhunt_tool(
@@ -383,4 +386,82 @@ async def technique_lookup(
         "classes": index.classes(),
         "attribution": attribution,
         "note": "Call again with class_name, tool, technologies, query, or phase.",
+    }
+
+
+@easyhunt_tool(
+    phase="method", mode="passive", targets_arg=None, timeout=30,
+    name="coverage_report", tags={"method", "inspection"},
+    estimated_requests=0, budget_exempt=True,
+)
+async def coverage_report(
+    class_name: str | None = None,
+    status: str | None = None,
+    gaps_only: bool = False,
+) -> dict[str, Any]:
+    """Report bug-class coverage: what EasyHunt finds, confirms, and bypasses.
+
+    The completeness check a client asks for before a test. Every row grades a
+    bug class as ``auto`` (a validator proves it), ``detect-only`` (found but not
+    confirmed), or ``manual`` (inherently judgement-shaped). A class is never
+    silently absent — gaps are named, with what would close them. Touches nothing
+    and costs no budget.
+
+    * ``class_name`` — one class in full ("sql-injection", "xxe-injection")
+    * ``status``      — everything of one grade ("auto", "detect-only", "manual")
+    * ``gaps_only``   — just the non-auto classes, the watch-list
+    """
+    from easyhunt.knowledge.coverage import load_coverage
+
+    index = load_coverage()
+
+    if class_name:
+        row = index.get(class_name)
+        if row is None:
+            return {
+                "ok": False,
+                "error": "unknown_class",
+                "message": f"No coverage row for {class_name!r}.",
+                "known_classes": sorted(r["class"] for r in index.all()),
+            }
+        return {"ok": True, "coverage": row}
+
+    if status:
+        rows = index.by_status(status)
+        return {
+            "ok": True,
+            "status": status,
+            "count": len(rows),
+            "classes": [
+                {k: r[k] for k in ("class", "title", "detection", "validation")}
+                for r in rows
+            ],
+        }
+
+    if gaps_only:
+        rows = index.gaps()
+        return {
+            "ok": True,
+            "gaps": [
+                {k: r[k] for k in ("class", "title", "status", "validation")}
+                for r in rows
+            ],
+            "note": (
+                "These classes are not auto-validated. detect-only means a lead "
+                "needs human confirmation; manual means the class is judgement-"
+                "shaped and driven by hunt_plan/authz_compare."
+            ),
+        }
+
+    return {
+        "ok": True,
+        "summary": index.summary(),
+        "total": len(index.all()),
+        "classes": [
+            {
+                k: r[k]
+                for k in ("class", "title", "status", "validation", "bypass")
+            }
+            for r in index.all()
+        ],
     }

@@ -91,6 +91,7 @@ _PRODUCT_TOOL_NAMES = sorted(_product_tools())
 #: zero is also what a forgotten declaration looks like once someone "fixes" the
 #: None, so every entry here has to name the thing that keeps it offline.
 _SENDS_NOTHING: dict[str, str] = {
+    "coverage_report": "reads the static bug-class coverage matrix",
     "contract_static_scan": "slither analyses Solidity already in the workspace",
     "contract_toolchain": "reports which contract binaries are installed",
     "finding_detail": "reads one record out of the findings store",

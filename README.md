@@ -114,6 +114,7 @@ mindmap
     L4 Method
       OWASP WSTG · 115 tests
       PAT technique index · 96 records
+      coverage matrix · 27 bug classes
       adversarial triage taskflows
       payload store · 62 vetted lists
     L3 Control plane
@@ -320,7 +321,7 @@ Run `easyhunt doctor` for the live picture.
 | **Cloud** | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
 | **Contracts** | `contract_static_scan` `contract_toolchain` |
 | **LLM** | `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` |
-| **Method** | `wstg_lookup` `technique_lookup` `hunt_plan` `auth_surface` `auth_crawl`! `session_register` `session_list` |
+| **Method** | `wstg_lookup` `technique_lookup` `coverage_report` `hunt_plan` `auth_surface` `auth_crawl`! `session_register` `session_list` |
 | **Triage** | `triage_findings` `triage_taskflows` `triage_canary_preview` |
 | **Report** | `report_generate` `findings_list` `finding_detail` `finding_note` |
 | **Control** | `job_status` |
