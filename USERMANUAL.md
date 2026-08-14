@@ -270,6 +270,14 @@ approval:
 
 ## 5. The whole system in one picture (mind map)
 
+Two animated views ship in `docs/` and render live in the README:
+
+- `docs/easyhunt-flow.svg` — one tool call flowing through the control plane
+  (a glowing packet loops model → MCP → scope → sanitize → budget → rate-limit
+  → approval → sandbox → audit → tool → back).
+- `docs/easyhunt-pipeline.svg` — the engagement phases chained through the
+  asset store.
+
 ```mermaid
 mindmap
   root((EasyHunt AI))

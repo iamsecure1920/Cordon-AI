@@ -4,12 +4,24 @@
 
 **An agentic VAPT orchestrator where the control plane — not the model — is the security boundary.**
 
-[![Tests](https://img.shields.io/badge/tests-1%2C893-brightgreen)](#development)
+[![Tests](https://img.shields.io/badge/tests-1%2C958-brightgreen)](#development)
 [![Tools](https://img.shields.io/badge/tools-82%20catalogued-blue)](#every-tool-it-drives)
-[![MCP](https://img.shields.io/badge/MCP-76%20tools-8A2BE2)](#mcp-tools-by-phase)
+[![MCP](https://img.shields.io/badge/MCP-80%20tools-8A2BE2)](#mcp-tools-by-phase)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#tech-stack)
 [![Sandbox](https://img.shields.io/badge/sandbox-read--only%20%C2%B7%20caps%20dropped-orange)](#isolation)
 [![License](https://img.shields.io/badge/license-see%20LICENSE-lightgrey)](LICENSE)
+
+</div>
+
+<div align="center">
+
+### The control plane — one call, end to end
+
+![One tool call through the control plane](docs/easyhunt-flow.svg)
+
+### The engagement pipeline — each phase feeds the next
+
+![The engagement pipeline](docs/easyhunt-pipeline.svg)
 
 </div>
 
@@ -166,6 +178,33 @@ flowchart TD
     style L fill:#78350f,color:#fff
     style I fill:#1e3a8a,color:#fff
     style N fill:#065f46,color:#fff
+```
+
+The same path, as a sequence — the model, the server, and the tool are separate
+actors; the server is the one that says no:
+
+```mermaid
+sequenceDiagram
+    participant M as Model (Claude CLI)
+    participant S as MCP Server
+    participant C as Control Plane
+    participant T as Tool (sandboxed)
+
+    M->>S: call tool(target, args)
+    S->>C: scope.check(target)
+    alt out of scope
+        C-->>M: scope_denied · stop
+    else in scope
+        C->>C: sanitize · budget · rate-limit
+        alt aggressive / exploit
+            C->>M: approval required
+            M-->>C: approved (human)
+        end
+        S->>T: run in container (read-only, caps dropped)
+        T-->>S: raw output
+        S->>C: parse · audit (hash-chained)
+        C-->>M: structured result — candidate, never silently clean
+    end
 ```
 
 ## Engagement flow
