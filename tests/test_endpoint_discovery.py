@@ -30,7 +30,7 @@ def test_is_ip_literal_true(value: str) -> None:
     assert EP._is_ip_literal(value) is True
 
 
-@pytest.mark.parametrize("value", ["example.com", "chime.com", "api.example.com", "app.example.org"])
+@pytest.mark.parametrize("value", ["example.com", "example.net", "api.example.com", "app.example.org"])
 def test_is_ip_literal_false(value: str) -> None:
     assert EP._is_ip_literal(value) is False
 
