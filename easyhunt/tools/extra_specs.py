@@ -180,11 +180,24 @@ CLOUDPEASS = register_spec(
         homepage="https://github.com/carlospolop/CloudPEASS", version_args=["--help"],
         arg_policy=ArgPolicy(
             tool="cloudpeass",
-            allowed_flags={"--profile", "--out-json", "--threads", "--not-use-ht-ai", "--region"},
-            boolean_flags={"--not-use-ht-ai"},
+            allowed_flags={
+                "--profile", "--access-key-id", "--secret-access-key",
+                "--session-token", "--out-json-path", "--threads", "--region",
+                "--aws-services", "--debug", "--skip-iam-policies",
+                "--skip-simulation", "--skip-bruteforce", "--skip-managed-policies-guess",
+            },
+            boolean_flags={
+                "--debug", "--skip-iam-policies", "--skip-simulation",
+                "--skip-bruteforce", "--skip-managed-policies-guess",
+            },
             value_patterns={
                 "--profile": re.compile(r"[A-Za-z0-9._-]{1,64}"),
                 "--region": re.compile(r"[a-z0-9-]{4,32}"),
+                "--access-key-id": re.compile(r"[A-Z0-9]{8,32}"),
+                "--secret-access-key": re.compile(r"[A-Za-z0-9/+=]{8,128}"),
+                "--session-token": re.compile(r"[A-Za-z0-9/+=._-]{16,2048}"),
+                "--out-json-path": re.compile(r"[A-Za-z0-9._/-]{1,256}"),
+                "--aws-services": re.compile(r"[a-z0-9,-]{1,256}"),
             },
             numeric_caps={"--threads": 20},
         ),
