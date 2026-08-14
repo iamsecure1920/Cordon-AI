@@ -1,6 +1,6 @@
 <div align="center">
 
-# EasyHunt AI
+![EasyHunt AI](docs/easyhunt-hero.svg)
 
 **An agentic VAPT orchestrator where the control plane — not the model — is the security boundary.**
 
