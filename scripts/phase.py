@@ -116,6 +116,40 @@ def emit(workspace: Path, record: dict[str, Any]) -> None:
     print(f"STATUS {line}", flush=True)
 
 
+async def _collect_job_result(entry: Any, eng: Engagement, result: dict[str, Any]) -> dict[str, Any]:
+    """Wait out a background job a tool returned, instead of cancelling it.
+
+    Long tools (nuclei_scan, bbot, …) launch a job and return a ``job_id`` when
+    it has not finished within the tool's own ``wait_seconds``. That job lives in
+    *this* process's event loop, so returning from ``main`` cancels it — a scan
+    longer than wait_seconds never completed in the CLI pipeline, and the phase
+    reported "still running" with nothing left to poll. Keeping the loop alive
+    and awaiting the job here is what lets the unattended pipeline finish.
+
+    Bounded by the tool's own timeout, after which the result is marked partial
+    rather than silently read as clean.
+    """
+    if not (isinstance(result, dict) and result.get("job_id") and result.get("completed") is False):
+        return result
+    job_id = result["job_id"]
+    deadline = time.monotonic() + (entry.timeout or 3600)
+    while time.monotonic() < deadline:
+        payload = await eng.jobs.wait(job_id, timeout=30)
+        if payload.get("ready"):
+            if payload.get("ok") and isinstance(payload.get("result"), dict):
+                return {**result, **payload["result"], "job_id": job_id, "completed": True}
+            return {**result, "completed": False, "job_error": payload.get("error")}
+        # Still running — the loop's continued existence is what keeps the job's
+        # task scheduled, so just keep polling.
+    return {
+        **result,
+        "note": (
+            f"job {job_id} did not finish within the phase timeout "
+            f"({entry.timeout:.0f}s); result is partial, not clean"
+        ),
+    }
+
+
 async def main() -> int:
     if len(sys.argv) < 3:
         print("usage: phase.py <phase> <target> [extra-json]", file=sys.stderr)
@@ -190,6 +224,8 @@ async def main() -> int:
             "error": f"{type(exc).__name__}: {exc}", "seconds": round(time.time() - started, 1),
         })
         return 3
+
+    result = await _collect_job_result(entry, eng, result)
 
     took = round(time.time() - started, 1)
     # The target belongs in the filename. Without it a twelve-target run wrote
