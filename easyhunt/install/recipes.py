@@ -86,7 +86,9 @@ def _pd(name: str, module: str, **kwargs) -> Recipe:
     )
 
 
-def _python_repo_setup(tool: str, entry: str, *, requirements: str = "requirements.txt") -> str:
+def _python_repo_setup(
+    tool: str, entry: str, *, requirements: str = "requirements.txt", deps_only: bool = False
+) -> str:
     """Post-install for a git-cloned Python tool: private venv plus a wrapper.
 
     Each cloned tool gets its own virtualenv under its checkout. Three reasons,
@@ -101,8 +103,28 @@ def _python_repo_setup(tool: str, entry: str, *, requirements: str = "requiremen
 
     The wrapper on PATH points at that venv's Python, so the tool runs the
     dependencies it asked for.
+
+    ``deps_only`` handles the uv-managed script repos (``pyproject.toml`` with
+    ``[tool.uv] package = false`` and no ``[build-system]``). ``pip install
+    <root>`` tries to build a wheel there and fails; the correct install is the
+    declared dependencies plus running the entry script in place.
     """
     root = f"/opt/{tool}"
+    wrapper = (
+        f"printf '#!/bin/sh\\nexec {root}/.venv/bin/python {root}/{entry} \"$@\"\\n' "
+        f"> /usr/local/bin/{tool}; chmod +x /usr/local/bin/{tool}"
+    )
+    if deps_only:
+        return (
+            f"set -e; python3 -m venv {root}/.venv; "
+            f"{root}/.venv/bin/pip install -q --upgrade pip; "
+            f"{root}/.venv/bin/python - <<'PY'\n"
+            f"import tomllib, subprocess, sys\n"
+            f"d = tomllib.load(open('{root}/pyproject.toml', 'rb'))\n"
+            f"subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q',\n"
+            f"    *d['project']['dependencies']])\n"
+            f"PY\n" + wrapper
+        )
     # Dependencies are declared differently across these projects: some ship a
     # requirements.txt, some only a pyproject.toml. Try the packaging metadata
     # first, then requirements. Failure is NOT swallowed — a tool whose
@@ -115,9 +137,7 @@ def _python_repo_setup(tool: str, entry: str, *, requirements: str = "requiremen
         f"  {root}/.venv/bin/pip install -q {root}; "
         f"elif [ -f {root}/{requirements} ]; then "
         f"  {root}/.venv/bin/pip install -q -r {root}/{requirements}; "
-        f"fi; "
-        f"printf '#!/bin/sh\\nexec {root}/.venv/bin/python {root}/{entry} \"$@\"\\n' "
-        f"> /usr/local/bin/{tool}; chmod +x /usr/local/bin/{tool}"
+        f"fi; " + wrapper
     )
 
 
@@ -411,7 +431,10 @@ _add(Recipe(tool="xsstrike", method="git", category="exploit", license="GPL-3.0"
 _add(Recipe(tool="ssrfmap", method="git", category="exploit", license="MIT",
             package="https://github.com/swisskyrepo/SSRFmap",
             clone_to="/opt/ssrfmap",
-            post_install=_python_repo_setup("ssrfmap", "ssrfmap.py"),
+            # Upstream moved to a uv-managed repo: pyproject.toml declares
+            # `package = false` with no build backend, so `pip install .` fails
+            # to build a wheel. Install the declared deps and run in place.
+            post_install=_python_repo_setup("ssrfmap", "ssrfmap.py", deps_only=True),
             caveat=(
                 "Driven by a saved HTTP request file (-r) with the injectable parameter "
                 "named by -p; there is no URL-only mode, so it cannot be pointed at a "

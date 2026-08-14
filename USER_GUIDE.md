@@ -158,7 +158,7 @@ Expected output:
 ⚠️ massdns         not found  (required by shuffledns)
 ❌ garak           not installed
 ...
-Summary: 77/81 tools working
+Summary: 77/82 tools working
 ```
 
 > [!NOTE]

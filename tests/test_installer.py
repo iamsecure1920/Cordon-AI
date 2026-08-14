@@ -51,6 +51,15 @@ class TestRecipeCoverage:
             caveat = RECIPES[name].caveat.lower()
             assert "archiv" in caveat or "retired" in caveat
 
+    def test_uv_managed_script_repo_installs_deps_not_the_package(self) -> None:
+        # ssrfmap's pyproject.toml declares `package = false` with no build
+        # backend, so `pip install <root>` fails to build a wheel. The recipe
+        # must install the declared dependencies and run the entry script in
+        # place instead.
+        post = RECIPES["ssrfmap"].post_install
+        assert "tomllib" in post and "dependencies" in post
+        assert "pip install /opt/ssrfmap" not in post
+
 
 class TestOrderingAndDependencies:
     def test_massdns_installs_before_shuffledns(self) -> None:
