@@ -1,0 +1,9 @@
+{
+  "flags": "HnriP",
+  "patterns": [
+    "(fetch|axios|XMLHttpRequest|http\\.(?:get|post|request)|urllib\\.request\\.urlopen|urlopen|requests\\.(?:get|post|request)|\\$http|HttpClient|httpClient)\\s*\\(\\s*[^)]{0,120}(url|uri|path|file|target|link|src|host|domain|dest|destination|location|redirect|feed|image|img|load|resource|callback|next|ref|webhook|endpoint|remote)",
+    "(curl|wget)\\s+[^\\s]{0,120}(\\$|url|uri|target|link|host|domain|dest|path|file|query|param)",
+    "[?&](url|uri|path|file|filename|target|link|src|dest|destination|redirect|feed|image|img|load|resource|callback|proxy|host|domain|next|ref|fetch|api_url|webhook|endpoint|remote|urls)=https?://",
+    "[?&](url|uri|path|file|filename|target|link|src|dest|destination|redirect|feed|image|img|load|resource|callback|proxy|host|domain|next|ref|fetch|api_url|webhook|endpoint|remote|urls)="
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "flags": "HnriP",
+  "patterns": [
+    "(include|require|include_once|require_once)\\s*\\(?[^)]{0,100}(\\$|req|request|input|param|page|file|path|dir|view|template|name)",
+    "(file_get_contents|readfile|fopen|file|scandir|glob|opendir|readdir|parse_ini_file|simplexml_load_file|fpassthru)\\s*\\(?[^)]{0,100}(\\$|req|request|input|param|page|file|path|dir|view|template|name)",
+    "(\\.\\./|\\.\\.\\\\){1,6}(etc/passwd|etc/shadow|windows/win\\.ini|boot\\.ini|proc/self/environ|proc/version|proc/self/cmdline)",
+    "[?&](file|page|path|dir|view|template|include|document|doc|load|read|download|name|f|p|show|content|open|folder)=['\"]?(\\.\\./|/etc/|/var/|/proc/|[\\\\/]{2,})"
+  ]
+}

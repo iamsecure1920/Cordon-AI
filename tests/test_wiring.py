@@ -181,6 +181,10 @@ _DELIBERATELY_UNWIRED: dict[str, str] = {
     ),
     "xsstrike": "dalfox (exploitation.py:423) verifies execution context; XSStrike reports reflection",
     "secretfinder": "the native JS pattern scan plus jsluice (js_analysis.py) cover the same regexes",
+    "gf": (
+        "pattern_scan (pattern_scan.py) runs the same vetted rules/gf/ patterns "
+        "natively; the gf binary is catalog-only for interactive use"
+    ),
     "trufflehog": (
         "secret scanning is kingfisher/noseyparker/gitleaks (secrets.py:285,299,305). "
         "Also has no requests-per-second flag for its --only-verified mode"
@@ -204,14 +208,8 @@ _DELIBERATELY_UNWIRED: dict[str, str] = {
     "forge": "contract_toolchain (contracts.py:317) reports presence; slither (contracts.py:213) analyses",
     "medusa": "contract_toolchain (contracts.py:317) reports presence; slither (contracts.py:213) analyses",
     # --- pending, not settled ---
-    "linkfinder": (
-        "WIRING PROPOSED, not a permanent exemption. Measured against 12 real JS "
-        "bundles from engagements/rb-focus_20260804-160224: LinkFinder found 422 "
-        "endpoints to the native regex's 210 and jsluice's 17, missed nothing "
-        "either of them found, and uniquely recovered a WordPress REST endpoint on "
-        "a staging host. The call site belongs in js_analysis.py, which is owned "
-        "elsewhere; remove this entry when it lands"
-    ),
+    # (linkfinder was here as "WIRING PROPOSED"; the call site landed in
+    # js_analysis.py and this entry must stay gone — see test_no_stale_exemptions)
 }
 
 

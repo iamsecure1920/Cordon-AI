@@ -121,15 +121,11 @@ _SENDS_NOTHING: dict[str, str] = {
 #: a known-wrong number with a derivation next to it, kept green only so the rule
 #: can land before the fixes do. Adding a name here to make a new tool pass is
 #: the precise move this file exists to make visible in review.
-_KNOWN_UNDER_DECLARED: dict[str, str] = {
-    # exploitation.py:824 runs `interactsh-client -n 1 -poll-interval 5` under
-    # `timeout=max(30, min(duration_seconds, 300))`. Registration plus one poll
-    # every 5s for the process lifetime is ~14 requests at the default 60s and
-    # ~62 at the 300s cap — not 1. They go to the interactsh server rather than
-    # the target, which is the same "third party, still our traffic" case
-    # subdomain_enum and secret_validate already budget for.
-    "oob_listener": "registers once, then polls every 5s for up to 300s",
-}
+#:
+#: (oob_listener was here while it declared 1; it now derives its cost from
+#: OOB_POLL_INTERVAL_S and OOB_MAX_DURATION_S in exploitation.py. Empty on
+#: purpose — the rule is live and every gated tool now declares its real price.)
+_KNOWN_UNDER_DECLARED: dict[str, str] = {}
 
 
 def _declared(name: str) -> int | None:

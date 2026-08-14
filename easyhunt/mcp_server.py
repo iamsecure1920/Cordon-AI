@@ -57,6 +57,7 @@ CAPABILITY_MODULES = [
     "easyhunt.tools.http_probe",
     "easyhunt.tools.endpoints",
     "easyhunt.tools.js_analysis",
+    "easyhunt.tools.pattern_scan",
     "easyhunt.tools.ports",
     "easyhunt.tools.takeover",
     "easyhunt.tools.secrets",

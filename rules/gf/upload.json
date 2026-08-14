@@ -1,0 +1,8 @@
+{
+  "flags": "HnriP",
+  "patterns": [
+    "(multipart/form-data|enctype\\s*=\\s*[\"']multipart/form-data[\"']|<input[^>]+type\\s*=\\s*[\"']file[\"'])",
+    "(\\$_FILES|move_uploaded_file|upload_tmp_dir|tmp_name|UPLOAD_ERR|files\\[|request\\.files|multipart|FileUpload|FileItem|MultipartFile|@RequestParam[^)]*file|uploadFile|file_uploads|UploadFile)",
+    "[?&](upload|file|attachment|avatar|photo|image|img|logo|doc|document|import|import_file|file_upload|filename|file_name)=[^&\\s\"']{1,80}"
+  ]
+}

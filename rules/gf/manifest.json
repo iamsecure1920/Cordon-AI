@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "source": "Curated, vetted subset of the tomnomnom/gf pattern idiom and community Gf-Patterns. Each pattern file uses gf's native format — {\"flags\": \"HnriP\", \"patterns\": [...]} — so the same files can be dropped into ~/.gf/ and used with the real gf binary. The flags select PCRE (P) and case-insensitive (i) matching, which both grep -P and Python re honor.",
+  "patterns": [
+    {
+      "name": "xss",
+      "class": "xss",
+      "severity": "medium",
+      "validator": "xss_validate",
+      "purpose": "Reflected and DOM XSS sinks: DOM write primitives fed by location/input, eval-like sinks, inline handlers, and reflection parameters."
+    },
+    {
+      "name": "ssrf",
+      "class": "ssrf",
+      "severity": "high",
+      "validator": "ssrf_probe",
+      "purpose": "Server-side fetch sinks and URL/path-taking parameters that may drive an outbound request."
+    },
+    {
+      "name": "redirect",
+      "class": "open-redirect",
+      "severity": "low",
+      "validator": "validate_findings",
+      "purpose": "Open-redirect parameters and redirect sinks. Low on their own; high when chained into an OAuth flow."
+    },
+    {
+      "name": "sqli",
+      "class": "sqli",
+      "severity": "high",
+      "validator": "sqli_validate",
+      "purpose": "SQL syntax fragments and query-building sinks reached by request input."
+    },
+    {
+      "name": "lfi",
+      "class": "lfi",
+      "severity": "medium",
+      "validator": "validate_findings",
+      "purpose": "File include/read sinks, traversal sequences, and file/path-taking parameters."
+    },
+    {
+      "name": "rce",
+      "class": "rce",
+      "severity": "critical",
+      "validator": "cmdi_probe",
+      "purpose": "Command-execution sinks reached by request input."
+    },
+    {
+      "name": "ssti",
+      "class": "ssti",
+      "severity": "high",
+      "validator": "ssti_probe",
+      "purpose": "Template-engine evaluation sinks and template syntax markers."
+    },
+    {
+      "name": "idor",
+      "class": "idor",
+      "severity": "medium",
+      "validator": "authz_compare",
+      "purpose": "Object-reference shapes: numeric/UUID ids in paths and id-bearing parameter names."
+    },
+    {
+      "name": "upload",
+      "class": "upload",
+      "severity": "medium",
+      "validator": "validate_findings",
+      "purpose": "File-upload forms and server-side upload sinks."
+    },
+    {
+      "name": "s3-buckets",
+      "class": "cloud-storage",
+      "severity": "medium",
+      "validator": "cloud_asset_discovery",
+      "purpose": "Cloud storage bucket references: S3, GCS, Azure Blob, CloudFront, DigitalOcean Spaces, R2."
+    }
+  ]
+}
