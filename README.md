@@ -308,7 +308,7 @@ touching the run:
 | Memory | JSONL findings store · optional **Neo4j** graph · cross-engagement PoC memory |
 | Knowledge | **OWASP WSTG** — 115 tests, pinned, CC BY-SA · 62 vetted payload lists |
 | Audit | Hash-chained JSONL — tampering breaks the chain |
-| Code | ~32,500 lines · **1,958 tests** across 48 files · 85 install recipes |
+| Code | ~32,500 lines · **1,958 tests** across 49 files · 85 install recipes |
 
 ## Isolation
 

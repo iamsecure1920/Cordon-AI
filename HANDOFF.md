@@ -39,11 +39,11 @@ The model never holds a shell. A jailbroken prompt cannot reach the network.
 | | |
 |---|---|
 | Code | ~32,500 lines |
-| MCP tools | 79 |
+| MCP tools | 80 |
 | Catalogued binaries | 82 |
-| Tests | 1,958 across 48 files |
+| Tests | 1,958 across 49 files |
 | Image | `easyhunt:latest`, 4.54 GB |
-| Commits | 89 |
+| Commits | 98 |
 
 ---
 

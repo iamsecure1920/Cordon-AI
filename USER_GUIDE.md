@@ -1,6 +1,6 @@
 # EasyHunt AI — User Guide
 
-> **EasyHunt AI** is a Python-based MCP (Model Context Protocol) security framework that lets AI assistants (Claude, Gemini, etc.) perform ethical security research using 53 real security tools — all controlled through a mandatory safety pipeline.
+> **EasyHunt AI** is a Python-based MCP (Model Context Protocol) security framework that lets AI assistants (Claude, Gemini, etc.) perform ethical security research using 82 catalogued security tools (80 MCP tools) — all controlled through a mandatory safety pipeline.
 
 ---
 
@@ -158,7 +158,7 @@ Expected output:
 ⚠️ massdns         not found  (required by shuffledns)
 ❌ garak           not installed
 ...
-Summary: 77/82 tools working
+Summary: 79/82 tools working
 ```
 
 > [!NOTE]
@@ -1090,4 +1090,4 @@ sudo cp bin/massdns /usr/local/bin/
 ---
 
 *EasyHunt AI User Guide — last updated 2026-07-30*
-*Research based on 53 official GitHub repositories*
+*Research based on 82 official GitHub repositories*

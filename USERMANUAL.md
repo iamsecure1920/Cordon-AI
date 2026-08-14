@@ -503,7 +503,7 @@ actually run, *before* the subprocess spawns.
 | `findings.py` | `Severity` (subclasses `str`), `Status`, `Finding`, `FindingStore`, `AssetStore`, `PoC` |
 | `wstg.py` | OWASP WSTG — 115 tests, pinned, the "what to check" brain |
 | `techniques.py` | PAT index — 96 records, the "how + bypass" brain |
-| `coverage.py` | 27 bug-class coverage matrix (auto / detect-only / manual) |
+| `coverage.py` | 27 bug-class coverage matrix (auto / manual) |
 | `payloads.py` | vetted payload store (tier A/B/C) |
 | `taskgraph.py` | penetration task graph |
 | `attackgraph.py` | reachability / attack paths |
@@ -872,7 +872,7 @@ be decorative.
 ## 18. Development and testing
 
 ```bash
-.venv/bin/python -m pytest tests/ -q    # 1,958 tests across 48 files
+.venv/bin/python -m pytest tests/ -q    # 1,958 tests across 49 files
 .venv/bin/ruff check easyhunt/ tests/   # lint
 easyhunt doctor                         # executed, not just found on PATH
 ```
@@ -940,7 +940,7 @@ EasyHunt-AI/
 ├── skills/                 # 8 phase playbooks for the agent
 ├── rules/                  # detection packs — YAML, no code
 ├── scripts/                # hunt.sh, phase.py, summary.py, watch.sh, vet_payloads.py, …
-├── tests/                  # 1,958 tests across 48 files
+├── tests/                  # 1,958 tests across 49 files
 ├── payloads/               # vetted store (gitignored, rebuilt with vet_payloads.py)
 └── engagements/            # per-engagement workspaces (assets, findings, reports, audit)
 ```
