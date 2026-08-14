@@ -48,6 +48,73 @@ class TestRetireActuallyRuns:
             sanitize_argv("retire", argv)
 
 
+class TestLinkFinderActuallyRuns:
+    """linkfinder was catalogued, installed and never called for the project's
+    whole life. Its exemption in test_wiring.py read "WIRING PROPOSED" — the
+    call site is now in js_analyze, and this test holds it there.
+
+    The bug class it closes is the one this file documents for retire: a tool
+    with a spec, a binary and no caller reports `ran: false` on every
+    engagement and is indistinguishable from a clean bundle. linkfinder's own
+    trap was its `-i` value pattern, which accepted only URLs — so even once
+    wired, running it over saved files would have built an argv its own
+    sanitizer refused.
+    """
+
+    def test_the_policy_accepts_a_filesystem_path_for_minus_i(self) -> None:
+        import easyhunt.tools.js_analysis  # noqa: F401  registers the policy
+        from easyhunt.control_plane.sanitize import get_policy
+
+        policy = get_policy("linkfinder")
+        assert policy is not None
+        pattern = policy.value_patterns["-i"]
+        assert pattern.fullmatch("/work/raw/js-123456.js"), "-i must accept a saved file path"
+        assert pattern.fullmatch("https://example.com/app.js"), "-i must still accept a URL"
+
+    async def test_js_analyze_invokes_linkfinder_over_saved_files(
+        self, engagement, monkeypatch, tmp_path
+    ) -> None:
+        from easyhunt.control_plane.sanitize import sanitize_argv
+        from easyhunt.tools import js_analysis as js
+        from easyhunt.tools.base import REGISTRY
+        from easyhunt.tools.common import ToolRun
+
+        # Seed a saved bundle so js_analyze has a file to hand linkfinder.
+        saved = engagement.raw_path("js", "js")
+        saved.write_text("const x='/api/hidden?id=1';", encoding="utf-8")
+
+        seen: list[list[str]] = []
+
+        async def spy(name: str, argv: list[str], **kwargs):
+            if name == "linkfinder":
+                seen.append(list(argv))
+                return ToolRun(
+                    tool=name, ran=True, values=["/api/hidden?id=1"], exit_code=0
+                )
+            if name == "retire":
+                return ToolRun(tool=name, ran=True, values=[], exit_code=0)
+            if name == "jsluice":
+                return ToolRun(tool=name, ran=True, values=[], exit_code=0)
+            return ToolRun(tool=name, ran=True, values=[], exit_code=0)
+
+        monkeypatch.setattr(js, "run_one", spy)
+        result = await REGISTRY["js_analyze"].fn(target="https://www.example.com/")
+
+        assert seen, "js_analyze never invoked linkfinder"
+        files_handed_to_linkfinder = []
+        for argv in seen:
+            sanitize_argv("linkfinder", argv)
+            files_handed_to_linkfinder.append(argv[argv.index("-i") + 1])
+        # The fetch loop saves its own bundle too; the seeded file must be among
+        # the inputs linkfinder scanned, not the only one.
+        assert str(saved) in files_handed_to_linkfinder
+        # Its findings flow into the endpoint set and the result summary. The
+        # spy returns the same value for every file it is handed, so the count
+        # is at least one, not exactly one.
+        assert "/api/hidden?id=1" in result["endpoints"]
+        assert result["linkfinder"]["endpoints_found"] >= 1
+
+
 class TestBasicAuthUrlDetector:
     """A HIGH severity credential finding that fired on JSON-LD.
 
@@ -87,3 +154,51 @@ class TestBasicAuthUrlDetector:
 
     def test_a_port_is_not_a_password(self) -> None:
         assert self._detector().search("https://example.com:8443/path") is None
+
+
+class TestTemplateLiteralRoutes:
+    """The endpoint miner must see the routes an SPA builds in template literals.
+
+    ``this.http.get(`${this.hostServer}/rest/products/search?q=${e}`)`` is how
+    modern frontends call their APIs, and it was invisible to the previous
+    pattern: the route sits between a ``}`` and a ``${``, not between quotes.
+    That one gap is why the unattended run never aimed a validator at the
+    search endpoint an authenticated human would test first.
+    """
+
+    def test_extracts_template_literal_route_with_param(self) -> None:
+        from easyhunt.tools.js_analysis import _scan_text
+
+        blob = (
+            'search(e){return this.http.get(`${this.hostServer}/rest/products/search?q=${e}`)'
+            '.pipe(W(i=>i.data))}'
+        )
+        _secrets, endpoints = _scan_text(blob, "http://x")
+        assert "/rest/products/search?q=" in endpoints
+
+    def test_plain_quoted_route_still_matches(self) -> None:
+        from easyhunt.tools.js_analysis import _scan_text
+
+        blob = 'findBy(e){return this.http.get(this.hostServer+"/rest/user/security-question?email="+e)}'
+        _secrets, endpoints = _scan_text(blob, "http://x")
+        assert "/rest/user/security-question?email=" in endpoints
+
+
+class TestScriptUrls:
+    """An HTML shell's value is the bundles it names; js_analyze must follow them."""
+
+    def test_relative_script_src_resolves_against_the_page(self) -> None:
+        from easyhunt.tools.js_analysis import _script_urls
+
+        body = '<html><script src="main.js"></script><script src="/assets/app.js"></script></html>'
+        urls = list(_script_urls(body, "http://127.0.0.1:3000/"))
+        assert "http://127.0.0.1:3000/main.js" in urls
+        assert "http://127.0.0.1:3000/assets/app.js" in urls
+
+    def test_modulepreload_is_followed_too(self) -> None:
+        from easyhunt.tools.js_analysis import _script_urls
+
+        body = '<link rel="modulepreload" href="chunk-x.js">'
+        assert "http://127.0.0.1:3000/chunk-x.js" in list(
+            _script_urls(body, "http://127.0.0.1:3000/")
+        )

@@ -1,0 +1,8 @@
+{
+  "flags": "HnriP",
+  "patterns": [
+    "[?&](redirect|redirect_uri|redirect_url|return|return_url|returnTo|return_to|next|continue|continue_url|dest|destination|goto|forward|target|url|uri|link|callback|cb|rurl|ru|out|view|path|domain|site|forward_to|location|to|redirectUrl|ReturnUrl)=https?://",
+    "[?&](redirect|redirect_uri|redirect_url|return|returnTo|return_to|next|continue|dest|destination|goto|forward|target|url|uri|link|callback|cb|rurl|ru|out|domain|site|forward_to|redirectUrl|ReturnUrl)=",
+    "(window\\.location|document\\.location|location\\.(?:href|replace|assign))\\s*=\\s*[^;]{0,120}(redirect|return|next|dest|target|url|uri|location|query|param|input|hash|search)"
+  ]
+}

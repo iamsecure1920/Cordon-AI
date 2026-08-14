@@ -57,7 +57,7 @@ MAX_INHERITED = 500
 # was handed 3 targets, then 4, then 6 ... then 12, failing the sizing gate every
 # single time as the set grew underneath it. Twelve refusals for one scan that
 # should have been sized once against the real total.
-GLOBAL_PHASES = frozenset({"scan", "takeover", "report", "plan"})
+GLOBAL_PHASES = frozenset({"scan", "takeover", "report", "plan", "exploit"})
 
 PHASES: dict[str, dict[str, Any]] = {
     "recon":     {"tool": "subdomain_enum",      "count": "subdomains"},
@@ -73,6 +73,10 @@ PHASES: dict[str, dict[str, Any]] = {
     "auth":      {"tool": "auth_surface",        "count": "hosts_examined", "inherits": True, "wants": ("url",), "tag": "live"},
     "takeover":  {"tool": "takeover_detect",     "count": None,       "inherits": True, "wants": ("subdomain",)},
     "scan":      {"tool": "nuclei_scan",         "count": None,       "inherits": True, "wants": ("url",), "tag": "live"},
+    # Chain the exploit validators over the injection points the earlier phases
+    # discovered. Only wired into hunt.sh when --exploit is passed, and only runs
+    # then because every sub-validator is itself approval-gated.
+    "exploit":   {"tool": "exploit_chain",        "count": "tested",    "inherits": True, "wants": ("url",)},
     "report":    {"tool": "report_generate",     "count": None},
     "plan":      {"tool": "hunt_plan",           "count": "actionable"},
 }
@@ -116,12 +120,46 @@ def emit(workspace: Path, record: dict[str, Any]) -> None:
     print(f"STATUS {line}", flush=True)
 
 
+async def _collect_job_result(entry: Any, eng: Engagement, result: dict[str, Any]) -> dict[str, Any]:
+    """Wait out a background job a tool returned, instead of cancelling it.
+
+    Long tools (nuclei_scan, bbot, …) launch a job and return a ``job_id`` when
+    it has not finished within the tool's own ``wait_seconds``. That job lives in
+    *this* process's event loop, so returning from ``main`` cancels it — a scan
+    longer than wait_seconds never completed in the CLI pipeline, and the phase
+    reported "still running" with nothing left to poll. Keeping the loop alive
+    and awaiting the job here is what lets the unattended pipeline finish.
+
+    Bounded by the tool's own timeout, after which the result is marked partial
+    rather than silently read as clean.
+    """
+    if not (isinstance(result, dict) and result.get("job_id") and result.get("completed") is False):
+        return result
+    job_id = result["job_id"]
+    deadline = time.monotonic() + (entry.timeout or 3600)
+    while time.monotonic() < deadline:
+        payload = await eng.jobs.wait(job_id, timeout=30)
+        if payload.get("ready"):
+            if payload.get("ok") and isinstance(payload.get("result"), dict):
+                return {**result, **payload["result"], "job_id": job_id, "completed": True}
+            return {**result, "completed": False, "job_error": payload.get("error")}
+        # Still running — the loop's continued existence is what keeps the job's
+        # task scheduled, so just keep polling.
+    return {
+        **result,
+        "note": (
+            f"job {job_id} did not finish within the phase timeout "
+            f"({entry.timeout:.0f}s); result is partial, not clean"
+        ),
+    }
+
+
 async def main() -> int:
     if len(sys.argv) < 3:
         print("usage: phase.py <phase> <target> [extra-json]", file=sys.stderr)
         return 64
     phase, target = sys.argv[1], sys.argv[2]
-    extra = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {}
+    extra = json.loads(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else {}
 
     # A phase can be inapplicable rather than failing. dns_resolve given an IP
     # literal has nothing to resolve and returns empty — which, because resolve
@@ -190,6 +228,8 @@ async def main() -> int:
             "error": f"{type(exc).__name__}: {exc}", "seconds": round(time.time() - started, 1),
         })
         return 3
+
+    result = await _collect_job_result(entry, eng, result)
 
     took = round(time.time() - started, 1)
     # The target belongs in the filename. Without it a twelve-target run wrote

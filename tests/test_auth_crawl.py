@@ -194,6 +194,120 @@ class TestItRefusesToChangeState:
         assert "/transfer" not in fetched
 
 
+class TestReadOnlyFormSubmission:
+    """A search or filter form is the surface a link crawler cannot reach.
+
+    The results page has no ``<a href>`` pointing at it — it exists only after
+    someone submits the form. Read-only forms (GET, and POST whose every field
+    is a search/filter parameter) are submitted with empty values so the pages
+    they return contribute their links and object references. Anything that
+    could write — login, checkout, a field outside the whitelist — is reported
+    and never touched.
+    """
+
+    async def test_a_read_only_get_form_is_submitted_and_mined(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        form = '<form action="/search" method="get"><input name="q"></form>'
+        fetched = serve(monkeypatch, {
+            "/": page(extra=form),
+            "/search": page("/search-result"),
+            "/search-result": page(),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+        assert "/search" in fetched
+        # The results page is only reachable by submitting the form, and its
+        # own links are still followed.
+        assert "/search-result" in fetched
+        assert result["forms_submitted_count"] == 1
+        assert result["forms_submitted"][0]["action"] == f"{HOST}/search"
+        assert result["forms_submitted"][0]["method"] == "GET"
+
+    async def test_a_read_only_post_form_is_submitted_as_post(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        form = '<form action="/search" method="post"><input name="q"><input name="sort"></form>'
+        seen_methods: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            authed = "authorization" in request.headers or "cookie" in request.headers
+            if not authed:
+                return httpx.Response(200, text=ANON)
+            if request.url.path == "/search":
+                seen_methods.append(request.method)
+            routes = {"/": page(extra=form), "/search": page("/result"), "/result": page()}
+            entry = routes.get(request.url.path)
+            if entry is None:
+                return httpx.Response(404, text="nope")
+            return httpx.Response(200, text=entry, headers={"content-type": "text/html"})
+
+        real = httpx.AsyncClient
+        monkeypatch.setattr(
+            httpx, "AsyncClient",
+            lambda *a, **k: real(*a, **{**k, "transport": httpx.MockTransport(handler)}),
+        )
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+        assert "POST" in seen_methods
+        assert result["forms_submitted"][0]["method"] == "POST"
+        assert result["forms_submitted"][0]["action"] == f"{HOST}/search"
+
+    async def test_a_login_form_is_never_submitted(self, engagement, monkeypatch) -> None:
+        await register(engagement)
+        form = ('<form action="/login" method="post">'
+                '<input name="email"><input name="password"></form>')
+        fetched = serve(monkeypatch, {"/": page(extra=form), "/login": page("/account")})
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+        assert "/login" not in fetched
+        assert result["forms_submitted_count"] == 0
+        assert result["forms"][0]["action"] == f"{HOST}/login"
+
+    async def test_a_form_whose_action_writes_is_never_submitted(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        # Every field is a search parameter, but the action says "create".
+        form = '<form action="/api/orders/create" method="post"><input name="q"></form>'
+        fetched = serve(monkeypatch, {"/": page(extra=form)})
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+        assert "/api/orders/create" not in fetched
+        assert result["forms_submitted_count"] == 0
+
+    async def test_a_post_form_with_an_unrecognised_field_is_never_submitted(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        # "q" is a search parameter, but "amount" is not — the whole form is
+        # treated as a write and refused. Fail closed on the unknown field.
+        form = ('<form action="/filter" method="post">'
+                '<input name="q"><input name="amount"></form>')
+        fetched = serve(monkeypatch, {"/": page(extra=form)})
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+        assert "/filter" not in fetched
+        assert result["forms_submitted_count"] == 0
+
+    async def test_a_form_results_page_contributes_object_references(
+        self, engagement, monkeypatch
+    ) -> None:
+        await register(engagement)
+        # A search results page is the classic IDOR entrance: it lists records
+        # reached only by submitting the form, each carrying someone's id.
+        form = '<form action="/search" method="get"><input name="q"></form>'
+        fetched = serve(monkeypatch, {
+            "/": page(extra=form),
+            "/search": page("/orders/1042", "/orders/8899"),
+            "/orders/1042": page(),
+            "/orders/8899": page(),
+        })
+        result = await ac.auth_crawl(f"{HOST}/", session="alice")
+        assert "/search" in fetched
+        # The results page's links were followed — the references came from the
+        # page the form returned, which no link from the entry pointed at.
+        assert "/orders/1042" in fetched
+        assert f"{HOST}/orders/1042" in [p["url"] for p in result["pages"]]
+
+
 class TestDiscoveryIsNotTheAttack:
     async def test_item_urls_from_a_collection_are_not_fetched(
         self, engagement, monkeypatch

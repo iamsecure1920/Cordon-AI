@@ -40,9 +40,13 @@ an operator can see what came from JavaScript rather than from a link.
 
 What it does not do
 -------------------
-No forms are submitted, no method other than GET is used, and nothing is
-written. Discovered forms are *reported* — they are the state-changing surface,
-and deciding to exercise it is a human's call under the program's rules.
+Only read-only forms are submitted, and they are submitted with empty values —
+the point is the page the form *returns*, not a state change. A form whose
+method is GET is submitted; a POST form is submitted only when every field name
+is a search/filter parameter and neither the action nor any field carries a
+state-changing verb. Login, registration, comment, checkout and delete forms are
+reported and never touched — deciding to exercise those is a human's call under
+the program's rules.
 
 A path mined out of JavaScript is still a path, and the enumerate/dereference
 line holds there too: ``/api/orders`` is a route the application calls and
@@ -270,7 +274,7 @@ def _object_reference(url: str) -> dict[str, Any] | None:
 
 
 def _forms(body: str, base: str) -> list[dict[str, Any]]:
-    """Forms on a page: the state-changing surface, reported and not touched."""
+    """Forms on a page: reported always, submitted only when read-only."""
     out: list[dict[str, Any]] = []
     for attrs, inner in _FORM.findall(body[:400_000]):
         found = dict(_ATTR.findall(attrs))
@@ -283,6 +287,58 @@ def _forms(body: str, base: str) -> list[dict[str, Any]]:
         if len(out) >= 20:
             break
     return out
+
+
+#: A parameter name that reads and does not write. The whitelist is the whole
+#: rule for a POST form: every field must match it, or the form is refused.
+#: An unrecognised field is treated as a write and skipped — fail closed.
+_SEARCH_FIELD = re.compile(
+    r"(?i)^(?:q|query|search|keyword|keywords|filter|filters|term|terms|text|find|s"
+    r"|lookup|sort|order|dir|page|per_page|perpage|limit|offset|from|to|since|until"
+    r"|facet|facets|category|categories|tag|tags|type|types|format|lang|language"
+    r"|locale|ref|next|return|returnurl|url|redirect|redirect_uri|dest|path)$"
+)
+
+#: A form action that changes state is never submitted, whatever its fields.
+#: Deliberately broader than _DESTRUCTIVE: a POST to /api/orders/create is a
+#: write even though no word here is "logout" or "delete".
+_MUTATING_ACTION = re.compile(
+    r"""(?ix)
+    (?: login | sign[_-]?in | sign[_-]?up | register | subscribe | unsubscribe
+      | comment | reply | message | send | post | publish | upload | checkout
+      | pay | purchase | buy | place | confirm | submit | agree | accept
+      | reset | change | update | edit | save | create | insert | add | new
+      | delete | remove | destroy | revoke | grant | ban | flag | report
+      | follow | block | approve | reject )
+    """
+)
+
+
+def _is_read_only_form(form: dict[str, Any]) -> bool:
+    """Whether auth_crawl may submit this form to discover what is behind it.
+
+    GET is submitted — the method itself is a read, and the discovery value is
+    the page it returns. POST is submitted only when *every* field name matches
+    the search/filter whitelist and neither the action nor any field carries a
+    state-changing verb. A login form (``email``, ``password``), a comment form
+    (``body``), a search form with a stray ``submit`` input — all refused, because
+    a field outside the whitelist is treated as a write.
+    """
+    fields = form.get("fields") or []
+    action = form.get("action", "")
+    if _MUTATING_ACTION.search(action):
+        return False
+    if form.get("method") == "GET":
+        return bool(fields)
+    return bool(fields) and all(_SEARCH_FIELD.match(f) for f in fields)
+
+
+def _form_signature(form: dict[str, Any]) -> str:
+    """Identity of a form for deduplication, so one search box is not re-submitted
+    on every page that carries it."""
+    return f"{form.get('method', 'GET')}:{form.get('action', '')}:" + ",".join(
+        form.get("fields") or []
+    )
 
 
 def _json_refs(
@@ -350,10 +406,14 @@ def _links(body: str, base: str) -> list[str]:
     tags={"auth", "crawl", "idor"},
     estimated_requests=150,
     risk_notes=[
-        "Browses an application while logged in as the operator's account. GET only, "
-        "no forms submitted, but it visits real pages with real credentials.",
+        "Browses an application while logged in as the operator's account. It visits "
+        "real pages with real credentials, and submits read-only forms (GET forms, "
+        "and POST forms whose fields are all search/filter parameters) with empty "
+        "values to reach pages a link crawler cannot.",
         "Links that look destructive — logout, delete, cancel, revoke — are skipped "
         "rather than fetched, because GET does not guarantee a page is read-only.",
+        "State-changing forms (login, registration, checkout, comment, any form with a "
+        "field outside the search/filter whitelist) are reported and never submitted.",
         "On a single-page app it fetches the shell's own script bundles and seeds the "
         "crawl with the same-origin paths they name. Those paths are fetched under "
         "every guard a link gets; ones carrying an object id are recorded, not fetched.",
@@ -369,6 +429,7 @@ async def auth_crawl(
     max_depth: int = 3,
     liveness_every: int = 10,
     max_bundles: int = 6,
+    max_form_submissions: int = 20,
     timeout: int = 15,
 ) -> dict[str, Any]:
     """Crawl an application as a registered session and map what is behind the login.
@@ -388,8 +449,9 @@ async def auth_crawl(
     of the map a link crawler alone would have missed. ``max_bundles`` bounds
     the extra requests.
 
-    Returns the discovered URLs, the forms found (reported, never submitted),
-    and — the useful part — the URLs carrying an object reference, which is what
+    Returns the discovered URLs, the forms found (read-only ones submitted with
+    empty values, state-changing ones reported and never touched), and — the
+    useful part — the URLs carrying an object reference, which is what
     ``authz_compare`` must be pointed at. A URL with no identifier in it belongs
     to everyone and proves nothing about access control.
     """
@@ -481,6 +543,11 @@ async def auth_crawl(
         route_templates: list[str] = []
         errors: list[str] = []
         session_died_at: int | None = None
+        # Read-only forms submitted, and the pages they returned. Bounded by
+        # max_form_submissions so one search box is not re-submitted on every
+        # page that carries it, and a deep crawl cannot become a fuzz run.
+        submitted_forms: set[str] = set()
+        form_results: list[dict[str, Any]] = []
         # Responses that look exactly like the anonymous entry page. Most
         # applications answer an expired session with one generic "please sign
         # in" body, so this catches expiry on the page it happens rather than
@@ -606,6 +673,75 @@ async def auth_crawl(
                     seeds_from_js.append(url)
                 enqueue(seeds_from_js, depth, "js")
 
+        async def submit_read_only_form(
+            form: dict[str, Any], page_url: str, depth: int
+        ) -> None:
+            """Submit one read-only form and mine the page it returns.
+
+            Only :func:`_is_read_only_form` forms reach this — GET forms and
+            POST forms whose every field is a search/filter parameter. Empty
+            values are sent: the discovery value is the *page the form returns*
+            (links, JSON, object references), not the result of any particular
+            query, and empty input is the smallest request that reveals it.
+
+            The returned page is mined for links and JSON references exactly as
+            a crawled page is, so a search results page — which no link points
+            at — still contributes its object references and its own links.
+            """
+            if len(form_results) >= max_form_submissions:
+                skip("form_budget_exhausted")
+                return
+            signature = _form_signature(form)
+            if signature in submitted_forms:
+                return
+            submitted_forms.add(signature)
+
+            action = form["action"]
+            action_host = urlsplit(action).hostname or ""
+            if action_host != host:
+                skip("form_action_off_origin")
+                return
+            if not engagement.scope.check(action_host).in_scope:
+                skip("out_of_scope")
+                return
+            if _DESTRUCTIVE.search(action):
+                skip("destructive")
+                return
+
+            method = form.get("method", "GET")
+            data = {f: "" for f in form.get("fields") or []}
+            async with engagement.limiter.slot(host=action):
+                try:
+                    if method == "POST":
+                        result = await client.post(action, data=data, headers=auth_headers)
+                    else:
+                        result = await client.get(action, params=data, headers=auth_headers)
+                except httpx.HTTPError as exc:
+                    errors.append(f"{action}: {type(exc).__name__}")
+                    return
+
+            body = result.text or ""
+            kind = "json" if "json" in result.headers.get("content-type", "") else "html"
+            form_results.append({
+                "action": action,
+                "method": method,
+                "status": result.status_code,
+                "bytes": len(body),
+                "kind": kind,
+                "from": page_url,
+                "object_reference": _object_reference(action),
+            })
+            if kind == "json":
+                found: list[str] = []
+                try:
+                    _json_refs(json.loads(body), action, found, item_candidates)
+                except (ValueError, TypeError):
+                    errors.append(f"{action}: unparsable JSON")
+                    found = []
+            else:
+                found = _links(body, action)
+            enqueue(found, depth, "form")
+
         while queue and len(pages) < max_pages and session_died_at is None:
             url, depth = queue.popleft()
 
@@ -642,12 +778,20 @@ async def auth_crawl(
                 "object_reference": _object_reference(url),
             })
             if kind == "html":
-                for form in _forms(body, url):
+                page_forms = _forms(body, url)
+                for form in page_forms:
                     if form not in forms:
                         forms.append(form)
 
             if depth >= max_depth:
                 continue
+
+            # Read-only forms reveal the surface a link crawler cannot: a search
+            # or filter endpoint is reached only by submitting it, and no link
+            # points at its results. Submitted under every guard a GET gets.
+            for form in page_forms if kind == "html" else []:
+                if _is_read_only_form(form):
+                    await submit_read_only_form(form, url, depth)
             # An SPA shell: no links, no forms, and the entire application
             # inside the scripts it loads.
             if kind == "html" and _SPA_SHELL.search(body[:200_000]):
@@ -699,6 +843,8 @@ async def auth_crawl(
         "pages_crawled": len(pages),
         "pages": pages[:200],
         "forms": forms,
+        "forms_submitted": form_results,
+        "forms_submitted_count": len(form_results),
         # The payload. Everything else is context for this list.
         "object_reference_urls": [
             {"url": p["url"], "reference": p["object_reference"]} for p in with_refs
@@ -728,6 +874,8 @@ async def auth_crawl(
             "js_references_not_fetched": skipped.get("js_object_reference_not_fetched", 0),
             "js_route_templates": route_templates[:40],
             "max_bundles": max_bundles,
+            "max_form_submissions": max_form_submissions,
+            "forms_submitted": len(form_results),
             "stopped_because": (
                 "session_expired" if session_died_at is not None
                 else "page_budget" if len(pages) >= max_pages
@@ -782,10 +930,12 @@ def _note(died_at: int | None, pages: int, refs: int, queued: int, js_pages: int
             "surface, bounded by max_pages/max_depth, not the whole of it." + via_js
         )
     reach = (
-        "links, plus the paths the script bundles name."
+        "links, the paths the script bundles name, and the read-only forms found "
+        "on them."
         if js_pages else
-        "links only. Anything reached solely by a form submission or an XHR the "
-        "pages do not link to is not in here."
+        "links and the read-only forms found on them. Anything reached only by a "
+        "state-changing form (login, checkout, comment) or an XHR the pages do "
+        "not link to is not in here."
     )
     return (
         f"{pages} pages crawled, {refs} carrying an object reference. The queue "

@@ -1,0 +1,9 @@
+{
+  "flags": "HnriP",
+  "patterns": [
+    "\\b(select|insert|update|delete|union)\\b\\s+(?:\\*|\\w|\\s|,|\\.){0,80}\\b(from|into|set|where|values)\\b",
+    "(select\\s+.{0,80}?\\s+from\\s+|union\\s+(?:all\\s+)?select\\s+|insert\\s+into\\s+|order\\s+by\\s+|group\\s+by\\s+|having\\s+\\w)",
+    "(mysql_query|mysqli_query|pg_query|sqlite_query|\\$wpdb->|executeQuery|createQuery|prepareStatement|createNativeQuery|rawQuery|execute\\()\\s*\\(?[^)]{0,120}(\\$|req|request|input|param|query|search|user|id|name)",
+    "[?&](q|query|search|s|keyword|key|term|filter|where)=['\"]?[^&\\s\"']{1,80}"
+  ]
+}

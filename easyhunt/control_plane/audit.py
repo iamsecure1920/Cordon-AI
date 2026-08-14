@@ -41,6 +41,13 @@ _SECRET_KEYS = {
     "api_key", "apikey", "token", "password", "passwd", "secret", "authorization",
     "cookie", "cookies", "session", "sessions", "aws_secret_access_key",
     "private_key", "bearer", "headers", "auth", "credential", "credentials",
+    # account_register accepts these as arguments and returns them once to the
+    # operator; they are the test account's login pair, not public data. An
+    # email is PII and a username plus password is the credential. Keeping them
+    # out of the hash-chained, kept-forever audit log is the same rule that
+    # already applies to ``password`` — and ``password`` is redacted here while
+    # ``username``/``email`` are not, which is a leak of two thirds of the pair.
+    "email", "username",
 }
 
 # Name fragments that mark a value as a credential. The patterns above catch

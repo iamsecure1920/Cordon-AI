@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import os
 import signal
+import sys
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -26,6 +27,42 @@ from easyhunt.errors import ToolFailed
 __all__ = ["ProcResult", "run_process", "stream_process"]
 
 DEFAULT_MAX_OUTPUT = 32 * 1024 * 1024  # 32 MiB held in memory per stream
+
+
+def _set_pdeathsig() -> None:
+    """Make this child die when its parent dies, on Linux.
+
+    ``start_new_session=True`` detaches the child into its own process group so
+    the timeout path can ``killpg`` it — children included. That same detachment
+    is the hole this closes: an *externally* killed parent (a terminal timeout on
+    ``hunt.sh``, a Ctrl+C on the MCP server) kills the driver but not the child,
+    because the child no longer shares the driver's process group. Measured on a
+    live run — a ``subdominator`` scan kept hitting the target for an hour after
+    the engagement believed the takeover phase had stopped.
+
+    ``PR_SET_PDEATHSIG`` asks the kernel to deliver a signal to this child the
+    moment its parent exits, however it exits. SIGKILL is deliberate: the parent
+    is gone and cannot escalate a SIGTERM that the tool ignores, and a security
+    tool that keeps running against a target the operator believes stopped is the
+    failure this whole module exists to prevent.
+
+    This runs in the child between fork and exec via ``preexec_fn``. The subprocess
+    module warns against preexec_fn when threads exist; the scan path is
+    single-threaded (the event loop owns the only thread), so the fork is safe
+    here. On non-Linux the prctl constant does not exist and this is a no-op.
+    """
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+
+        # PR_SET_PDEATHSIG == 1; the kernel sends the child this signal when its
+        # parent dies. ctypes (no compile, no extension) is the least invasive way
+        # to reach a libc call the stdlib does not expose.
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.prctl(1, signal.SIGKILL)
+    except Exception:  # noqa: BLE001 — the guard is best-effort, never fatal
+        return
 
 
 @dataclass
@@ -65,8 +102,16 @@ class ProcResult:
 
 
 def _spawn_kwargs() -> dict[str, object]:
-    # New session so the timeout path can signal the entire process group.
-    return {"start_new_session": True} if hasattr(os, "setsid") else {}
+    # New session so the timeout path can signal the entire process group, plus
+    # PDEATHSIG so a tool whose *parent* dies externally is killed rather than
+    # orphaned (see _set_pdeathsig). Both are POSIX-only; on other platforms the
+    # timeout path falls back to terminate()/kill() on the lone process.
+    kwargs: dict[str, object] = {}
+    if hasattr(os, "setsid"):
+        kwargs["start_new_session"] = True
+    if sys.platform.startswith("linux"):
+        kwargs["preexec_fn"] = _set_pdeathsig
+    return kwargs
 
 
 async def _kill_tree(proc: asyncio.subprocess.Process) -> None:

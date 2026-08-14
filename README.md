@@ -1,15 +1,27 @@
 <div align="center">
 
-# EasyHunt AI
+![EasyHunt AI](docs/easyhunt-hero.svg)
 
 **An agentic VAPT orchestrator where the control plane — not the model — is the security boundary.**
 
-[![Tests](https://img.shields.io/badge/tests-1%2C266-brightgreen)](#development)
-[![Tools](https://img.shields.io/badge/tools-81%20catalogued-blue)](#every-tool-it-drives)
-[![MCP](https://img.shields.io/badge/MCP-66%20tools-8A2BE2)](#mcp-tools-by-phase)
+[![Tests](https://img.shields.io/badge/tests-1%2C958-brightgreen)](#development)
+[![Tools](https://img.shields.io/badge/tools-82%20catalogued-blue)](#every-tool-it-drives)
+[![MCP](https://img.shields.io/badge/MCP-80%20tools-8A2BE2)](#mcp-tools-by-phase)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#tech-stack)
 [![Sandbox](https://img.shields.io/badge/sandbox-read--only%20%C2%B7%20caps%20dropped-orange)](#isolation)
 [![License](https://img.shields.io/badge/license-see%20LICENSE-lightgrey)](LICENSE)
+
+</div>
+
+<div align="center">
+
+### The control plane — one call, end to end
+
+![One tool call through the control plane](docs/easyhunt-flow.svg)
+
+### The engagement pipeline — each phase feeds the next
+
+![The engagement pipeline](docs/easyhunt-pipeline.svg)
 
 </div>
 
@@ -113,6 +125,8 @@ mindmap
       8 phase skills
     L4 Method
       OWASP WSTG · 115 tests
+      PAT technique index · 96 records
+      coverage matrix · 27 bug classes
       adversarial triage taskflows
       payload store · 62 vetted lists
     L3 Control plane
@@ -124,7 +138,7 @@ mindmap
       sandbox · read-only, caps dropped
       audit · hash-chained
     L2 Execution
-      73 MCP tools
+      80 MCP tools
       82 catalogued binaries
       6 engines
       Docker per invocation
@@ -164,6 +178,33 @@ flowchart TD
     style L fill:#78350f,color:#fff
     style I fill:#1e3a8a,color:#fff
     style N fill:#065f46,color:#fff
+```
+
+The same path, as a sequence — the model, the server, and the tool are separate
+actors; the server is the one that says no:
+
+```mermaid
+sequenceDiagram
+    participant M as Model (Claude CLI)
+    participant S as MCP Server
+    participant C as Control Plane
+    participant T as Tool (sandboxed)
+
+    M->>S: call tool(target, args)
+    S->>C: scope.check(target)
+    alt out of scope
+        C-->>M: scope_denied · stop
+    else in scope
+        C->>C: sanitize · budget · rate-limit
+        alt aggressive / exploit
+            C->>M: approval required
+            M-->>C: approved (human)
+        end
+        S->>T: run in container (read-only, caps dropped)
+        T-->>S: raw output
+        S->>C: parse · audit (hash-chained)
+        C-->>M: structured result — candidate, never silently clean
+    end
 ```
 
 ## Engagement flow
@@ -239,7 +280,9 @@ In Claude Code: `/easyhunt`.
 ./scripts/hunt.sh target.example.com --only probe,scan
 ./scripts/hunt.sh target.example.com --from scan
 
-# Exploitation — refused unless scope.yaml permits it
+# Exploitation — refused unless scope.yaml permits it. Adds the `exploit` phase
+# after `scan`: chains web_injection_probe (and, when include_heavy is set,
+# sqli_validate/xss_validate) over the discovered injection points.
 ./scripts/hunt.sh target.example.com --exploit
 ```
 
@@ -265,7 +308,7 @@ touching the run:
 | Memory | JSONL findings store · optional **Neo4j** graph · cross-engagement PoC memory |
 | Knowledge | **OWASP WSTG** — 115 tests, pinned, CC BY-SA · 62 vetted payload lists |
 | Audit | Hash-chained JSONL — tampering breaks the chain |
-| Code | ~28,500 lines · **1,399 tests** across 37 files · 84 install recipes |
+| Code | ~32,500 lines · **1,958 tests** across 49 files · 85 install recipes |
 
 ## Isolation
 
@@ -284,7 +327,7 @@ the tool store and makes a dozen tools vanish.
 
 ## Every tool it drives
 
-**73 MCP tools** over **82 catalogued binaries**.
+**80 MCP tools** over **82 catalogued binaries**.
 `·` passive · `!` aggressive · `!!` exploit — the mode decides whether a human is consulted.
 
 | Category | Binaries |
@@ -314,12 +357,12 @@ Run `easyhunt doctor` for the live picture.
 | **Ports** | `port_scan`! `service_scan`! |
 | **Takeover** | `takeover_detect`! `takeover_verify` `takeover_poc_plan` `takeover_confirm`!! |
 | **Vuln scan** | `nuclei_scan`! `jaeles_scan`! `nikto_scan`! `wapiti_scan`! `semgrep_scan` |
-| **Exploit** | `authz_compare`!! `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `smuggling_canary_probe`! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
+| **Exploit** | `authz_compare`!! `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `smuggling_canary_probe`! `web_injection_probe`!! `exploit_chain`!! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
 | **Secrets** | `secret_scan` `secret_validate`! `jwt_inspect` `source_fetch` |
 | **Cloud** | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
 | **Contracts** | `contract_static_scan` `contract_toolchain` |
 | **LLM** | `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` |
-| **Method** | `wstg_lookup` `hunt_plan` `auth_surface` `auth_crawl`! `session_register` `session_list` |
+| **Method** | `wstg_lookup` `technique_lookup` `coverage_report` `hunt_plan` `auth_surface` `auth_crawl`! `session_register` `session_list` |
 | **Triage** | `triage_findings` `triage_taskflows` `triage_canary_preview` |
 | **Report** | `report_generate` `findings_list` `finding_detail` `finding_note` |
 | **Control** | `job_status` |
@@ -333,7 +376,7 @@ L5  STRATEGY   Claude CLI — plans and decides. No network access of its own.
 L4  METHOD     8 Claude Skills, one per VAPT phase.
 L3  CONTROL    MCP server — scope, sanitize, rate-limit, approve, sandbox, audit.
 L2  EXECUTION  6 engines (BBOT · Nuclei · Jaeles · Semgrep · Osmedeus · Strix)
-               + 66 atomic wrappers, each sandboxed.
+               + 69 atomic wrappers, each sandboxed.
 L1  KNOWLEDGE  Rule packs · task graph · findings store · evidence · PoC memory.
 
                LLM traffic ──▶ OpenRouter (3 tiers, fallbacks, price ceilings)
@@ -492,7 +535,7 @@ easyhunt/
   tools/           66 wrappers, one decorator, no privileged path
   engines/         bbot · nuclei · jaeles · semgrep · osmedeus · strix
   knowledge/       findings · WSTG · payloads · graph memory
-  install/         83 recipes, identity-verified
+  install/         85 recipes, identity-verified
   llm/             OpenRouter routing, 3 tiers
 skills/            8 phase playbooks for the agent
 rules/             detection packs — YAML, no code
@@ -503,7 +546,7 @@ docs/              architecture · bootstrap · payloads
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 1,399 tests
+.venv/bin/python -m pytest tests/ -q          # 1,958 tests
 .venv/bin/ruff check easyhunt/ tests/
 easyhunt doctor                                # executed, not just found on PATH
 ```

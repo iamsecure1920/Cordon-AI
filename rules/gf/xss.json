@@ -1,0 +1,13 @@
+{
+  "flags": "HnriP",
+  "patterns": [
+    "(document\\.write|document\\.writeln|document\\.cookie|document\\.domain)\\s*\\(?[^)]{0,80}(location\\.(?:hash|search|href|pathname)|document\\.referrer|documentURI|baseURI|window\\.name)",
+    "(innerHTML|outerHTML|insertAdjacentHTML|write|writeln)\\s*[=(]\\s*[^;]{0,80}(location\\.(?:hash|search|href)|window\\.location|document\\.referrer|params|query|search|input|request)",
+    "(eval|setTimeout|setInterval|new\\s+Function|Function)\\s*\\(\\s*[^)]{0,80}(location|hash|search|href|referrer|input|param|query|request)",
+    "<script[^>]*>[^<]{0,200}(\\{\\{|\\$\\{|<%=|\\{%|#\\{|server|request|param|query)",
+    "(on(?:click|load|error|mouseover|mouseout|focus|change|submit|keyup|keydown))\\s*=\\s*[\"']?[^\"'>]{0,80}(location|hash|search|href|input|param|query|request)",
+    "(javascript|vbscript|data\\s*:\\s*text\\/html)\\s*:\\s*[^\"'\\s]{0,80}(location|hash|search|href|input|param|query)",
+    "(location\\.(?:hash|search|href|replace|assign)\\s*=\\s*[^;]{0,80}(input|param|query|request|location))",
+    "[?&](q|query|search|s|keyword|term|text|name|msg|message|title|value|payload|input|redirect|url|next|return|callback|cb|ref|r)=[^&\\s\"']{1,80}"
+  ]
+}

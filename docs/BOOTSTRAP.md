@@ -97,11 +97,11 @@ work — only the AI triage and narrative report synthesis are unavailable.
 Do not trust "it installed". Check these four:
 
 ```bash
-easyhunt doctor                    # 1. expect ~77/81 tools, 0 broken
+easyhunt doctor                    # 1. expect ~79/82 tools, 0 broken
 ```
 
 ```bash
-.venv/bin/python -m pytest -q      # 2. expect 601 passed
+.venv/bin/python -m pytest -q      # 2. expect 1,958 passed
 ```
 
 ```bash

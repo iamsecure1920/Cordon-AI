@@ -180,13 +180,43 @@ CLOUDPEASS = register_spec(
         homepage="https://github.com/carlospolop/CloudPEASS", version_args=["--help"],
         arg_policy=ArgPolicy(
             tool="cloudpeass",
-            allowed_flags={"--profile", "--out-json", "--threads", "--not-use-ht-ai", "--region"},
-            boolean_flags={"--not-use-ht-ai"},
+            allowed_flags={
+                "--profile", "--access-key-id", "--secret-access-key",
+                "--session-token", "--out-json-path", "--threads", "--region",
+                "--aws-services", "--debug", "--skip-iam-policies",
+                "--skip-simulation", "--skip-bruteforce", "--skip-managed-policies-guess",
+            },
+            boolean_flags={
+                "--debug", "--skip-iam-policies", "--skip-simulation",
+                "--skip-bruteforce", "--skip-managed-policies-guess",
+            },
             value_patterns={
                 "--profile": re.compile(r"[A-Za-z0-9._-]{1,64}"),
                 "--region": re.compile(r"[a-z0-9-]{4,32}"),
+                "--access-key-id": re.compile(r"[A-Z0-9]{8,32}"),
+                "--secret-access-key": re.compile(r"[A-Za-z0-9/+=]{8,128}"),
+                "--session-token": re.compile(r"[A-Za-z0-9/+=._-]{16,2048}"),
+                "--out-json-path": re.compile(r"[A-Za-z0-9._/-]{1,256}"),
+                "--aws-services": re.compile(r"[a-z0-9,-]{1,256}"),
             },
             numeric_caps={"--threads": 20},
+        ),
+    )
+)
+
+GF = register_spec(
+    ToolSpec(
+        name="gf", binary="gf", license="MIT",
+        homepage="https://github.com/tomnomnom/gf", version_args=["-h"],
+        arg_policy=ArgPolicy(
+            tool="gf",
+            # gf's whole CLI is three boolean flags plus a pattern name and
+            # optional files. `-save` writes a pattern into ~/.gf/ — a local
+            # convenience, not something the sanitizer needs to defend against.
+            allowed_flags={"-save", "-list", "-dump"},
+            boolean_flags={"-save", "-list", "-dump"},
+            allow_positional=True,
+            positional_pattern=re.compile(r"[A-Za-z0-9._/-]{1,512}"),
         ),
     )
 )
@@ -212,5 +242,5 @@ XSSTRIKE = register_spec(
 #: Everything defined here, for tests and documentation.
 EXTRA_SPECS = [
     UNCOVER, SECRETFINDER, GOBUSTER, DIRSEARCH, SUBJACK, SUBDOMINATOR,
-    SUBDOMAINSLEUTH, GITDORKER, CLOUDPEASS, XSSTRIKE,
+    SUBDOMAINSLEUTH, GITDORKER, CLOUDPEASS, XSSTRIKE, GF,
 ]

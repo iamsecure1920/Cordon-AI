@@ -10,7 +10,10 @@ from easyhunt.knowledge.findings import Severity, Status
 from easyhunt.report.synthesize import generate_report
 from easyhunt.tools.base import easyhunt_tool
 
-__all__ = ["findings_list", "job_status", "report_generate", "wstg_lookup"]
+__all__ = [
+    "coverage_report", "findings_list", "job_status", "report_generate",
+    "technique_lookup", "wstg_lookup",
+]
 
 
 @easyhunt_tool(
@@ -266,4 +269,199 @@ async def wstg_lookup(
         "phases": index.phases(),
         "attribution": attribution,
         "note": "Call again with query, test_id, phase, or technologies.",
+    }
+
+
+@easyhunt_tool(
+    phase="method", mode="passive", targets_arg=None, timeout=30,
+    name="technique_lookup", tags={"method", "inspection"},
+    estimated_requests=0, budget_exempt=True,
+)
+async def technique_lookup(
+    query: str | None = None,
+    class_name: str | None = None,
+    phase: str | None = None,
+    technologies: str | None = None,
+    tool: str | None = None,
+) -> dict[str, Any]:
+    """Query the PayloadsAllTheThings technique index for how to test a bug class.
+
+    The counterpart to ``wstg_lookup``: WSTG says what to check, this says how.
+    Each record names the EasyHunt tools that test the class, the vetted payload
+    lists, and the gf pattern packs that correspond to it. Retrieval, not
+    automation — nothing here fires anything, and it costs no budget.
+
+    Five ways in, most specific first:
+
+    * ``class_name``  — one technique in full ("sql-injection", "open-redirect")
+    * ``tool``        — every technique a given EasyHunt tool covers ("sqli_validate")
+    * ``technologies``— comma-separated stack from http_probe ("Rails,MongoDB,GraphQL")
+    * ``query``       — free text ("jwt forgery", "deserialization")
+    * ``phase``       — everything in a phase (input_validation, authentication …)
+    """
+    from easyhunt.knowledge.techniques import load_index
+
+    index = load_index()
+    if not index.available:
+        return {
+            "ok": False,
+            "error": "index_not_built",
+            "message": (
+                "The technique index has not been built. Run: "
+                "python3 scripts/fetch_pat.py --fetch"
+            ),
+        }
+
+    attribution = {
+        "source": index.source.get("attribution"),
+        "license": index.source.get("license"),
+        "pinned_commit": (index.source.get("commit") or "")[:12],
+    }
+
+    if class_name:
+        tech = index.get(class_name)
+        if tech is None:
+            return {
+                "ok": False,
+                "error": "unknown_class",
+                "message": f"No technique with class {class_name!r}.",
+                "attribution": attribution,
+                "known_classes": index.classes(),
+            }
+        return {"ok": True, "technique": tech, "attribution": attribution}
+
+    if tool:
+        matches = index.for_tool(tool)
+        return {
+            "ok": True,
+            "tool": tool,
+            "count": len(matches),
+            "techniques": [
+                {k: t[k] for k in ("class", "title", "phase", "tools")} for t in matches
+            ],
+            "attribution": attribution,
+        }
+
+    if technologies:
+        techs = [t.strip() for t in technologies.split(",") if t.strip()]
+        matches = index.for_stack(techs)
+        return {
+            "ok": True,
+            "matched_on": techs,
+            "count": len(matches),
+            "techniques": [
+                {k: t[k] for k in ("class", "title", "phase", "tools")} for t in matches
+            ],
+            "attribution": attribution,
+        }
+
+    if query:
+        matches = index.search(query)
+        return {
+            "ok": True,
+            "query": query,
+            "count": len(matches),
+            "techniques": [
+                {k: t[k] for k in ("class", "title", "phase", "summary")} for t in matches
+            ],
+            "attribution": attribution,
+        }
+
+    if phase:
+        matches = index.by_phase(phase)
+        return {
+            "ok": True,
+            "phase": phase,
+            "count": len(matches),
+            "techniques": [
+                {k: t[k] for k in ("class", "title", "tools", "payloads", "gf")}
+                for t in matches
+            ],
+            "attribution": attribution,
+        }
+
+    return {
+        "ok": True,
+        "total_techniques": len(index.techniques),
+        "classes": index.classes(),
+        "attribution": attribution,
+        "note": "Call again with class_name, tool, technologies, query, or phase.",
+    }
+
+
+@easyhunt_tool(
+    phase="method", mode="passive", targets_arg=None, timeout=30,
+    name="coverage_report", tags={"method", "inspection"},
+    estimated_requests=0, budget_exempt=True,
+)
+async def coverage_report(
+    class_name: str | None = None,
+    status: str | None = None,
+    gaps_only: bool = False,
+) -> dict[str, Any]:
+    """Report bug-class coverage: what EasyHunt finds, confirms, and bypasses.
+
+    The completeness check a client asks for before a test. Every row grades a
+    bug class as ``auto`` (a validator proves it), ``detect-only`` (found but not
+    confirmed), or ``manual`` (inherently judgement-shaped). A class is never
+    silently absent — gaps are named, with what would close them. Touches nothing
+    and costs no budget.
+
+    * ``class_name`` — one class in full ("sql-injection", "xxe-injection")
+    * ``status``      — everything of one grade ("auto", "detect-only", "manual")
+    * ``gaps_only``   — just the non-auto classes, the watch-list
+    """
+    from easyhunt.knowledge.coverage import load_coverage
+
+    index = load_coverage()
+
+    if class_name:
+        row = index.get(class_name)
+        if row is None:
+            return {
+                "ok": False,
+                "error": "unknown_class",
+                "message": f"No coverage row for {class_name!r}.",
+                "known_classes": sorted(r["class"] for r in index.all()),
+            }
+        return {"ok": True, "coverage": row}
+
+    if status:
+        rows = index.by_status(status)
+        return {
+            "ok": True,
+            "status": status,
+            "count": len(rows),
+            "classes": [
+                {k: r[k] for k in ("class", "title", "detection", "validation")}
+                for r in rows
+            ],
+        }
+
+    if gaps_only:
+        rows = index.gaps()
+        return {
+            "ok": True,
+            "gaps": [
+                {k: r[k] for k in ("class", "title", "status", "validation")}
+                for r in rows
+            ],
+            "note": (
+                "These classes are not auto-validated. detect-only means a lead "
+                "needs human confirmation; manual means the class is judgement-"
+                "shaped and driven by hunt_plan/authz_compare."
+            ),
+        }
+
+    return {
+        "ok": True,
+        "summary": index.summary(),
+        "total": len(index.all()),
+        "classes": [
+            {
+                k: r[k]
+                for k in ("class", "title", "status", "validation", "bypass")
+            }
+            for r in index.all()
+        ],
     }

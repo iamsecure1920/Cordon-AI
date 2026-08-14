@@ -1,0 +1,9 @@
+{
+  "flags": "HnriP",
+  "patterns": [
+    "(exec|system|shell_exec|passthru|popen|proc_open|pcntl_exec)\\s*\\(?[^)]{0,100}(\\$|req|request|input|param|cmd|command|host|ip|url|name|ping|arg)",
+    "(eval|assert)\\s*\\(?[^)]{0,100}(\\$|req|request|input|param|code|cmd)",
+    "(subprocess|os\\.system|os\\.popen|commands\\.getoutput|child_process|Runtime\\.getRuntime\\(\\)\\.exec|ProcessBuilder|exec\\(|spawn|fork|execSync|spawnSync)\\s*\\(?[^)]{0,100}(\\$|req|request|input|param|cmd|command|arg|host|ip|name)",
+    "[?&](cmd|command|exec|execute|run|shell|ping|host|ip|arg|args|action)=[^&\\s\"']{1,80}"
+  ]
+}

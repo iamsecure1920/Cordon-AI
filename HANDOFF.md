@@ -8,6 +8,20 @@ build next.
 **Verified 2026-08-08.** Every number here was measured, not recalled. Re-derive
 before trusting: `easyhunt doctor`, `pytest -q`.
 
+**Amended 2026-08-14.** Three things landed after the 2026-08-08 sweep. Only the
+test suite was re-run for this amendment (`1853 passed, 1 skipped`) — the
+performance numbers and coverage percentages below still carry their 08-08
+measurement date and have *not* been re-derived. Treat them accordingly.
+
+- **§6c is closed.** chromium is in the image; DOM XSS is now actually exercised.
+- **`pattern_scan` is new** — gf's pattern library as pinned data. See §6f.
+- **`technique_lookup` is new** — PayloadsAllTheThings as a queryable index
+  (`knowledge/pat/index.json`, built by `scripts/fetch_pat.py`), the "how" to the
+  WSTG index's "what". See `docs/TECHNIQUES.md`.
+- **§6a advanced**: `sessions.py` +151, `auth_crawl.py` +174,
+  `exploitation.py` +131. The gap is narrower than §6a describes but not shut;
+  re-read that section against the code before trusting its shape.
+
 ---
 
 ## 1. What this is
@@ -24,12 +38,12 @@ The model never holds a shell. A jailbroken prompt cannot reach the network.
 
 | | |
 |---|---|
-| Code | ~28,500 lines |
-| MCP tools | 73 |
-| Catalogued binaries | 81 |
-| Tests | 1,786 across 38 files |
+| Code | ~32,500 lines |
+| MCP tools | 80 |
+| Catalogued binaries | 82 |
+| Tests | 1,958 across 49 files |
 | Image | `easyhunt:latest`, 4.54 GB |
-| Commits | 65 |
+| Commits | 98 |
 
 ---
 
@@ -69,7 +83,7 @@ session*.
 
 ## 3. How it is verified — three layers, each catches what the others cannot
 
-**Unit tests (1,786).** Mock the subprocess. Prove the wrapper's shape. Cannot
+**Tests (1,958).** Mock the subprocess. Prove the wrapper's shape. Cannot
 tell you whether a real binary accepts the argv.
 
 **`easyhunt doctor`.** Executes every tool *inside the container it will run
@@ -227,11 +241,26 @@ login. An SPA whose bundles cannot be read is now UNEXAMINED, not clean.
 Still open here: no headless render, so a route guarded behind a lazily-loaded
 chunk that the shell does not reference is invisible.
 
-### 6c. A headless browser in the image
+### 6c. A headless browser in the image — built
 
-`dalfox` needs one for DOM XSS and fails silently without it. The negative
-result now says so, but saying so is not covering it. Adding chromium closes
-the most common modern XSS class.
+`dalfox` needs one for DOM XSS and fails silently without it: it scans, finds
+nothing, and `xss_validate` reports "not vulnerable" for the most common modern
+XSS class.
+
+chromium is now installed in the `Dockerfile`. Two details that matter and
+should not be undone:
+
+- It is installed into `easyhunt:latest` — the image dalfox *actually* runs in
+  after the dalfox image mapping was removed — not into a separate one.
+  `_headless_available()` in `exploitation.py` probes that same image.
+- The build **asserts by running it** (`chromium --version`), not by checking
+  the path. A browser binary that cannot execute under the container's dropped
+  capabilities is present-but-dead, which is the exact failure this file keeps
+  having to guard against. That assertion is the point; a path check would
+  reintroduce the silent-skip bug one layer down.
+
+Cost: ~500 MB with its dependency tree. That is the price of a scanner that
+does not report DOM XSS as clean without ever exercising the DOM.
 
 ### 6d. `hunt_plan` has never run against a live model
 
@@ -270,6 +299,36 @@ installed — `pip install 'easyhunt-ai[llm]'`. `doctor` now reports this.
   re-check with `doctor`; a green tick prints `@image` when containerised.
 - `bootstrap.sh` has never been run end to end on a genuinely clean machine
   beyond a Debian container with Docker skipped.
+
+### 6f. `pattern_scan` — built
+
+`easyhunt/tools/pattern_scan.py`, registered in `mcp_server.py`, patterns in
+`rules/gf/` (11 packs: xss, ssrf, sqli, lfi, rce, redirect, ssti, idor, upload,
+s3-buckets, + `manifest.json`).
+
+The value of `gf` is not the binary — that is a hundred lines piping stdin
+through `grep -oP`. It is the *named pattern library*: per-bug-class regex packs
+for the sink shapes a human pentester holds in their head. This module holds
+them as data.
+
+Two decisions to preserve:
+
+- **Patterns are vetted and pinned, and fail loudly.** They live in gf's native
+  `{"flags": "HnriP", "patterns": [...]}` format, so the same files run under
+  the real `gf` binary dropped into `~/.gf/`. A bad regex, or a manifest naming
+  a missing file, fails at **import** — not silently at scan time. Same posture
+  as `scope` keeping uncompilable patterns in an `invalid` list rather than
+  dropping them.
+- **This is candidate generation, not detection.** A regex match is a *shape*,
+  not a bug. It stores `sink_candidate` assets and reports a classified list,
+  each entry naming the validator that would prove it. It files **no Findings**.
+  That is invariant 4 ("no PoC, no finding") held at the tool boundary; do not
+  "improve" it into a finder.
+
+**Counts elsewhere in this file are now stale by one.** `pattern_scan` is a new
+tool with a call site, so the "16 of 81 tools have no call site" and "82
+catalogued tools" (CLAUDE.md §2) figures predate it. Re-derive with
+`tests/test_wiring.py` rather than adjusting them by hand.
 
 ---
 

@@ -236,3 +236,82 @@ class TestAuthzCompare:
         assert result["ok"] is False
         assert result["error"] == "request_failed"
         assert "UNTESTED" in result["message"]
+
+
+@pytest.mark.asyncio
+class TestAccountRegister:
+    """Account creation is a state change, so it is gated on explicit policy."""
+
+    async def test_refused_when_the_policy_is_silent(self, engagement) -> None:
+        engagement.approval.backend = PolicyBackend(auto_approve=["account_register"])
+        result = await st.account_register(
+            host="www.example.com",
+            signup_url="https://www.example.com/signup",
+            username_field="username",
+            password_field="password",
+        )
+        # A created account persists after the scan and is someone else's data
+        # to hold. Of four programs read during this project, two allowed it
+        # and two said nothing — and silence is not permission.
+        assert result["ok"] is False
+        assert result["error"] == "self_registration_not_permitted"
+
+    async def test_a_signup_on_a_different_host_is_refused(self, engagement) -> None:
+        engagement.approval.backend = PolicyBackend(auto_approve=["account_register"])
+        engagement.scope.rules.allow_self_registration = True
+        result = await st.account_register(
+            host="www.example.com",
+            signup_url="https://evil.example.net/signup",
+            username_field="username",
+            password_field="password",
+        )
+        # The signup POST would carry credentials to a host the operator did not name.
+        assert result["ok"] is False
+        assert result["error"] == "signup_host_mismatch"
+
+    async def test_an_account_is_created_and_the_session_registered(
+        self, engagement, monkeypatch
+    ) -> None:
+        engagement.approval.backend = PolicyBackend(auto_approve=["account_register"])
+        engagement.scope.rules.allow_self_registration = True
+        import httpx
+
+        posted: dict[str, str] = {}
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            posted["url"] = str(request.url)
+            posted["body"] = request.content.decode()
+            return httpx.Response(
+                200, headers={"set-cookie": "sid=created-token; Path=/; HttpOnly"}
+            )
+
+        real = httpx.AsyncClient
+        monkeypatch.setattr(
+            httpx, "AsyncClient",
+            lambda *a, **k: real(*a, **{**k, "transport": httpx.MockTransport(handler)}),
+        )
+        result = await st.account_register(
+            host="www.example.com",
+            signup_url="https://www.example.com/signup",
+            username_field="username",
+            password_field="password",
+            email_field="email",
+            username="alice",
+            password="pw",
+            email="alice@example.com",
+            name="alice",
+        )
+        assert result["ok"] is True
+        assert posted["url"] == "https://www.example.com/signup"
+        assert "username=alice" in posted["body"]
+        assert "password=pw" in posted["body"]
+        assert "email=alice%40example.com" in posted["body"]
+        # The captured cookie becomes a registered session, not a logged secret.
+        session = engagement.sessions.get("alice")
+        assert session is not None
+        assert session.cookies["sid"] == "created-token"
+        # The generated credentials are returned for the operator and nowhere
+        # else — never written to the audit trail.
+        trail = engagement.workspace / "audit.jsonl"
+        if trail.exists():
+            assert "alice@example.com" not in trail.read_text(encoding="utf-8")

@@ -86,7 +86,10 @@ def _pd(name: str, module: str, **kwargs) -> Recipe:
     )
 
 
-def _python_repo_setup(tool: str, entry: str, *, requirements: str = "requirements.txt") -> str:
+def _python_repo_setup(
+    tool: str, entry: str, *, requirements: str = "requirements.txt",
+    deps_only: bool = False, bin_entry: str | None = None,
+) -> str:
     """Post-install for a git-cloned Python tool: private venv plus a wrapper.
 
     Each cloned tool gets its own virtualenv under its checkout. Three reasons,
@@ -101,8 +104,33 @@ def _python_repo_setup(tool: str, entry: str, *, requirements: str = "requiremen
 
     The wrapper on PATH points at that venv's Python, so the tool runs the
     dependencies it asked for.
+
+    ``deps_only`` handles the uv-managed script repos (``pyproject.toml`` with
+    ``[tool.uv] package = false`` and no ``[build-system]``). ``pip install
+    <root>`` tries to build a wheel there and fails; the correct install is the
+    declared dependencies plus running the entry script in place.
+
+    ``bin_entry`` names a console script the packaging step installed under
+    ``<root>/.venv/bin`` — used for projects whose entry uses relative imports
+    and therefore cannot be run as a bare ``python <root>/<entry>`` file.
     """
     root = f"/opt/{tool}"
+    target = f"{root}/.venv/bin/{bin_entry}" if bin_entry else f"{root}/.venv/bin/python {root}/{entry}"
+    wrapper = (
+        f"printf '#!/bin/sh\\nexec {target} \"$@\"\\n' "
+        f"> /usr/local/bin/{tool}; chmod +x /usr/local/bin/{tool}"
+    )
+    if deps_only:
+        return (
+            f"set -e; python3 -m venv {root}/.venv; "
+            f"{root}/.venv/bin/pip install -q --upgrade pip; "
+            f"{root}/.venv/bin/python - <<'PY'\n"
+            f"import tomllib, subprocess, sys\n"
+            f"d = tomllib.load(open('{root}/pyproject.toml', 'rb'))\n"
+            f"subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q',\n"
+            f"    *d['project']['dependencies']])\n"
+            f"PY\n" + wrapper
+        )
     # Dependencies are declared differently across these projects: some ship a
     # requirements.txt, some only a pyproject.toml. Try the packaging metadata
     # first, then requirements. Failure is NOT swallowed — a tool whose
@@ -115,9 +143,7 @@ def _python_repo_setup(tool: str, entry: str, *, requirements: str = "requiremen
         f"  {root}/.venv/bin/pip install -q {root}; "
         f"elif [ -f {root}/{requirements} ]; then "
         f"  {root}/.venv/bin/pip install -q -r {root}/{requirements}; "
-        f"fi; "
-        f"printf '#!/bin/sh\\nexec {root}/.venv/bin/python {root}/{entry} \"$@\"\\n' "
-        f"> /usr/local/bin/{tool}; chmod +x /usr/local/bin/{tool}"
+        f"fi; " + wrapper
     )
 
 
@@ -226,7 +252,10 @@ _add(Recipe(tool="arjun", method="pipx", package="arjun", category="endpoints",
             license="AGPL-3.0", caveat="AGPL-3.0."))
 _add(Recipe(tool="paramspider", method="git", category="endpoints", license="MIT",
             package="https://github.com/devanshbatham/ParamSpider",
-            clone_to="/opt/paramspider", post_install=_python_repo_setup("paramspider", "paramspider/main.py")))
+            clone_to="/opt/paramspider",
+            # main.py uses `from . import client`, so it cannot run as a bare
+            # file — run the console script setup.py installs instead.
+            post_install=_python_repo_setup("paramspider", "paramspider/main.py", bin_entry="paramspider")))
 _add(Recipe(tool="ffuf", method="go", package="github.com/ffuf/ffuf/v2@latest",
             category="endpoints", license="MIT", core=True))
 _add(Recipe(tool="feroxbuster", method="script", category="endpoints", license="MIT",
@@ -234,7 +263,9 @@ _add(Recipe(tool="feroxbuster", method="script", category="endpoints", license="
 _add(Recipe(tool="gobuster", method="go", package="github.com/OJ/gobuster/v3@latest",
             category="endpoints", license="Apache-2.0"))
 _add(Recipe(tool="dirsearch", method="pipx", package="dirsearch", category="endpoints",
-            license="GPL-2.0"))
+            license="GPL-2.0",
+            post_install="pipx runpip dirsearch install 'setuptools<81'",
+            caveat="Imports pkg_resources, which setuptools>=81 removed; pin below 81."))
 
 # --------------------------------------------------------------------------- #
 # JavaScript
@@ -252,6 +283,15 @@ _add(Recipe(tool="secretfinder", method="git", category="js", license="GPL-3.0",
             package="https://github.com/m4ll0k/SecretFinder",
             clone_to="/opt/secretfinder",
             post_install=_python_repo_setup("secretfinder", "SecretFinder.py")))
+_add(Recipe(tool="gf", method="go", package="github.com/tomnomnom/gf@latest",
+            category="js", license="MIT",
+            caveat=(
+                "A grep wrapper whose value is its pattern library, not the binary. "
+                "EasyHunt's pattern_scan runs the same vetted rules/gf/ patterns "
+                "natively, so gf is only needed for interactive use — and then only "
+                "with a ~/.gf/ (or ~/.config/gf/) pattern directory, without which "
+                "it does nothing."
+            )))
 
 # --------------------------------------------------------------------------- #
 # Ports — all three want raw sockets at run time
@@ -276,7 +316,16 @@ _add(Recipe(tool="subzy", method="go", package="github.com/PentestPad/subzy@late
 _add(Recipe(tool="dnsreaper", method="git", category="takeover", license="AGPL-3.0",
             package="https://github.com/punk-security/dnsReaper",
             clone_to="/opt/dnsreaper",
-            post_install=_python_repo_setup("dnsreaper", "main.py"),
+            # main.py does `import providers` relative to the repo root, so it
+            # must run from there; google-cloud-dns imports pkg_resources, which
+            # setuptools>=81 removed.
+            post_install=(
+                "set -e; python3 -m venv /opt/dnsreaper/.venv; "
+                "/opt/dnsreaper/.venv/bin/pip install -q --upgrade pip 'setuptools<81'; "
+                "/opt/dnsreaper/.venv/bin/pip install -q -r /opt/dnsreaper/requirements.txt; "
+                "printf '#!/bin/sh\\ncd /opt/dnsreaper && exec /opt/dnsreaper/.venv/bin/python main.py \"$@\"\\n' "
+                "> /usr/local/bin/dnsreaper; chmod +x /usr/local/bin/dnsreaper"
+            ),
             caveat="AGPL-3.0."))
 _add(Recipe(tool="subjack", method="go", package="github.com/haccer/subjack@latest",
             category="takeover", license="MIT"))
@@ -374,7 +423,16 @@ _add(Recipe(tool="kubescape", method="release", category="cloud", license="Apach
             caveat="Ships its own MCP server; consider connecting it directly for K8s work."))
 _add(Recipe(tool="cloudpeass", method="git", category="cloud", license="MIT",
             package="https://github.com/carlospolop/CloudPEASS", clone_to="/opt/cloudpeass",
-            post_install="pip3 install -r /opt/cloudpeass/requirements.txt 2>/dev/null || true"))
+            # Three entry scripts (AWSPEAS/AzurePEAS/GCPPEAS) importing a shared
+            # src/ package relative to the repo root. The catalogued `cloudpeass`
+            # binary maps to the AWS variant, whose flags the ToolSpec mirrors.
+            post_install=(
+                "set -e; python3 -m venv /opt/cloudpeass/.venv; "
+                "/opt/cloudpeass/.venv/bin/pip install -q --upgrade pip; "
+                "/opt/cloudpeass/.venv/bin/pip install -q -r /opt/cloudpeass/requirements.txt; "
+                "printf '#!/bin/sh\\ncd /opt/cloudpeass && exec /opt/cloudpeass/.venv/bin/python AWSPEAS.py \"$@\"\\n' "
+                "> /usr/local/bin/cloudpeass; chmod +x /usr/local/bin/cloudpeass"
+            )))
 
 # --------------------------------------------------------------------------- #
 # Exploitation
@@ -402,7 +460,10 @@ _add(Recipe(tool="xsstrike", method="git", category="exploit", license="GPL-3.0"
 _add(Recipe(tool="ssrfmap", method="git", category="exploit", license="MIT",
             package="https://github.com/swisskyrepo/SSRFmap",
             clone_to="/opt/ssrfmap",
-            post_install=_python_repo_setup("ssrfmap", "ssrfmap.py"),
+            # Upstream moved to a uv-managed repo: pyproject.toml declares
+            # `package = false` with no build backend, so `pip install .` fails
+            # to build a wheel. Install the declared deps and run in place.
+            post_install=_python_repo_setup("ssrfmap", "ssrfmap.py", deps_only=True),
             caveat=(
                 "Driven by a saved HTTP request file (-r) with the injectable parameter "
                 "named by -p; there is no URL-only mode, so it cannot be pointed at a "
@@ -580,7 +641,9 @@ _add(Recipe(tool="garak", method="pipx", package="garak", category="llmsec",
 _add(Recipe(tool="promptfoo", method="npm", package="promptfoo", category="llmsec",
             license="MIT"))
 _add(Recipe(tool="deepteam", method="pipx", package="deepteam", category="llmsec",
-            license="Apache-2.0"))
+            license="Apache-2.0", python_max="3.12",
+            post_install="pipx inject deepteam sentry-sdk",
+            caveat="Imports nntplib (removed in Python 3.13) and an undeclared sentry-sdk; pin Python <=3.12 and inject the missing dependency."))
 
 # --------------------------------------------------------------------------- #
 # Optional runtime dependencies

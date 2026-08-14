@@ -406,6 +406,27 @@ RUN apt-get update -qq && \
     npm install -g --silent retire >/dev/null 2>&1 || echo "!!! FAILED: retire"; \
     rm -rf /var/lib/apt/lists/* /root/.npm
 
+# A headless browser, for dalfox's DOM-XSS verification. Without one dalfox
+# silently skips the DOM entirely — it scans, finds nothing, and `xss_validate`
+# reports "not vulnerable" for the most common modern XSS class. The Python
+# `_headless_available()` in exploitation.py probes for chromium/chrome inside
+# the image dalfox *actually* runs in (easyhunt:latest, after the dalfox image
+# mapping was removed), so installing it here is what flips that check from
+# "DOM XSS untested" to "tested".
+#
+# chromium on bookworm is ~500 MB with its dependency tree. That is the price
+# of closing the most common modern XSS class; a scanner that reports DOM XSS
+# as clean without ever exercising the DOM costs more.
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends chromium >/dev/null 2>&1 || \
+    echo "!!! FAILED: chromium"; \
+    rm -rf /var/lib/apt/lists/*
+# Asserted by *running* it, not by checking the path: a browser binary that
+# cannot execute under the container's dropped capabilities is present-but-dead,
+# the exact failure mode this file keeps having to guard against.
+RUN chromium --version 2>&1 | grep -qi chromium \
+    || { echo "FATAL: chromium is installed but non-functional"; chromium --version 2>&1 | head -3; exit 1; }
+
 # Five Rust/Go tools shipped as prebuilt release binaries rather than built from
 # source. cargo build for these costs 20+ minutes each and is where this image
 # already learned the pinned-toolchain-plus-floating-deps lesson (rust:1.83 plus

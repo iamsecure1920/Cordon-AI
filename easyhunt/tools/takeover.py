@@ -169,6 +169,43 @@ async def _dig(host: str, record: str) -> list[str]:
 # --------------------------------------------------------------------------- #
 
 
+#: Terminal colour codes. subjack writes them into whatever file it is given, so
+#: any text comparison has to strip them first.
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+#: A hostname token, matched whole. The previous code used `host in line`, which
+#: made every parent domain a substring of its own children.
+_HOST_TOKEN = re.compile(r"\b(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", re.I)
+
+#: Phrasing that means "checked, and fine". Tested before the positive marker
+#: because "Not Vulnerable" contains "Vulnerable" — the substring trap that
+#: caused this bug now guarded against in the fix for it.
+_CLEARED = re.compile(r"(?i)\b(?:not\s+vulnerable|no[t]?\s+found|nothing\s+found|is\s+not)\b")
+
+#: Phrasing that means "this host may be claimable".
+_TAKEOVER = re.compile(r"(?i)\b(?:vulnerable|takeover|can\s+be\s+claimed|unclaimed|dangling)\b")
+
+
+def _is_takeover_hit(line: str) -> bool:
+    """Does this output line assert a takeover, or merely mention a host?
+
+    Fails CLOSED: a line whose wording is not recognised is not a hit. These
+    detectors print one line per host examined, so treating unknown phrasing as
+    a positive turns a clean estate into a full-length candidate list — which is
+    exactly what happened.
+    """
+    if not line.strip():
+        return False
+    if _CLEARED.search(line):
+        return False
+    return bool(_TAKEOVER.search(line))
+
+
+def _hosts_in(line: str) -> set[str]:
+    """Hostname tokens in a line, lowercased, matched whole."""
+    return {m.group(0).rstrip(".").lower() for m in _HOST_TOKEN.finditer(line)}
+
+
 @easyhunt_tool(
     phase="takeover", mode="aggressive", targets_arg="target", timeout=1200,
     name="takeover_detect", tags={"takeover"},
@@ -260,13 +297,33 @@ async def takeover_detect(target: str) -> dict[str, Any]:
     candidates: dict[str, dict[str, Any]] = {}
     # Line-oriented detectors: attribute each hit to the tool that found it, so
     # the report can say how many independent signatures agreed.
+    #
+    # Two bugs lived in the four lines this replaces, and both were measured
+    # against a real 141-host estate rather than reasoned about:
+    #
+    # 1. It filed a candidate whenever a hostname appeared in ANY line. subjack
+    #    prints "[Not Vulnerable] host" for every host it clears, so a run in
+    #    which subjack found NOTHING produced 141 takeover candidates — one per
+    #    host, each sourced from the line saying it was fine.
+    # 2. `host in line` is a substring test. The line for
+    #    `ads.cdn-vendor.example.com` also "matched" `cdn-vendor.example.com`
+    #    and the apex, so one host's verdict was attributed to two others.
+    #
+    # A takeover report is an assertion that somebody else can claim your DNS.
+    # 141 of those, every one false, is not noise — it is the whole output being
+    # wrong in the direction that gets a researcher's submissions closed.
+    host_set = set(hosts)
     for run, name in ((runs[0], "subzy"), (runs[2], "subjack"), (runs[3], "subdominator")):
-        for line in run.values:
-            for host in hosts:
-                if host in line:
-                    entry = candidates.setdefault(host, {"host": host, "sources": []})
-                    if name not in entry["sources"]:
-                        entry["sources"].append(name)
+        for raw_line in run.values:
+            line = _ANSI.sub("", raw_line)
+            if not _is_takeover_hit(line):
+                continue
+            # Exact host match on tokens parsed out of the line, never a
+            # substring of it.
+            for host in _hosts_in(line) & host_set:
+                entry = candidates.setdefault(host, {"host": host, "sources": []})
+                if name not in entry["sources"]:
+                    entry["sources"].append(name)
 
     if dnsreaper_out.exists():
         try:

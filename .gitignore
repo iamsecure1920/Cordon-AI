@@ -49,3 +49,6 @@ payloads/*
 # Session credentials, stored per engagement. `engagements/` already covers
 # these; named explicitly so a workspace configured elsewhere is still caught.
 sessions.json
+
+# Per-session engineering log: names live engagement targets, stays local.
+SESSION_LOG.md

@@ -51,6 +51,50 @@ class TestRecipeCoverage:
             caveat = RECIPES[name].caveat.lower()
             assert "archiv" in caveat or "retired" in caveat
 
+    def test_uv_managed_script_repo_installs_deps_not_the_package(self) -> None:
+        # ssrfmap's pyproject.toml declares `package = false` with no build
+        # backend, so `pip install <root>` fails to build a wheel. The recipe
+        # must install the declared dependencies and run the entry script in
+        # place instead.
+        post = RECIPES["ssrfmap"].post_install
+        assert "tomllib" in post and "dependencies" in post
+        assert "pip install /opt/ssrfmap" not in post
+
+
+class TestRecipeUpstreamDrift:
+    """Tools that broke against upstream changes or new runtimes.
+
+    Each was diagnosed against a live install, and the recipe now encodes the
+    fix so `easyhunt install` reproduces a working tool rather than re-hitting
+    the same failure.
+    """
+
+    def test_dirsearch_pins_setuptools_below_81(self) -> None:
+        # dirsearch imports pkg_resources, which setuptools>=81 removed.
+        assert "setuptools<81" in RECIPES["dirsearch"].post_install
+
+    def test_deepteam_pins_python_and_injects_missing_dep(self) -> None:
+        # nntplib is removed in Python 3.13 and sentry-sdk is undeclared.
+        assert RECIPES["deepteam"].python_max == "3.12"
+        assert "sentry-sdk" in RECIPES["deepteam"].post_install
+
+    def test_paramspider_runs_the_console_script_not_the_raw_file(self) -> None:
+        # main.py does `from . import client`, so a bare `python main.py` fails.
+        post = RECIPES["paramspider"].post_install
+        assert "bin/paramspider" in post
+
+    def test_dnsreaper_runs_from_repo_root_with_pkg_resources(self) -> None:
+        # main.py does `import providers` relative to the repo root, and
+        # google-cloud-dns imports pkg_resources.
+        post = RECIPES["dnsreaper"].post_install
+        assert "cd /opt/dnsreaper" in post
+        assert "setuptools<81" in post
+
+    def test_cloudpeass_wraps_the_aws_entry_from_repo_root(self) -> None:
+        post = RECIPES["cloudpeass"].post_install
+        assert "cd /opt/cloudpeass" in post
+        assert "AWSPEAS.py" in post
+
 
 class TestOrderingAndDependencies:
     def test_massdns_installs_before_shuffledns(self) -> None:
