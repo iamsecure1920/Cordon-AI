@@ -117,36 +117,52 @@ until a human or a validator proves it.
 ## The whole system in one picture
 
 ```mermaid
-mindmap
-  root((EasyHunt AI))
-    L5 Strategy
-      Claude CLI
-      no network of its own
-      8 phase skills
-    L4 Method
-      OWASP WSTG · 115 tests
-      PAT technique index · 96 records
-      coverage matrix · 27 bug classes
-      adversarial triage taskflows
-      payload store · 62 vetted lists
-    L3 Control plane
-      scope · fails closed
-      sanitize · rejects, never cleans
-      budget · USD and requests
-      rate limit · per request
-      approval · policy or human
-      sandbox · read-only, caps dropped
-      audit · hash-chained
-    L2 Execution
-      80 MCP tools
-      82 catalogued binaries
-      6 engines
-      Docker per invocation
-    L1 Knowledge
-      findings · PoC required
-      graph memory
-      detection rules
-      evidence store
+flowchart TB
+    subgraph L5["L5 · Strategy — you"]
+        S1["Claude CLI"]
+        S2["no network of its own"]
+        S3["8 phase skills"]
+    end
+
+    subgraph L4["L4 · Method"]
+        M1["OWASP WSTG · 115 tests"]
+        M2["PAT technique index · 96 records"]
+        M3["coverage matrix · 27 bug classes"]
+        M4["adversarial triage taskflows"]
+        M5["payload store · 62 vetted lists"]
+    end
+
+    subgraph L3["L3 · Control plane — the security boundary"]
+        C1["scope · fails closed"]
+        C2["sanitize · rejects, never cleans"]
+        C3["budget · USD and requests"]
+        C4["rate limit · per request"]
+        C5["approval · policy or human"]
+        C6["sandbox · read-only, caps dropped"]
+        C7["audit · hash-chained"]
+    end
+
+    subgraph L2["L2 · Execution"]
+        E1["80 MCP tools"]
+        E2["82 catalogued binaries"]
+        E3["6 engines"]
+        E4["Docker per invocation"]
+    end
+
+    subgraph L1["L1 · Knowledge"]
+        K1["findings · PoC required"]
+        K2["graph memory"]
+        K3["detection rules"]
+        K4["evidence store"]
+    end
+
+    L5 --> L4
+    L4 --> L3
+    L3 --> L2
+    L2 --> L1
+
+    style L3 fill:#7f1d1d,color:#fff
+    style L2 fill:#1e3a5f,color:#fff
 ```
 
 ## How one tool call flows
