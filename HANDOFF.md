@@ -15,6 +15,9 @@ measurement date and have *not* been re-derived. Treat them accordingly.
 
 - **§6c is closed.** chromium is in the image; DOM XSS is now actually exercised.
 - **`pattern_scan` is new** — gf's pattern library as pinned data. See §6f.
+- **`technique_lookup` is new** — PayloadsAllTheThings as a queryable index
+  (`knowledge/pat/index.json`, built by `scripts/fetch_pat.py`), the "how" to the
+  WSTG index's "what". See `docs/TECHNIQUES.md`.
 - **§6a advanced**: `sessions.py` +151, `auth_crawl.py` +174,
   `exploitation.py` +131. The gap is narrower than §6a describes but not shut;
   re-read that section against the code before trusting its shape.

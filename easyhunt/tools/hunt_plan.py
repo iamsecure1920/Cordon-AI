@@ -287,6 +287,43 @@ def _instructions(surface: dict[str, Any]) -> str:
     )
 
 
+def _enrich(proposals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach the matching technique (tool + payload + gf) to each proposal.
+
+    The technique index answers "how" — which EasyHunt tool tests the class a
+    proposal names, and which vetted payload list and gf pack belong to it. This
+    is deterministic retrieval, not a second LLM call: each proposal's category
+    and title are searched against the index and the best match's wiring is
+    copied onto the proposal, so a plan reads "test X with tool Y using list Z"
+    instead of stopping at "try X".
+    """
+    from easyhunt.knowledge.techniques import load_index
+
+    index = load_index()
+    if not index.available:
+        return proposals
+    enriched: list[dict[str, Any]] = []
+    for proposal in proposals:
+        query = " ".join(
+            str(proposal.get(k, "") or "") for k in ("category", "title")
+        ).strip()
+        matches = index.search(query, limit=1) if query else []
+        if not matches:
+            enriched.append(proposal)
+            continue
+        tech = matches[0]
+        out = dict(proposal)
+        out["technique"] = {
+            "class": tech["class"],
+            "title": tech["title"],
+            "tools": tech.get("tools", []),
+            "payloads": tech.get("payloads", []),
+            "gf": tech.get("gf", []),
+        }
+        enriched.append(out)
+    return enriched
+
+
 @easyhunt_tool(
     phase="method",
     mode="passive",
@@ -390,6 +427,9 @@ async def hunt_plan(focus: str | None = None, limit: int = 120) -> dict[str, Any
     proposals = parsed.get("proposals") or []
     # A proposal with no observation behind it is a guess wearing a citation.
     grounded = [p for p in proposals if str(p.get("observation", "")).strip()]
+    # Each proposal carries its technique wiring (tool + payload + gf) from the
+    # technique index, so the plan names the "how" as well as the "what".
+    grounded = _enrich(grounded)
 
     return {
         "ok": True,
@@ -404,6 +444,8 @@ async def hunt_plan(focus: str | None = None, limit: int = 120) -> dict[str, Any
         "note": (
             "These are TESTS TO RUN, not findings. Nothing here is evidence, and "
             "nothing here has touched the target. Every finding still needs a "
-            "reproducible PoC before it can be confirmed."
+            "reproducible PoC before it can be confirmed. Each proposal's "
+            "`technique` field names the EasyHunt tool, vetted payload list and "
+            "gf pack that correspond to it."
         ),
     }

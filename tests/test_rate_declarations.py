@@ -110,6 +110,7 @@ _SENDS_NOTHING: dict[str, str] = {
     "takeover_poc_plan": "writes the PoC steps; claiming the resource is a human's job",
     "triage_canary_preview": "fabricates decoy findings locally",
     "triage_findings": "LLM triage over stored findings; no target traffic",
+    "technique_lookup": "reads the bundled technique index",
     "triage_taskflows": "parses taskflow YAML from disk",
     "wstg_lookup": "reads the bundled WSTG index",
 }

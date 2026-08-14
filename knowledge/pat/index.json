@@ -1,0 +1,1567 @@
+{
+  "source": {
+    "repo": "https://github.com/swisskyrepo/PayloadsAllTheThings.git",
+    "commit": "3bff425aca2b020f7334f9d744eed3ca55de8cdf",
+    "license": "MIT",
+    "attribution": "PayloadsAllTheThings \u2014 github.com/swisskyrepo/PayloadsAllTheThings (Swissky and contributors)",
+    "redistribute": "MIT, with the copyright notice retained"
+  },
+  "phases": {
+    "recon": "recon",
+    "configuration": "configuration",
+    "authentication": "authentication",
+    "authorization": "authorization",
+    "session": "session",
+    "input_validation": "input_validation",
+    "client_side": "client_side",
+    "business_logic": "business_logic",
+    "api": "api",
+    "methodology": "methodology",
+    "scan": "scan",
+    "cloud": "cloud",
+    "post_exploitation": "post_exploitation"
+  },
+  "techniques": [
+    {
+      "class": "api-key-leaks",
+      "kind": "technique",
+      "title": "API Key and Token Leaks",
+      "phase": "recon",
+      "summary": "API keys and tokens are forms of authentication commonly used to manage permissions and access to both public and private services. Leaking these sensitive pieces of data can lead to unauthorized access, compromised security, and potential data breaches.",
+      "tools": [
+        "secret_scan",
+        "secret_validate",
+        "trufflehog",
+        "gitleaks"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "API Key Leaks",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/API Key Leaks"
+    },
+    {
+      "class": "account-takeover",
+      "kind": "technique",
+      "title": "Account Takeover",
+      "phase": "authentication",
+      "summary": "Account Takeover (ATO) is a significant threat in the cybersecurity landscape, involving unauthorized access to users' accounts through various attack vectors.",
+      "tools": [
+        "auth_surface",
+        "auth_crawl",
+        "jwt_inspect",
+        "secret_validate"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Account Takeover",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Account Takeover"
+    },
+    {
+      "class": "brute-force-rate-limit",
+      "kind": "technique",
+      "title": "Brute Force & Rate Limit",
+      "phase": "authentication",
+      "summary": "JA3 gathers the decimal values of the bytes for the following fields in the Client Hello packet; SSL Version, Accepted Ciphers, List of Extensions, Elliptic Curves, and Elliptic Curve Formats. It then concatenates those values together in order, using a \",\" to delimit each field and a \"-\" to delimit each value in each field.",
+      "tools": [
+        "auth_crawl",
+        "auth_surface"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Brute Force Rate Limit",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Brute Force Rate Limit"
+    },
+    {
+      "class": "business-logic-errors",
+      "kind": "technique",
+      "title": "Business Logic Errors",
+      "phase": "business_logic",
+      "summary": "Business logic errors, also known as business logic flaws, are a type of application vulnerability that stems from the application's business logic, which is the part of the program that deals with real-world business rules and processes. These rules could include things like pricing models, transaction limits, or the sequences of operations that need to be followed in a multi-step process.",
+      "tools": [
+        "hunt_plan",
+        "auth_crawl",
+        "authz_compare"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [
+        "business logic",
+        "logic flaw",
+        "step bypass"
+      ],
+      "source_path": "Business Logic Errors",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Business Logic Errors"
+    },
+    {
+      "class": "cors-misconfiguration",
+      "kind": "technique",
+      "title": "CORS Misconfiguration",
+      "phase": "configuration",
+      "summary": "A site-wide CORS misconfiguration was in place for an API domain. This allowed an attacker to make cross origin requests on behalf of the user as the application did not whitelist the Origin header and had Access-Control-Allow-Credentials: true meaning we could make requests from our attacker's site using the victim's credentials.",
+      "tools": [
+        "cors_audit",
+        "corscanner"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [
+        "cors",
+        "cross-origin"
+      ],
+      "source_path": "CORS Misconfiguration",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/CORS Misconfiguration"
+    },
+    {
+      "class": "crlf-injection",
+      "kind": "technique",
+      "title": "Carriage Return Line Feed",
+      "phase": "input_validation",
+      "summary": "CRLF Injection is a web security vulnerability that arises when an attacker injects unexpected Carriage Return (CR) (\\r) and Line Feed (LF) (\\n) characters into an application. These characters are used to signify the end of a line and the start of a new one in network protocols like HTTP, SMTP, and others. In the HTTP protocol, the CR-LF sequence is always used to terminate a line.",
+      "tools": [],
+      "payloads": [
+        "crlf.txt"
+      ],
+      "gf": [],
+      "keywords": [],
+      "source_path": "CRLF Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/CRLF Injection"
+    },
+    {
+      "class": "css-injection",
+      "kind": "technique",
+      "title": "CSS Injection",
+      "phase": "client_side",
+      "summary": "CSS Injection is a vulnerability that occurs when an application allows untrusted CSS to be injected into a web page. This can be exploited to exfiltrate sensitive data, such as CSRF tokens or other secrets, by manipulating the page layout or triggering network requests based on element attributes.",
+      "tools": [
+        "xss_validate"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "CSS Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/CSS Injection"
+    },
+    {
+      "class": "csv-injection",
+      "kind": "technique",
+      "title": "CSV Injection",
+      "phase": "business_logic",
+      "summary": "Many web applications allow the user to download content such as templates for invoices or user settings to a CSV file. Many users choose to open the CSV file in either Excel, Libre Office or Open Office. When a web application does not properly validate the contents of the CSV file, it could lead to contents of a cell or many cells being executed.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "CSV Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/CSV Injection"
+    },
+    {
+      "class": "cve-exploits",
+      "kind": "technique",
+      "title": "Common Vulnerabilities and Exposures",
+      "phase": "scan",
+      "summary": "A CVE (Common Vulnerabilities and Exposures) is a unique identifier assigned to a publicly known cybersecurity vulnerability. CVEs help standardize the naming and tracking of vulnerabilities, making it easier for organizations, security professionals, and software vendors to share information and manage risks associated with these vulnerabilities. Each CVE entry includes a brief description of the vulnerability, its potential impact, and details about affected software or systems.",
+      "tools": [
+        "nuclei_scan",
+        "semgrep_scan",
+        "wapiti_scan"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "CVE Exploits",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/CVE Exploits"
+    },
+    {
+      "class": "clickjacking",
+      "kind": "technique",
+      "title": "Clickjacking",
+      "phase": "client_side",
+      "summary": "Clickjacking is a type of web security vulnerability where a malicious website tricks a user into clicking on something different from what the user perceives, potentially causing the user to perform unintended actions without their knowledge or consent. Users are tricked into performing all sorts of unintended actions as such as typing in the password, clicking on \u2018Delete my account' button, liking a post, deleting a post, commenting on a blog. In other words all the actions that a normal user can do on a legitimate website can be done using clickjacking.",
+      "tools": [
+        "http_probe"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Clickjacking",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Clickjacking"
+    },
+    {
+      "class": "client-side-path-traversal",
+      "kind": "technique",
+      "title": "Client Side Path Traversal",
+      "phase": "client_side",
+      "summary": "Client-Side Path Traversal (CSPT), sometimes also referred to as \"On-site Request Forgery,\" is a vulnerability that can be exploited as a tool for CSRF or XSS attacks.",
+      "tools": [
+        "js_analyze"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Client Side Path Traversal",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Client Side Path Traversal"
+    },
+    {
+      "class": "command-injection",
+      "kind": "technique",
+      "title": "Command Injection",
+      "phase": "input_validation",
+      "summary": "Command injection is a security vulnerability that allows an attacker to execute arbitrary commands inside a vulnerable application.",
+      "tools": [
+        "cmdi_probe",
+        "commix",
+        "pattern_scan"
+      ],
+      "payloads": [],
+      "gf": [
+        "rce"
+      ],
+      "keywords": [
+        "cmdi",
+        "command injection",
+        "rce",
+        "os command"
+      ],
+      "source_path": "Command Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Command Injection"
+    },
+    {
+      "class": "cross-site-request-forgery",
+      "kind": "technique",
+      "title": "Cross-Site Request Forgery",
+      "phase": "session",
+      "summary": "Cross-Site Request Forgery (CSRF/XSRF) is an attack that forces an end user to execute unwanted actions on a web application in which they're currently authenticated. CSRF attacks specifically target state-changing requests, not theft of data, since the attacker has no way to see the response to the forged request. - OWASP",
+      "tools": [
+        "auth_crawl",
+        "auth_surface"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [
+        "csrf"
+      ],
+      "source_path": "Cross-Site Request Forgery",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Cross-Site Request Forgery"
+    },
+    {
+      "class": "dns-rebinding",
+      "kind": "technique",
+      "title": "DNS Rebinding",
+      "phase": "recon",
+      "summary": "DNS rebinding changes the IP address of an attacker controlled machine name to the IP address of a target application, bypassing the same-origin policy and thus allowing the browser to make arbitrary requests to the target application and read their responses.",
+      "tools": [
+        "ssrf_probe"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "DNS Rebinding",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/DNS Rebinding"
+    },
+    {
+      "class": "dom-clobbering",
+      "kind": "technique",
+      "title": "DOM Clobbering",
+      "phase": "client_side",
+      "summary": "DOM Clobbering is a technique where global variables can be overwritten or \"clobbered\" by naming HTML elements with certain IDs or names. This can cause unexpected behavior in scripts and potentially lead to security vulnerabilities.",
+      "tools": [
+        "js_analyze",
+        "xss_validate"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "DOM Clobbering",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/DOM Clobbering"
+    },
+    {
+      "class": "denial-of-service",
+      "kind": "technique",
+      "title": "Denial of Service",
+      "phase": "methodology",
+      "summary": "A Denial of Service (DoS) attack aims to make a service unavailable by overwhelming it with a flood of illegitimate requests or exploiting vulnerabilities in the target's software to crash or degrade performance. In a Distributed Denial of Service (DDoS), attackers use multiple sources (often compromised machines) to perform the attack simultaneously.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Denial of Service",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Denial of Service",
+      "note": "not tested \u2014 DoS is out of scope for authorized programs"
+    },
+    {
+      "class": "dependency-confusion",
+      "kind": "technique",
+      "title": "Dependency Confusion",
+      "phase": "scan",
+      "summary": "A dependency confusion attack or supply chain substitution attack occurs when a software installer script is tricked into pulling a malicious code file from a public repository instead of the intended file of the same name from an internal repository.",
+      "tools": [
+        "contract_toolchain"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Dependency Confusion",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Dependency Confusion"
+    },
+    {
+      "class": "directory-traversal",
+      "kind": "technique",
+      "title": "Directory Traversal",
+      "phase": "input_validation",
+      "summary": "Path Traversal, also known as Directory Traversal, is a type of security vulnerability that occurs when an attacker manipulates variables that reference files with \u201cdot-dot-slash (../)\u201d sequences or similar constructs. This can allow the attacker to access arbitrary files and directories stored on the file system.",
+      "tools": [
+        "ffuf",
+        "feroxbuster",
+        "pattern_scan"
+      ],
+      "payloads": [
+        "directory_traversal_unix.txt",
+        "directory_traversal_win.txt",
+        "lfi.txt"
+      ],
+      "gf": [
+        "lfi"
+      ],
+      "keywords": [
+        "path traversal",
+        "dot dot slash",
+        "../"
+      ],
+      "source_path": "Directory Traversal",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Directory Traversal"
+    },
+    {
+      "class": "encoding-transformations",
+      "kind": "technique",
+      "title": "Encoding and Transformations",
+      "phase": "methodology",
+      "summary": "Encoding and Transformations are techniques that change how data is represented or transferred without altering its core meaning. Common examples include URL encoding, Base64, HTML entity encoding, and Unicode transformations. Attackers use these methods as gadgets to bypass input filters, evade web application firewalls, or break out of sanitization routines.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Encoding Transformations",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Encoding Transformations"
+    },
+    {
+      "class": "external-variable-modification",
+      "kind": "technique",
+      "title": "External Variable Modification",
+      "phase": "methodology",
+      "summary": "External Variable Modification Vulnerability occurs when a web application improperly handles user input, allowing attackers to overwrite internal variables. In PHP, functions like extract($_GET), extract($_POST), or import_request_variables() can be abused if they import user-controlled data into the global scope without proper validation. This can lead to security issues such as unauthorized changes to application logic, privilege escalation, or bypassing security controls.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "External Variable Modification",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/External Variable Modification"
+    },
+    {
+      "class": "file-inclusion",
+      "kind": "technique",
+      "title": "File Inclusion",
+      "phase": "input_validation",
+      "summary": "A File Inclusion Vulnerability refers to a type of security vulnerability in web applications, particularly prevalent in applications developed in PHP, where an attacker can include a file, usually exploiting a lack of proper input/output sanitization. This vulnerability can lead to a range of malicious activities, including code execution, data theft, and website defacement.",
+      "tools": [
+        "ffuf",
+        "pattern_scan"
+      ],
+      "payloads": [
+        "lfi.txt"
+      ],
+      "gf": [
+        "lfi"
+      ],
+      "keywords": [
+        "lfi",
+        "local file inclusion",
+        "rfi"
+      ],
+      "source_path": "File Inclusion",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/File Inclusion"
+    },
+    {
+      "class": "google-web-toolkit",
+      "kind": "technique",
+      "title": "Google Web Toolkit",
+      "phase": "client_side",
+      "summary": "Google Web Toolkit (GWT), also known as GWT Web Toolkit, is an open-source set of tools that allows web developers to create and maintain JavaScript front-end applications using Java. It was originally developed by Google and had its initial release on May 16, 2006.",
+      "tools": [
+        "js_analyze"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Google Web Toolkit",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Google Web Toolkit"
+    },
+    {
+      "class": "graphql-injection",
+      "kind": "technique",
+      "title": "GraphQL Injection",
+      "phase": "api",
+      "summary": "GraphQL is a query language for APIs and a runtime for fulfilling those queries with existing data. A GraphQL service is created by defining types and fields on those types, then providing functions for each field on each type",
+      "tools": [
+        "graphql_audit"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [
+        "graphql",
+        "introspection"
+      ],
+      "source_path": "GraphQL Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/GraphQL Injection"
+    },
+    {
+      "class": "http-parameter-pollution",
+      "kind": "technique",
+      "title": "HTTP Parameter Pollution",
+      "phase": "input_validation",
+      "summary": "HTTP Parameter Pollution (HPP) is a Web attack evasion technique that allows an attacker to craft a HTTP request in order to manipulate web logics or retrieve hidden information. This evasion technique is based on splitting an attack vector between multiple instances of a parameter with the same name (?param1=value&param1=value). As there is no formal way of parsing HTTP parameters, individual web technologies have their own unique way of parsing and reading URL parameters with the same name. Some taking the first occurrence, some taking the last occurrence, and some reading it as an array. Th",
+      "tools": [
+        "param_discovery",
+        "arjun"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "HTTP Parameter Pollution",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/HTTP Parameter Pollution"
+    },
+    {
+      "class": "headless-browser",
+      "kind": "technique",
+      "title": "Headless Browser",
+      "phase": "client_side",
+      "summary": "A headless browser is a web browser without a graphical user interface. It works just like a regular browser, such as Chrome or Firefox, by interpreting HTML, CSS, and JavaScript, but it does so in the background, without displaying any visuals.",
+      "tools": [
+        "xss_validate",
+        "xsstrike"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Headless Browser",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Headless Browser"
+    },
+    {
+      "class": "hidden-parameters",
+      "kind": "technique",
+      "title": "HTTP Hidden Parameters",
+      "phase": "recon",
+      "summary": "Web applications often have hidden or undocumented parameters that are not exposed in the user interface. Fuzzing can help discover these parameters, which might be vulnerable to various attacks.",
+      "tools": [
+        "param_discovery",
+        "arjun"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Hidden Parameters",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Hidden Parameters"
+    },
+    {
+      "class": "insecure-deserialization",
+      "kind": "technique",
+      "title": "Insecure Deserialization",
+      "phase": "input_validation",
+      "summary": "Serialization is the process of turning some object into a data format that can be restored later. People often serialize objects in order to save them to storage, or to send as part of communications. Deserialization is the reverse of that process -- taking data structured from some format, and rebuilding it into an object - OWASP",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [
+        "deserialization",
+        "pickle",
+        "ysoserial"
+      ],
+      "source_path": "Insecure Deserialization",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Insecure Deserialization"
+    },
+    {
+      "class": "insecure-direct-object-references",
+      "kind": "technique",
+      "title": "Insecure Direct Object References",
+      "phase": "authorization",
+      "summary": "Insecure Direct Object References (IDOR) is a security vulnerability that occurs when an application allows users to directly access or modify objects (such as files, database records, or URLs) based on user-supplied input, without sufficient access controls. This means that if a user changes a parameter value (like an ID) in a URL or API request, they might be able to access or manipulate data that they aren\u2019t authorized to see or modify.",
+      "tools": [
+        "hunt_plan",
+        "authz_compare",
+        "pattern_scan"
+      ],
+      "payloads": [],
+      "gf": [
+        "idor"
+      ],
+      "keywords": [
+        "idor",
+        "object reference",
+        "brola",
+        "access control"
+      ],
+      "source_path": "Insecure Direct Object References",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Insecure Direct Object References"
+    },
+    {
+      "class": "insecure-management-interface",
+      "kind": "technique",
+      "title": "Insecure Management Interface",
+      "phase": "configuration",
+      "summary": "Insecure Management Interface refers to vulnerabilities in administrative interfaces used for managing servers, applications, databases, or network devices. These interfaces often control sensitive settings and can have powerful access to system configurations, making them prime targets for attackers.",
+      "tools": [
+        "content_discovery",
+        "http_probe"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Insecure Management Interface",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Insecure Management Interface"
+    },
+    {
+      "class": "insecure-randomness",
+      "kind": "technique",
+      "title": "Insecure Randomness",
+      "phase": "configuration",
+      "summary": "Insecure randomness refers to the weaknesses associated with random number generation in computing, particularly when such randomness is used for security-critical purposes. Vulnerabilities in random number generators (RNGs) can lead to predictable outputs that can be exploited by attackers, resulting in potential data breaches or unauthorized access.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Insecure Randomness",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Insecure Randomness"
+    },
+    {
+      "class": "insecure-source-code-management",
+      "kind": "technique",
+      "title": "Insecure Source Code Management",
+      "phase": "recon",
+      "summary": "Insecure Source Code Management (SCM) can lead to several critical vulnerabilities in web applications and services. Developers often rely on SCM systems like Git and Subversion (SVN) to manage their source code versions. However, poor security practices, such as leaving .git and .svn folders in production environments exposed to the internet, can pose significant risks.",
+      "tools": [
+        "content_discovery",
+        "secret_scan",
+        "source_fetch",
+        "gitdorker"
+      ],
+      "payloads": [
+        "git_config.txt"
+      ],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Insecure Source Code Management",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Insecure Source Code Management"
+    },
+    {
+      "class": "json-web-token",
+      "kind": "technique",
+      "title": "JWT - JSON Web Token",
+      "phase": "session",
+      "summary": "JSON Web Token (JWT) is an open standard (RFC 7519) that defines a compact and self-contained way for securely transmitting information between parties as a JSON object. This information can be verified and trusted because it is digitally signed.",
+      "tools": [
+        "jwt_inspect",
+        "jwt_tool"
+      ],
+      "payloads": [
+        "jwt-secrets.txt"
+      ],
+      "gf": [],
+      "keywords": [
+        "jwt",
+        "jwt forgery",
+        "alg none"
+      ],
+      "source_path": "JSON Web Token",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/JSON Web Token"
+    },
+    {
+      "class": "java-rmi",
+      "kind": "technique",
+      "title": "Java RMI",
+      "phase": "recon",
+      "summary": "Java RMI (Remote Method Invocation) is a Java API that allows an object running in one JVM (Java Virtual Machine) to invoke methods on an object running in another JVM, even if they're on different physical machines. RMI provides a mechanism for Java-based distributed computing.",
+      "tools": [
+        "port_scan",
+        "nmap"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Java RMI",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Java RMI"
+    },
+    {
+      "class": "ldap-injection",
+      "kind": "technique",
+      "title": "LDAP Injection",
+      "phase": "input_validation",
+      "summary": "LDAP Injection is an attack used to exploit web based applications that construct LDAP statements based on user input. When an application fails to properly sanitize user input, it's possible to modify LDAP statements using a local proxy.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "LDAP Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/LDAP Injection"
+    },
+    {
+      "class": "latex-injection",
+      "kind": "technique",
+      "title": "LaTeX Injection",
+      "phase": "input_validation",
+      "summary": "LaTeX Injection is a type of injection attack where malicious content is injected into LaTeX documents. LaTeX is widely used for document preparation and typesetting, particularly in academia, for producing high-quality scientific and mathematical documents. Due to its powerful scripting capabilities, LaTeX can be exploited by attackers to execute arbitrary commands if proper safeguards are not in place.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "LaTeX Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/LaTeX Injection"
+    },
+    {
+      "class": "mass-assignment",
+      "kind": "technique",
+      "title": "Mass Assignment",
+      "phase": "authorization",
+      "summary": "A mass assignment attack is a security vulnerability that occurs when a web application automatically assigns user-supplied input values to properties or variables of a program object. This can become an issue if a user is able to modify attributes they should not have access to, like a user's permissions or an admin flag.",
+      "tools": [
+        "hunt_plan",
+        "authz_compare"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Mass Assignment",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Mass Assignment"
+    },
+    {
+      "class": "nosql-injection",
+      "kind": "technique",
+      "title": "NoSQL Injection",
+      "phase": "input_validation",
+      "summary": "NoSQL databases provide looser consistency restrictions than traditional SQL databases. By requiring fewer relational constraints and consistency checks, NoSQL databases often offer performance and scaling benefits. Yet these databases are still potentially vulnerable to injection attacks, even if they aren't using the traditional SQL syntax.",
+      "tools": [
+        "nosqli_probe",
+        "nosqli"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [
+        "nosql",
+        "nosqli",
+        "mongodb",
+        "$where"
+      ],
+      "source_path": "NoSQL Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/NoSQL Injection"
+    },
+    {
+      "class": "oauth-misconfiguration",
+      "kind": "technique",
+      "title": "OAuth Misconfiguration",
+      "phase": "authentication",
+      "summary": "OAuth is a widely-used authorization framework that allows third-party applications to access user data without exposing user credentials. However, improper configuration and implementation of OAuth can lead to severe security vulnerabilities. This document explores common OAuth misconfigurations, potential attack vectors, and best practices for mitigating these risks.",
+      "tools": [
+        "auth_surface",
+        "hunt_plan"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [
+        "oauth",
+        "oauth2",
+        "redirect_uri"
+      ],
+      "source_path": "OAuth Misconfiguration",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/OAuth Misconfiguration"
+    },
+    {
+      "class": "orm-leak",
+      "kind": "technique",
+      "title": "ORM Leak",
+      "phase": "input_validation",
+      "summary": "An ORM leak vulnerability occurs when sensitive information, such as database structure or user data, is unintentionally exposed due to improper handling of ORM queries. This can happen if the application returns raw error messages, debug information, or allows attackers to manipulate queries in ways that reveal underlying data.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "ORM Leak",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/ORM Leak"
+    },
+    {
+      "class": "open-redirect",
+      "kind": "technique",
+      "title": "Open URL Redirect",
+      "phase": "input_validation",
+      "summary": "Un-validated redirects and forwards are possible when a web application accepts untrusted input that could cause the web application to redirect the request to a URL contained within untrusted input. By modifying untrusted URL input to a malicious site, an attacker may successfully launch a phishing scam and steal user credentials. Because the server name in the modified link is identical to the original site, phishing attempts may have a more trustworthy appearance. Un-validated redirect and forward attacks can also be used to maliciously craft a URL that would pass the application\u2019s access c",
+      "tools": [
+        "pattern_scan"
+      ],
+      "payloads": [],
+      "gf": [
+        "redirect"
+      ],
+      "keywords": [
+        "open redirect",
+        "redirect"
+      ],
+      "source_path": "Open Redirect",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Open Redirect"
+    },
+    {
+      "class": "prompt-injection",
+      "kind": "technique",
+      "title": "Prompt Injection",
+      "phase": "api",
+      "summary": "A technique where specific prompts or cues are inserted into the input data to guide the output of a machine learning model, specifically in the field of natural language processing (NLP).",
+      "tools": [
+        "llm_redteam",
+        "promptfoo"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Prompt Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Prompt Injection"
+    },
+    {
+      "class": "prototype-pollution",
+      "kind": "technique",
+      "title": "Prototype Pollution",
+      "phase": "client_side",
+      "summary": "Prototype pollution is a type of vulnerability that occurs in JavaScript when properties of Object.prototype are modified. This is particularly risky because JavaScript objects are dynamic and we can add properties to them at any time. Also, almost all objects in JavaScript inherit from Object.prototype, making it a potential attack vector.",
+      "tools": [
+        "js_analyze"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Prototype Pollution",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Prototype Pollution"
+    },
+    {
+      "class": "race-condition",
+      "kind": "technique",
+      "title": "Race Condition",
+      "phase": "business_logic",
+      "summary": "Race conditions may occur when a process is critically or unexpectedly dependent on the sequence or timings of other events. In a web application environment, where multiple requests can be processed at a given time, developers may leave concurrency to be handled by the framework, server, or programming language.",
+      "tools": [
+        "authz_compare"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Race Condition",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Race Condition"
+    },
+    {
+      "class": "regular-expression",
+      "kind": "technique",
+      "title": "Regular Expression",
+      "phase": "input_validation",
+      "summary": "Regular Expression Denial of Service (ReDoS) is a type of attack that exploits the fact that certain regular expressions can take an extremely long time to process, causing applications or services to become unresponsive or crash.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Regular Expression",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Regular Expression"
+    },
+    {
+      "class": "request-smuggling",
+      "kind": "technique",
+      "title": "Request Smuggling",
+      "phase": "session",
+      "summary": "HTTP Request smuggling occurs when multiple \"things\" process a request, but differ on how they determine where the request starts/ends. This disagreement can be used to interfere with another user's request/response or to bypass security controls. It normally occurs due to prioritising different HTTP headers (Content-Length vs Transfer-Encoding), differences in handling malformed headers (eg whether to ignore headers with unexpected whitespace), due to downgrading requests from a newer protocol, or due to differences in when a partial request has timed out and should be discarded.",
+      "tools": [
+        "smuggling_probe",
+        "smuggling_canary_probe",
+        "smuggler"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [
+        "http request smuggling",
+        "cl.te",
+        "te.cl",
+        "h2.c2"
+      ],
+      "source_path": "Request Smuggling",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Request Smuggling"
+    },
+    {
+      "class": "reverse-proxy-misconfigurations",
+      "kind": "technique",
+      "title": "Reverse Proxy Misconfigurations",
+      "phase": "configuration",
+      "summary": "A reverse proxy is a server that sits between clients and backend servers, forwarding client requests to the appropriate server while hiding the backend infrastructure and often providing load balancing or caching. Misconfigurations in a reverse proxy, such as improper access controls, lack of input sanitization in proxy_pass directives, or trusting client-provided headers like X-Forwarded-For, can lead to vulnerabilities like unauthorized access, directory traversal, or exposure of internal resources.",
+      "tools": [
+        "http_probe"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Reverse Proxy Misconfigurations",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Reverse Proxy Misconfigurations"
+    },
+    {
+      "class": "saml-injection",
+      "kind": "technique",
+      "title": "SAML Injection",
+      "phase": "authentication",
+      "summary": "SAML (Security Assertion Markup Language) is an open standard for exchanging authentication and authorization data between parties, in particular, between an identity provider and a service provider. While SAML is widely used to facilitate single sign-on (SSO) and other federated authentication scenarios, improper implementation or misconfiguration can expose systems to various vulnerabilities.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "SAML Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/SAML Injection"
+    },
+    {
+      "class": "sql-injection",
+      "kind": "technique",
+      "title": "SQL Injection",
+      "phase": "input_validation",
+      "summary": "SQL Injection (SQLi)  is a type of security vulnerability that allows an attacker to interfere with the queries that an application makes to its database. SQL Injection is one of the most common and severe types of web application vulnerabilities, enabling attackers to execute arbitrary SQL code on the database. This can lead to unauthorized data access, data manipulation, and, in some cases, full compromise of the database server.",
+      "tools": [
+        "sqli_validate",
+        "sqlmap",
+        "pattern_scan"
+      ],
+      "payloads": [
+        "allsqli.txt",
+        "blindsqli.txt"
+      ],
+      "gf": [
+        "sqli"
+      ],
+      "keywords": [
+        "sqli",
+        "sql injection",
+        "union select"
+      ],
+      "source_path": "SQL Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/SQL Injection"
+    },
+    {
+      "class": "server-side-include-injection",
+      "kind": "technique",
+      "title": "Server Side Include Injection",
+      "phase": "input_validation",
+      "summary": "Server Side Includes (SSI) are directives that are placed in HTML pages and evaluated on the server while the pages are being served. They let you add dynamically generated content to an existing HTML page, without having to serve the entire page via a CGI program, or other dynamic technology.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Server Side Include Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Server Side Include Injection"
+    },
+    {
+      "class": "server-side-request-forgery",
+      "kind": "technique",
+      "title": "Server-Side Request Forgery",
+      "phase": "input_validation",
+      "summary": "Server Side Request Forgery or SSRF is a vulnerability in which an attacker forces a server to perform requests on their behalf.",
+      "tools": [
+        "ssrf_probe",
+        "ssrfmap",
+        "pattern_scan"
+      ],
+      "payloads": [
+        "ssrf.txt"
+      ],
+      "gf": [
+        "ssrf"
+      ],
+      "keywords": [
+        "ssrf",
+        "server side request"
+      ],
+      "source_path": "Server Side Request Forgery",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Server Side Request Forgery"
+    },
+    {
+      "class": "server-side-template-injection",
+      "kind": "technique",
+      "title": "Server Side Template Injection",
+      "phase": "input_validation",
+      "summary": "Template injection allows an attacker to include template code into an existing (or not) template. A template engine makes designing HTML pages easier by using static template files which at runtime replaces variables/placeholders with actual values in the HTML pages.",
+      "tools": [
+        "ssti_probe",
+        "sstimap",
+        "pattern_scan"
+      ],
+      "payloads": [
+        "ssti.txt"
+      ],
+      "gf": [
+        "ssti"
+      ],
+      "keywords": [
+        "ssti",
+        "template injection"
+      ],
+      "source_path": "Server Side Template Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Server Side Template Injection"
+    },
+    {
+      "class": "tabnabbing",
+      "kind": "technique",
+      "title": "Tabnabbing",
+      "phase": "client_side",
+      "summary": "Reverse tabnabbing is an attack where a page linked from the target page is able to rewrite that page, for example to replace it with a phishing site. As the user was originally on the correct page they are less likely to notice that it has been changed to a phishing site, especially if the site looks the same as the target. If the user authenticates to this new page then their credentials (or other sensitive data) are sent to the phishing site rather than the legitimate one.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Tabnabbing",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Tabnabbing"
+    },
+    {
+      "class": "type-juggling",
+      "kind": "technique",
+      "title": "Type Juggling",
+      "phase": "input_validation",
+      "summary": "PHP is a loosely typed language, which means it tries to predict the programmer's intent and automatically converts variables to different types whenever it seems necessary. For example, a string containing only numbers can be treated as an integer or a float. However, this automatic conversion (or type juggling) can lead to unexpected results, especially when comparing variables using the '==' operator, which only checks for value equality (loose comparison), not type and value equality (strict comparison).",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Type Juggling",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Type Juggling"
+    },
+    {
+      "class": "upload-insecure-files",
+      "kind": "technique",
+      "title": "Upload Insecure Files",
+      "phase": "input_validation",
+      "summary": "Uploaded files may pose a significant risk if not handled correctly. A remote attacker could send a multipart/form-data POST request with a specially-crafted filename or mime type and execute arbitrary code.",
+      "tools": [],
+      "payloads": [],
+      "gf": [
+        "upload"
+      ],
+      "keywords": [
+        "file upload",
+        "upload bypass"
+      ],
+      "source_path": "Upload Insecure Files",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Upload Insecure Files"
+    },
+    {
+      "class": "virtual-hosts",
+      "kind": "technique",
+      "title": "Virtual Host",
+      "phase": "recon",
+      "summary": "A **Virtual Host** (VHOST) is a mechanism used by web servers (e.g., Apache, Nginx, IIS) to host multiple domains or subdomains on a single IP address. When enumerating a webserver, default requests often target the primary or default VHOST only. **Hidden hosts** may expose extra functionality or vulnerabilities.",
+      "tools": [
+        "ffuf",
+        "content_discovery"
+      ],
+      "payloads": [
+        "vhosts.txt"
+      ],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Virtual Hosts",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Virtual Hosts"
+    },
+    {
+      "class": "web-cache-deception",
+      "kind": "technique",
+      "title": "Web Cache Deception",
+      "phase": "session",
+      "summary": "Web Cache Deception (WCD) is a security vulnerability that occurs when a web server or caching proxy misinterprets a client's request for a web resource and subsequently serves a different resource, which may often be more sensitive or private, after caching it.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Web Cache Deception",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Web Cache Deception"
+    },
+    {
+      "class": "web-sockets",
+      "kind": "technique",
+      "title": "Web Sockets",
+      "phase": "api",
+      "summary": "WebSocket is a communication protocol that provides full-duplex communication channels over a single, long-lived connection. This enables real-time, bi-directional communication between clients (typically web browsers) and servers through a persistent connection. WebSockets are commonly used for web applications that require frequent, low-latency updates, such as live chat applications, online gaming, real-time notifications, and financial trading platforms.",
+      "tools": [
+        "websocket_probe",
+        "websocat"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Web Sockets",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Web Sockets"
+    },
+    {
+      "class": "xpath-injection",
+      "kind": "technique",
+      "title": "XPATH Injection",
+      "phase": "input_validation",
+      "summary": "XPath Injection is an attack technique used to exploit applications that construct XPath (XML Path Language) queries from user-supplied input to query or navigate XML documents.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "XPATH Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/XPATH Injection"
+    },
+    {
+      "class": "xs-leak",
+      "kind": "technique",
+      "title": "XS-Leak",
+      "phase": "client_side",
+      "summary": "Cross-Site Leaks (XS-Leaks) are side-channel vulnerabilities allowing attackers to infer sensitive information from a target origin without reading the response body. They exploit browser behaviors, timing differences, and observable side effects rather than traditional XSS data exfiltration.",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "XS-Leak",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/XS-Leak"
+    },
+    {
+      "class": "xslt-injection",
+      "kind": "technique",
+      "title": "XSLT Injection",
+      "phase": "input_validation",
+      "summary": "Processing an un-validated XSL stylesheet can allow an attacker to change the structure and contents of the resultant XML, include arbitrary files from the file system, or execute arbitrary code",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "XSLT Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/XSLT Injection"
+    },
+    {
+      "class": "xss-injection",
+      "kind": "technique",
+      "title": "Cross Site Scripting",
+      "phase": "client_side",
+      "summary": "Cross-site scripting (XSS) is a type of computer security vulnerability typically found in web applications. XSS enables attackers to inject client-side scripts into web pages viewed by other users.",
+      "tools": [
+        "xss_validate",
+        "dalfox",
+        "xsstrike",
+        "pattern_scan"
+      ],
+      "payloads": [
+        "xsspollygots.txt",
+        "xsswafbypss.txt",
+        "vulJs.txt"
+      ],
+      "gf": [
+        "xss"
+      ],
+      "keywords": [
+        "xss",
+        "cross-site scripting",
+        "reflected",
+        "dom"
+      ],
+      "source_path": "XSS Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/XSS Injection"
+    },
+    {
+      "class": "xxe-injection",
+      "kind": "technique",
+      "title": "XML External Entity",
+      "phase": "input_validation",
+      "summary": "An XML External Entity attack is a type of attack against an application that parses XML input and allows XML entities. XML entities can be used to tell the XML parser to fetch specific content on the server.",
+      "tools": [],
+      "payloads": [
+        "xml.txt"
+      ],
+      "gf": [],
+      "keywords": [
+        "xxe",
+        "xml external entity"
+      ],
+      "source_path": "XXE Injection",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/XXE Injection"
+    },
+    {
+      "class": "zip-slip",
+      "kind": "technique",
+      "title": "Zip Slip",
+      "phase": "input_validation",
+      "summary": "The vulnerability is exploited using a specially crafted archive that holds directory traversal filenames (e.g. ../../shell.php). The Zip Slip vulnerability can affect numerous archive formats, including tar, jar, war, cpio, apk, rar and 7z. The attacker can then overwrite executable files and either invoke them remotely or wait for the system or user to call them, thus achieving remote command execution on the victim\u2019s machine.",
+      "tools": [
+        "secret_scan"
+      ],
+      "payloads": [],
+      "gf": [],
+      "keywords": [],
+      "source_path": "Zip Slip",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Zip Slip"
+    },
+    {
+      "class": "active-directory-attack",
+      "kind": "cheatsheet",
+      "title": "Active Directory Attacks",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://github.com/swisskyrepo/InternalAllTheThings/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Active Directory Attack.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Active Directory Attack.md",
+      "moved_to": "https://github.com/swisskyrepo/InternalAllTheThings/"
+    },
+    {
+      "class": "bind-shell-cheatsheet",
+      "kind": "cheatsheet",
+      "title": "Bind Shell",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/shell-bind-cheatsheet/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Bind Shell Cheatsheet.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Bind Shell Cheatsheet.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/shell-bind-cheatsheet/"
+    },
+    {
+      "class": "cloud-aws-pentest",
+      "kind": "cheatsheet",
+      "title": "Cloud - AWS",
+      "phase": "cloud",
+      "summary": "Content moved upstream: https://github.com/swisskyrepo/InternalAllTheThings/",
+      "tools": [
+        "cloud_audit",
+        "cloud_attack_paths",
+        "cloud_asset_discovery",
+        "prowler",
+        "cloud_enum"
+      ],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Cloud - AWS Pentest.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Cloud - AWS Pentest.md",
+      "moved_to": "https://github.com/swisskyrepo/InternalAllTheThings/"
+    },
+    {
+      "class": "cloud-azure-pentest",
+      "kind": "cheatsheet",
+      "title": "Cloud - Azure",
+      "phase": "cloud",
+      "summary": "Content moved upstream: https://github.com/swisskyrepo/InternalAllTheThings/",
+      "tools": [
+        "cloud_audit",
+        "cloud_attack_paths"
+      ],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Cloud - Azure Pentest.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Cloud - Azure Pentest.md",
+      "moved_to": "https://github.com/swisskyrepo/InternalAllTheThings/"
+    },
+    {
+      "class": "cobalt-strike-cheatsheet",
+      "kind": "cheatsheet",
+      "title": "Cobalt Strike",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/command-control/cobalt-strike/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Cobalt Strike - Cheatsheet.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Cobalt Strike - Cheatsheet.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/command-control/cobalt-strike/"
+    },
+    {
+      "class": "container-docker-pentest",
+      "kind": "cheatsheet",
+      "title": "Container - Docker",
+      "phase": "cloud",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/containers/docker/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Container - Docker Pentest.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Container - Docker Pentest.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/containers/docker/"
+    },
+    {
+      "class": "container-kubernetes-pentest",
+      "kind": "cheatsheet",
+      "title": "Container - Kubernetes",
+      "phase": "cloud",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/containers/kubernetes/",
+      "tools": [
+        "kubescape",
+        "k8s_posture"
+      ],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Container - Kubernetes Pentest.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Container - Kubernetes Pentest.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/containers/kubernetes/"
+    },
+    {
+      "class": "escape-breakout",
+      "kind": "cheatsheet",
+      "title": "Application Escape and Breakout",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/escape-breakout/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Escape Breakout.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Escape Breakout.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/escape-breakout/"
+    },
+    {
+      "class": "html-smuggling",
+      "kind": "cheatsheet",
+      "title": "HTML Smuggling",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/access/html-smuggling/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/HTML Smuggling.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/HTML Smuggling.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/access/html-smuggling/"
+    },
+    {
+      "class": "hash-cracking",
+      "kind": "cheatsheet",
+      "title": "Hash Cracking",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/hash-cracking/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Hash Cracking.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Hash Cracking.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/hash-cracking/"
+    },
+    {
+      "class": "initial-access",
+      "kind": "cheatsheet",
+      "title": "Initial Access",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/access/initial-access/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Initial Access.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Initial Access.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/access/initial-access/"
+    },
+    {
+      "class": "linux-evasion",
+      "kind": "cheatsheet",
+      "title": "Linux - Evasion",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/evasion/linux-evasion/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Linux - Evasion.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Linux - Evasion.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/evasion/linux-evasion/"
+    },
+    {
+      "class": "linux-persistence",
+      "kind": "cheatsheet",
+      "title": "Linux - Persistence",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/persistence/linux-persistence/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Linux - Persistence.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Linux - Persistence.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/persistence/linux-persistence/"
+    },
+    {
+      "class": "linux-privilege-escalation",
+      "kind": "cheatsheet",
+      "title": "Linux - Privilege Escalation",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/escalation/linux-privilege-escalation/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Linux - Privilege Escalation.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Linux - Privilege Escalation.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/escalation/linux-privilege-escalation/"
+    },
+    {
+      "class": "mssql-server-cheatsheet",
+      "kind": "cheatsheet",
+      "title": "MSSQL Server",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/mssql-server-cheatsheet/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/MSSQL Server - Cheatsheet.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/MSSQL Server - Cheatsheet.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/mssql-server-cheatsheet/"
+    },
+    {
+      "class": "metasploit-cheatsheet",
+      "kind": "cheatsheet",
+      "title": "Metasploit",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/command-control/metasploit/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Metasploit - Cheatsheet.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Metasploit - Cheatsheet.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/command-control/metasploit/"
+    },
+    {
+      "class": "methodology-and-enumeration",
+      "kind": "cheatsheet",
+      "title": "Bug Hunting Methodology and Enumeration",
+      "phase": "recon",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/methodology/bug-hunting-methodology/",
+      "tools": [
+        "subdomain_enum",
+        "endpoint_discovery",
+        "http_probe",
+        "content_discovery"
+      ],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Methodology and enumeration.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Methodology and enumeration.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/methodology/bug-hunting-methodology/"
+    },
+    {
+      "class": "network-discovery",
+      "kind": "cheatsheet",
+      "title": "Network Discovery",
+      "phase": "recon",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/network-discovery/",
+      "tools": [
+        "port_scan",
+        "naabu",
+        "nmap",
+        "masscan",
+        "service_scan"
+      ],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Network Discovery.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Network Discovery.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/network-discovery/"
+    },
+    {
+      "class": "network-pivoting-techniques",
+      "kind": "cheatsheet",
+      "title": "Network Pivoting Techniques",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/pivoting/network-pivoting-techniques/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Network Pivoting Techniques.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Network Pivoting Techniques.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/pivoting/network-pivoting-techniques/"
+    },
+    {
+      "class": "office-attacks",
+      "kind": "cheatsheet",
+      "title": "Office - Attacks",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/access/office-attacks/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Office - Attacks.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Office - Attacks.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/access/office-attacks/"
+    },
+    {
+      "class": "powershell-cheatsheet",
+      "kind": "cheatsheet",
+      "title": "Powershell",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/powershell-cheatsheet/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Powershell - Cheatsheet.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Powershell - Cheatsheet.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/powershell-cheatsheet/"
+    },
+    {
+      "class": "reverse-shell-cheatsheet",
+      "kind": "cheatsheet",
+      "title": "Reverse Shell Cheat Sheet",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/shell-reverse-cheatsheet/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Reverse Shell Cheatsheet.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Reverse Shell Cheatsheet.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/shell-reverse-cheatsheet/"
+    },
+    {
+      "class": "source-code-management",
+      "kind": "cheatsheet",
+      "title": "Source Code Management & CI/CD Compromise",
+      "phase": "recon",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/source-code-management-ci/",
+      "tools": [
+        "secret_scan",
+        "source_fetch",
+        "gitdorker",
+        "gitleaks",
+        "trufflehog"
+      ],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Source Code Management.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Source Code Management.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/source-code-management-ci/"
+    },
+    {
+      "class": "vulnerability-reports",
+      "kind": "cheatsheet",
+      "title": "Vulnerability Reports",
+      "phase": "methodology",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/methodology/vulnerability-reports/",
+      "tools": [
+        "report_generate",
+        "triage_findings",
+        "triage_taskflows"
+      ],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Vulnerability Reports.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Vulnerability Reports.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/methodology/vulnerability-reports/"
+    },
+    {
+      "class": "web-attack-surface",
+      "kind": "cheatsheet",
+      "title": "Subdomains Enumeration",
+      "phase": "recon",
+      "summary": "Content moved upstream: https://github.com/swisskyrepo/InternalAllTheThings/blob/main/docs/redteam/access/web-attack-surface.md",
+      "tools": [
+        "subdomain_enum",
+        "endpoint_discovery",
+        "http_probe",
+        "js_analyze"
+      ],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Web Attack Surface.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Web Attack Surface.md",
+      "moved_to": "https://github.com/swisskyrepo/InternalAllTheThings/blob/main/docs/redteam/access/web-attack-surface.md"
+    },
+    {
+      "class": "windows-amsi-bypass",
+      "kind": "cheatsheet",
+      "title": "Windows - AMSI Bypass",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/evasion/windows-amsi-bypass/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Windows - AMSI Bypass.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Windows - AMSI Bypass.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/evasion/windows-amsi-bypass/"
+    },
+    {
+      "class": "windows-dpapi",
+      "kind": "cheatsheet",
+      "title": "Windows - DPAPI",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/evasion/windows-dpapi/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Windows - DPAPI.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Windows - DPAPI.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/evasion/windows-dpapi/"
+    },
+    {
+      "class": "windows-defenses",
+      "kind": "cheatsheet",
+      "title": "Windows - Defenses",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/evasion/windows-defenses/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Windows - Defenses.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Windows - Defenses.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/evasion/windows-defenses/"
+    },
+    {
+      "class": "windows-download-and-execute",
+      "kind": "cheatsheet",
+      "title": "Windows - Download and execute methods",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/access/windows-download-execute/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Windows - Download and Execute.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Windows - Download and Execute.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/access/windows-download-execute/"
+    },
+    {
+      "class": "windows-mimikatz",
+      "kind": "cheatsheet",
+      "title": "Windows - Mimikatz",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/mimikatz-cheatsheet/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Windows - Mimikatz.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Windows - Mimikatz.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/cheatsheets/mimikatz-cheatsheet/"
+    },
+    {
+      "class": "windows-persistence",
+      "kind": "cheatsheet",
+      "title": "Windows - Persistence",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/persistence/windows-persistence/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Windows - Persistence.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Windows - Persistence.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/persistence/windows-persistence/"
+    },
+    {
+      "class": "windows-privilege-escalation",
+      "kind": "cheatsheet",
+      "title": "Windows - Privilege Escalation",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/escalation/windows-privilege-escalation/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Windows - Privilege Escalation.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Windows - Privilege Escalation.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/escalation/windows-privilege-escalation/"
+    },
+    {
+      "class": "windows-using-credentials",
+      "kind": "cheatsheet",
+      "title": "Windows - Using credentials",
+      "phase": "post_exploitation",
+      "summary": "Content moved upstream: https://swisskyrepo.github.io/InternalAllTheThings/redteam/access/windows-using-credentials/",
+      "tools": [],
+      "payloads": [],
+      "gf": [],
+      "source_path": "Methodology and Resources/Windows - Using credentials.md",
+      "raw_url": "https://github.com/swisskyrepo/PayloadsAllTheThings/blob/3bff425aca2b020f7334f9d744eed3ca55de8cdf/Methodology and Resources/Windows - Using credentials.md",
+      "moved_to": "https://swisskyrepo.github.io/InternalAllTheThings/redteam/access/windows-using-credentials/"
+    }
+  ]
+}

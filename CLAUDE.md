@@ -135,6 +135,7 @@ produce a partial report when you run out — do that rather than stopping silen
 | Every tool, flags, when to use | `tools.md` |
 | Day-to-day operation | `USER_GUIDE.md` |
 | Payload store + safety tiers | `docs/PAYLOADS.md` |
+| Per-class techniques + payload wiring | `docs/TECHNIQUES.md` |
 | Per-phase playbooks | `skills/` |
 
 ## 7. Commands

@@ -10,7 +10,7 @@ from easyhunt.knowledge.findings import Severity, Status
 from easyhunt.report.synthesize import generate_report
 from easyhunt.tools.base import easyhunt_tool
 
-__all__ = ["findings_list", "job_status", "report_generate", "wstg_lookup"]
+__all__ = ["findings_list", "job_status", "report_generate", "technique_lookup", "wstg_lookup"]
 
 
 @easyhunt_tool(
@@ -266,4 +266,121 @@ async def wstg_lookup(
         "phases": index.phases(),
         "attribution": attribution,
         "note": "Call again with query, test_id, phase, or technologies.",
+    }
+
+
+@easyhunt_tool(
+    phase="method", mode="passive", targets_arg=None, timeout=30,
+    name="technique_lookup", tags={"method", "inspection"},
+    estimated_requests=0, budget_exempt=True,
+)
+async def technique_lookup(
+    query: str | None = None,
+    class_name: str | None = None,
+    phase: str | None = None,
+    technologies: str | None = None,
+    tool: str | None = None,
+) -> dict[str, Any]:
+    """Query the PayloadsAllTheThings technique index for how to test a bug class.
+
+    The counterpart to ``wstg_lookup``: WSTG says what to check, this says how.
+    Each record names the EasyHunt tools that test the class, the vetted payload
+    lists, and the gf pattern packs that correspond to it. Retrieval, not
+    automation — nothing here fires anything, and it costs no budget.
+
+    Five ways in, most specific first:
+
+    * ``class_name``  — one technique in full ("sql-injection", "open-redirect")
+    * ``tool``        — every technique a given EasyHunt tool covers ("sqli_validate")
+    * ``technologies``— comma-separated stack from http_probe ("Rails,MongoDB,GraphQL")
+    * ``query``       — free text ("jwt forgery", "deserialization")
+    * ``phase``       — everything in a phase (input_validation, authentication …)
+    """
+    from easyhunt.knowledge.techniques import load_index
+
+    index = load_index()
+    if not index.available:
+        return {
+            "ok": False,
+            "error": "index_not_built",
+            "message": (
+                "The technique index has not been built. Run: "
+                "python3 scripts/fetch_pat.py --fetch"
+            ),
+        }
+
+    attribution = {
+        "source": index.source.get("attribution"),
+        "license": index.source.get("license"),
+        "pinned_commit": (index.source.get("commit") or "")[:12],
+    }
+
+    if class_name:
+        tech = index.get(class_name)
+        if tech is None:
+            return {
+                "ok": False,
+                "error": "unknown_class",
+                "message": f"No technique with class {class_name!r}.",
+                "attribution": attribution,
+                "known_classes": index.classes(),
+            }
+        return {"ok": True, "technique": tech, "attribution": attribution}
+
+    if tool:
+        matches = index.for_tool(tool)
+        return {
+            "ok": True,
+            "tool": tool,
+            "count": len(matches),
+            "techniques": [
+                {k: t[k] for k in ("class", "title", "phase", "tools")} for t in matches
+            ],
+            "attribution": attribution,
+        }
+
+    if technologies:
+        techs = [t.strip() for t in technologies.split(",") if t.strip()]
+        matches = index.for_stack(techs)
+        return {
+            "ok": True,
+            "matched_on": techs,
+            "count": len(matches),
+            "techniques": [
+                {k: t[k] for k in ("class", "title", "phase", "tools")} for t in matches
+            ],
+            "attribution": attribution,
+        }
+
+    if query:
+        matches = index.search(query)
+        return {
+            "ok": True,
+            "query": query,
+            "count": len(matches),
+            "techniques": [
+                {k: t[k] for k in ("class", "title", "phase", "summary")} for t in matches
+            ],
+            "attribution": attribution,
+        }
+
+    if phase:
+        matches = index.by_phase(phase)
+        return {
+            "ok": True,
+            "phase": phase,
+            "count": len(matches),
+            "techniques": [
+                {k: t[k] for k in ("class", "title", "tools", "payloads", "gf")}
+                for t in matches
+            ],
+            "attribution": attribution,
+        }
+
+    return {
+        "ok": True,
+        "total_techniques": len(index.techniques),
+        "classes": index.classes(),
+        "attribution": attribution,
+        "note": "Call again with class_name, tool, technologies, query, or phase.",
     }
