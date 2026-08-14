@@ -335,6 +335,15 @@ async def generate_report(
         - {""}
     )
 
+    # Summarize the *reportable* surface — confirmed and needs-review — the two
+    # statuses a human actually reads as findings. Candidates are untriaged and
+    # belong in their own table, not folded into the prose. But when there is
+    # nothing reportable and candidates exist, saying "No findings" while the
+    # table below lists seven is a contradiction the reader will catch, and it
+    # reads as the tool hiding work. State the real state instead.
+    confirmed = engagement.findings.confirmed()
+    review = engagement.findings.needs_review()
+    candidates = engagement.findings.candidates()
     executive = ""
     try:
         from easyhunt.llm.openrouter import LLMClient
@@ -343,11 +352,18 @@ async def generate_report(
         client = LLMClient(engagement)
         result = await summarize_findings(
             client,
-            engagement.findings.confirmed() + engagement.findings.needs_review(),
+            confirmed + review,
             phase="report",
             tier="t2",
         )
         executive = str(result.get("summary") or "")
+        if not (confirmed or review) and candidates:
+            executive = (
+                f"No findings were confirmed or escalated to manual review. "
+                f"{len(candidates)} scanner candidate(s) are listed below as "
+                "untriaged — each needs a human-reproduced proof of concept "
+                "before it can be reported."
+            )
     except Exception as exc:  # noqa: BLE001 — a report must not fail on the model
         executive = (
             f"_Automated summary unavailable ({exc.__class__.__name__}). Findings "

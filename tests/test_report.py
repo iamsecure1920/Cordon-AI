@@ -129,6 +129,19 @@ class TestMarkdown:
         assert "_No findings were confirmed with a reproducible proof of concept._" in text
         assert "This is a real result, not an empty one" in text
 
+    async def test_executive_summary_does_not_contradict_candidates(self, engagement) -> None:
+        """'No findings' above a table of seven candidates reads as concealment."""
+        engagement.findings.add(
+            Finding(asset="https://www.example.com/", title="Just a candidate", severity=Severity.LOW)
+        )
+        await generate_report(engagement, formats=["md"])
+        text = (engagement.reports_dir / "Report.md").read_text()
+        # The executive summary must acknowledge the candidates exist, not say
+        # "No findings." and then list them in the table below.
+        assert "No findings were confirmed" in text
+        assert "scanner candidate(s) are listed below" in text
+        assert "No findings." not in text
+
 
 class TestPartialReports:
     async def test_partial_reason_is_on_the_first_page(self, populated) -> None:
