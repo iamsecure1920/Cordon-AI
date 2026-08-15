@@ -9,7 +9,7 @@ invariants, and those govern everything else here.
 | Document | Answers |
 |---|---|
 | [`../CLAUDE.md`](../CLAUDE.md) | What am I, what may I do, what will bite me? Loaded automatically. |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | How is it built? Mind map, control-plane sequence, engagement flow, module map, why the security boundary sits where it does. |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | How is it built? System diagram, control-plane sequence, engagement flow, module map, why the security boundary sits where it does. |
 | [`BOOTSTRAP.md`](BOOTSTRAP.md) | How do I set up a new machine? Requirements, steps, verification, troubleshooting. |
 | [`PAYLOADS.md`](PAYLOADS.md) | The vetted payload store — tiers, quarantine, tool mapping, licensing, and an honest note on scale. |
 | [`../tools.md`](../tools.md) | Every tool: flags, when to reach for it, what it costs. 1,206 lines. |

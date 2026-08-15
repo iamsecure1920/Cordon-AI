@@ -18,7 +18,7 @@ the full flow in pictures, configuration, operation, safety, and troubleshooting
 2. [Prerequisites](#2-prerequisites)
 3. [Installation](#3-installation)
 4. [Configuration files](#4-configuration-files)
-5. [The whole system in one picture (mind map)](#5-the-whole-system-in-one-picture-mind-map)
+5. [The whole system in one picture](#5-the-whole-system-in-one-picture)
 6. [How one tool call flows (control-plane sequence)](#6-how-one-tool-call-flows-control-plane-sequence)
 7. [The engagement pipeline (the unattended flow)](#7-the-engagement-pipeline-the-unattended-flow)
 8. [How every script and module is interlinked](#8-how-every-script-and-module-is-interlinked)
@@ -268,7 +268,7 @@ approval:
 
 ---
 
-## 5. The whole system in one picture (mind map)
+## 5. The whole system in one picture
 
 Two animated views ship in `docs/` and render live in the README:
 
@@ -276,48 +276,59 @@ Two animated views ship in `docs/` and render live in the README:
   (a glowing packet loops model → MCP → scope → sanitize → budget → rate-limit
   → approval → sandbox → audit → tool → back).
 - `docs/easyhunt-pipeline.svg` — the engagement phases chained through the
-  asset store.
+  asset store.```mermaid
+flowchart TB
+    subgraph L5["L5 · Strategy — you"]
+        S1["Claude CLI"]
+        S2["picks targets and phases"]
+        S3["reads findings, decides next move"]
+        S4["no network of its own"]
+    end
 
-```mermaid
-mindmap
-  root((EasyHunt AI))
-    L5 Strategy
-      Claude CLI
-      picks targets and phases
-      reads findings, decides next move
-      no network of its own
-    L4 Method
-      skills/
-        easyhunt, easyhunt-recon, easyhunt-scan
-        easyhunt-validate, easyhunt-takeover
-        easyhunt-cloud, easyhunt-triage, easyhunt-report
-      OWASP WSTG · 115 tests (pinned)
-      PAT technique index · 96 records
-      coverage matrix · 27 bug classes
-      vetted payload store · 62 lists
-    L3 Control plane
-      scope.py · denylist wins, fails closed
-      sanitize.py · rejects, never cleans
-      budget.py · USD + requests + wall clock
-      ratelimit.py · token bucket + semaphore
-      approval.py · elicitation / policy
-      sandbox.py · docker isolation
-      audit.py · hash-chained log
-      auth.py · OAuth 2.1 + PKCE
-      pins.py · third-party trust
-      jobs.py · long-running job tracking
-    L2 Execution
-      80 MCP tools
-      82 catalogued binaries
-      6 engines (bbot, nuclei, jaeles, semgrep, osmedeus, strix)
-      one decorator, no privileged path
-    L1 Knowledge
-      findings.py · Severity, Status, PoC
-      taskgraph.py · penetration task graph
-      attackgraph.py · reachability
-      graphmemory.py · optional Neo4j
-      memory.py · cross-engagement PoC store
-      rules/ · detection packs (YAML, no code)
+    subgraph L4["L4 · Method"]
+        M1["skills/ — easyhunt, easyhunt-recon, easyhunt-scan, easyhunt-validate, easyhunt-takeover, easyhunt-cloud, easyhunt-triage, easyhunt-report"]
+        M2["OWASP WSTG · 115 tests (pinned)"]
+        M3["PAT technique index · 96 records"]
+        M4["coverage matrix · 27 bug classes"]
+        M5["vetted payload store · 62 lists"]
+    end
+
+    subgraph L3["L3 · Control plane — the security boundary"]
+        C1["scope.py · denylist wins, fails closed"]
+        C2["sanitize.py · rejects, never cleans"]
+        C3["budget.py · USD + requests + wall clock"]
+        C4["ratelimit.py · token bucket + semaphore"]
+        C5["approval.py · elicitation / policy"]
+        C6["sandbox.py · docker isolation"]
+        C7["audit.py · hash-chained log"]
+        C8["auth.py · OAuth 2.1 + PKCE"]
+        C9["pins.py · third-party trust"]
+        C10["jobs.py · long-running job tracking"]
+    end
+
+    subgraph L2["L2 · Execution"]
+        E1["80 MCP tools"]
+        E2["82 catalogued binaries"]
+        E3["6 engines — bbot, nuclei, jaeles, semgrep, osmedeus, strix"]
+        E4["one decorator, no privileged path"]
+    end
+
+    subgraph L1["L1 · Knowledge"]
+        K1["findings.py · Severity, Status, PoC"]
+        K2["taskgraph.py · penetration task graph"]
+        K3["attackgraph.py · reachability"]
+        K4["graphmemory.py · optional Neo4j"]
+        K5["memory.py · cross-engagement PoC store"]
+        K6["rules/ · detection packs (YAML, no code)"]
+    end
+
+    L5 --> L4
+    L4 --> L3
+    L3 --> L2
+    L2 --> L1
+
+    style L3 fill:#7f1d1d,color:#fff
+    style L2 fill:#1e3a5f,color:#fff
 ```
 
 ---

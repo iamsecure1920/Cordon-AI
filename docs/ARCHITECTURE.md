@@ -10,72 +10,54 @@ a prompt can be talked out of its instructions and a function call cannot.
 
 ---
 
-## 2. Mind map
+## 2. The whole system in one picture
 
 ```mermaid
-mindmap
-  root((EasyHunt AI))
-    L5 Strategy
-      Claude CLI
-      picks targets and phases
-      reads findings, decides next move
-    L4 Method
-      skills/
-        recon
-        scan
-        validate
-        takeover
-        cloud
-        triage
-        report
-      taskflows/
-        default-triage.yaml
-    L3 Control Plane
-      scope.py
-        denylist wins
-        fail closed
-      sanitize.py
-        rejects, never cleans
-      budget.py
-        USD + requests + wall clock
-      ratelimit.py
-        token bucket
-        concurrency semaphore
-      approval.py
-        elicitation gate
-      sandbox.py
-        docker isolation
-      audit.py
-        hash-chained log
-      auth.py
-        OAuth 2.1 + PKCE
-      pins.py
-        third-party trust
-    L2 Execution
-      tools/
-        recon, dns, ports
-        http_probe, endpoints
-        js_analysis, secrets
-        takeover, cloud
-        exploitation
-        llmsec
-      engines/
-        bbot, nuclei, jaeles
-        semgrep, osmedeus, strix
-    L1 Knowledge
-      findings.py
-        Severity, Status
-      taskgraph.py
-        penetration task graph
-      attackgraph.py
-        reachability
-      graphmemory.py
-        Neo4j
-      memory.py
-        PoC store
-      rules/
-        nuclei templates
-        rule packs
+flowchart TB
+    subgraph L5["L5 · Strategy — you"]
+        S1["Claude CLI"]
+        S2["picks targets and phases"]
+        S3["reads findings, decides next move"]
+    end
+
+    subgraph L4["L4 · Method"]
+        M1["skills/ — recon, scan, validate, takeover, cloud, triage, report"]
+        M2["taskflows/ — default-triage.yaml"]
+    end
+
+    subgraph L3["L3 · Control Plane — the security boundary"]
+        C1["scope.py · denylist wins, fails closed"]
+        C2["sanitize.py · rejects, never cleans"]
+        C3["budget.py · USD + requests + wall clock"]
+        C4["ratelimit.py · token bucket, concurrency semaphore"]
+        C5["approval.py · elicitation gate"]
+        C6["sandbox.py · docker isolation"]
+        C7["audit.py · hash-chained log"]
+        C8["auth.py · OAuth 2.1 + PKCE"]
+        C9["pins.py · third-party trust"]
+    end
+
+    subgraph L2["L2 · Execution"]
+        E1["tools/ — recon, dns, ports, http_probe, endpoints, js_analysis, secrets, takeover, cloud, exploitation, llmsec"]
+        E2["engines/ — bbot, nuclei, jaeles, semgrep, osmedeus, strix"]
+    end
+
+    subgraph L1["L1 · Knowledge"]
+        K1["findings.py · Severity, Status"]
+        K2["taskgraph.py · penetration task graph"]
+        K3["attackgraph.py · reachability"]
+        K4["graphmemory.py · Neo4j"]
+        K5["memory.py · PoC store"]
+        K6["rules/ · nuclei templates, rule packs"]
+    end
+
+    L5 --> L4
+    L4 --> L3
+    L3 --> L2
+    L2 --> L1
+
+    style L3 fill:#7f1d1d,color:#fff
+    style L2 fill:#1e3a5f,color:#fff
 ```
 
 ---
