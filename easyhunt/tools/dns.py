@@ -35,6 +35,7 @@ from easyhunt.tools.common import (
     run_one,
     split_targets,
     store_assets,
+    subprocess_timeout_for,
 )
 
 __all__ = ["cdn_check", "dns_permute", "dns_resolve"]
@@ -205,7 +206,10 @@ async def dns_resolve(target: str, record_types: list[str] | None = None) -> dic
     # and no rate limit at all, so both flags have to be set or neither binds.
     argv += _dnsx_pacing(rules)
 
-    run = await run_one("dnsx", argv, timeout=600)
+    run = await run_one(
+        "dnsx", argv,
+        timeout=subprocess_timeout_for(hosts, int(rules.max_rps), minimum=600),
+    )
     if not run.ran:
         return _untested("dnsx", run, what="DNS resolution")
 

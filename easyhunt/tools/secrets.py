@@ -121,8 +121,8 @@ GITLEAKS = register_spec(
         homepage="https://github.com/gitleaks/gitleaks", version_args=["version"],
         arg_policy=ArgPolicy(
             tool="gitleaks",
-            allowed_flags={"-s", "--source", "-f", "--report-format", "-r", "--report-path", "--no-banner", "--redact", "--exit-code"},
-            boolean_flags={"--no-banner", "--redact"},
+            allowed_flags={"-s", "--source", "-f", "--report-format", "-r", "--report-path", "--no-banner", "--redact", "--exit-code", "--no-git"},
+            boolean_flags={"--no-banner", "--redact", "--no-git"},
             value_patterns={"--report-format": re.compile(r"json|csv|sarif")},
             numeric_caps={"--exit-code": 1},
             allow_positional=True,
@@ -244,6 +244,27 @@ def _parse_kingfisher(text: str) -> list[dict[str, Any]]:
     return out
 
 
+#: Intermediate files the pipeline itself writes into the workspace
+#: (raw/dnsx-*.jsonl, raw/httpx-*.jsonl, nuclei output, kingfisher's own
+#: report, ...) plus the noseyparker datastore. Scanning them is meaningless —
+#: they are OUR logs, not the target's artifacts — and gitleaks' generic rules
+#: regex-match the URL/JSON text inside them (an ``edgekey.net`` CNAME in a
+#: dnsx line looks like an API key), which is exactly the noise that buries
+#: real hits. ``js-*.js`` is deliberately NOT excluded: those are the target's
+#: downloaded bundles, the whole point of the scan.
+_OWN_OUTPUT_RE = re.compile(
+    r"(?:^|/)(?:dnsx|httpx|nuclei|naabu|nmap|testssl|tlsx|wafw00f|probe|tls|waf|cors|"
+    r"kingfisher|gitleaks|noseyparker|trufflehog|graphql|websocket|nikto|wapiti|"
+    r"ffuf|arjun|katana|gau|wayback|smuggl|commix|sqlmap|dalfox|sstimap|ssrfmap)-",
+    re.IGNORECASE,
+)
+
+
+def _is_own_output(path: str) -> bool:
+    """True when a hit points at EasyHunt's own logs, not a target artifact."""
+    return bool(_OWN_OUTPUT_RE.search(path)) or "/np-datastore" in path
+
+
 def _parse_gitleaks(text: str) -> list[dict[str, Any]]:
     try:
         payload = json.loads(text)
@@ -307,6 +328,13 @@ async def secret_scan(path: str = ".", git_history: bool = True) -> dict[str, An
         [
             "detect", "--source", str(scan_path), "--report-format", "json",
             "--report-path", str(gitleaks_out), "--no-banner", "--redact", "--exit-code", "0",
+            # Without --no-git, gitleaks pointed at a directory inside a git
+            # repository walks the ENTIRE repo history. The engagement workspace
+            # lives inside the EasyHunt-AI repo, so a workspace scan reported
+            # the project's own test fixtures as leaked secrets. --no-git scans
+            # only the files on disk — which is what "secrets in the bundles we
+            # downloaded" means.
+            *(["--no-git"] if not git_history else []),
         ],
         timeout=900,
         allow_codes=(0, 1),
@@ -317,6 +345,12 @@ async def secret_scan(path: str = ".", git_history: bool = True) -> dict[str, An
         hits.extend(_parse_kingfisher(kingfisher_out.read_text(encoding="utf-8", errors="replace")))
     if gitleaks_out.exists():
         hits.extend(_parse_gitleaks(gitleaks_out.read_text(encoding="utf-8", errors="replace")))
+
+    # Drop hits inside our own intermediate files (dnsx/httpx/nuclei logs, the
+    # noseyparker datastore, even this tool's previous reports). Those are not
+    # target artifacts; reporting them taught the report nothing except that
+    # JSON contains URL-like strings. The bundles we downloaded stay.
+    hits = [h for h in hits if not _is_own_output(h["path"])]
 
     findings = [
         _record_finding(
@@ -402,6 +436,7 @@ async def secret_validate(path: str = ".") -> dict[str, Any]:
         if output.exists()
         else []
     )
+    hits = [h for h in hits if not _is_own_output(h["path"])]
     validated = [h for h in hits if h["validated"]]
     findings = [
         _record_finding(

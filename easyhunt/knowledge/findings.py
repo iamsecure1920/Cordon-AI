@@ -241,6 +241,16 @@ class AssetStore:
             if existing:
                 existing.tags = sorted(set(existing.tags) | set(asset.tags))
                 existing.attributes.update(asset.attributes)
+                # A re-discovery that carries a real origin host upgrades the
+                # record. js_analyze stores relative endpoint paths whose early
+                # passes recorded either the path itself (``host_of`` of a bare
+                # path is the path) or the CDN that stored the bundle; later
+                # passes record the page that served the bundle, which is the
+                # host the routes actually belong to. Last-informed-writer wins:
+                # the same tool re-run is what corrects the record, and no other
+                # producer writes ``host`` for the same (kind, value) key.
+                if asset.host and not asset.host.startswith("/") and asset.host != existing.host:
+                    existing.host = asset.host
                 return existing
             self._assets[asset.key()] = asset
             return asset

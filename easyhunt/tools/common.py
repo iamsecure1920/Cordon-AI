@@ -217,6 +217,22 @@ def _available_in_sandbox(name: str) -> bool:
         return False
 
 
+def subprocess_timeout_for(hosts: list[str], rps: int, *, minimum: float = 300.0) -> float:
+    """A subprocess timeout that fits the work, not a constant.
+
+    dnsx and httpx pace themselves with ``-rl`` at the engagement's ceiling, so
+    N hosts at R rps need N/R seconds minimum. Hard-coded timeouts (600s for
+    dnsx, 800s for httpx) silently killed the run when the input outgrew them:
+    the tool was cut down mid-scan, its partial output discarded, and the phase
+    reported "0 resolved" for a 60k-subdomain estate. Scale by input size with
+    a generous safety factor, floored at the old constants so small runs are
+    unchanged.
+    """
+    if not hosts or rps < 1:
+        return minimum
+    return max(minimum, (len(hosts) / rps) * 3 + 60)
+
+
 async def run_one(
     name: str,
     argv: list[str],
@@ -347,11 +363,24 @@ def in_scope_only(values: Iterable[str], *, phase: str, tool: str) -> tuple[list
 
 
 def store_assets(
-    values: Iterable[str], *, kind: str, source: str, tags: list[str] | None = None
+    values: Iterable[str], *, kind: str, source: str, tags: list[str] | None = None,
+    hosts: dict[str, str] | None = None,
 ) -> int:
+    """Persist discovered assets.
+
+    ``hosts`` optionally binds specific values to their origin host. Relative
+    paths (JS routes, endpoints) carry no host of their own, so ``host_of``
+    would return the path itself; the caller that knows where the value was
+    found (the bundle that served it) passes the binding so the exploit chain
+    does not resolve every endpoint against every live host.
+    """
     engagement = get_engagement()
     return engagement.assets.add_many(
-        Asset(value=value, kind=kind, source=source, host=host_of(value), tags=list(tags or []))
+        Asset(
+            value=value, kind=kind, source=source,
+            host=(hosts or {}).get(value) or host_of(value),
+            tags=list(tags or []),
+        )
         for value in values
     )
 

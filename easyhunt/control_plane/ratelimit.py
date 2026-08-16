@@ -158,6 +158,14 @@ class RateLimiter:
     _global: TokenBucket = field(init=False)
     _hosts: dict[str, TokenBucket] = field(init=False, default_factory=dict)
     _sem: asyncio.Semaphore = field(init=False)
+    #: Task ids currently holding the concurrency semaphore. A tool body that
+    #: paces its own requests calls ``slot()`` *inside* the wrapper's slot —
+    #: exploit_chain → web_injection_probe → per-request probe. Acquiring the
+    #: semaphore again would deadlock once the ceiling is exhausted (a 3-deep
+    #: nesting under max_concurrency=2), and it would double-count one tool call
+    #: as two in-flight. Nested slots take the rate tokens and skip the
+    #: semaphore; the outer slot still bounds the call's concurrency.
+    _sem_holders: set[int] = field(init=False, default_factory=set)
     _peak_in_flight: int = field(init=False, default=0)
     _in_flight: int = field(init=False, default=0)
 
@@ -245,7 +253,20 @@ class RateLimiter:
         # Refuse before taking the concurrency slot: an unaffordable call should
         # not occupy a slot other work could use while it fails.
         self._refuse_if_unaffordable(cost, tool)
+        task = asyncio.current_task()
+        task_id = id(task) if task is not None else None
+        # Re-entrant slot: this call is already inside a concurrency slot held
+        # by the same task (a tool body pacing its own requests). Taking the
+        # semaphore again deadlocks once the ceiling is exhausted — the wrapper
+        # holds the slot for the whole call, so the body's nested acquisition
+        # waits on a slot its own call will not release until it finishes.
+        if task_id is not None and task_id in self._sem_holders:
+            waited = await self.acquire(host=host, cost=cost, tool=tool)
+            yield waited
+            return
         async with self._sem:
+            if task_id is not None:
+                self._sem_holders.add(task_id)
             self._in_flight += 1
             self._peak_in_flight = max(self._peak_in_flight, self._in_flight)
             try:
@@ -253,6 +274,8 @@ class RateLimiter:
                 yield waited
             finally:
                 self._in_flight -= 1
+                if task_id is not None:
+                    self._sem_holders.discard(task_id)
 
     def stats(self) -> dict[str, Any]:
         return {

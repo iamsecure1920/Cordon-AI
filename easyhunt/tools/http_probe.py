@@ -24,6 +24,7 @@ from easyhunt.tools.common import (
     run_one,
     split_targets,
     store_assets,
+    subprocess_timeout_for,
     targets_or_assets,
 )
 
@@ -49,7 +50,12 @@ HTTPX = register_spec(
                 "-favicon", "-jarm", "-location", "-cdn",
             },
             value_patterns={"-u": HOST_PATTERN, "-ports": re.compile(r"[0-9,\-]{1,64}")},
-            numeric_caps={"-timeout": 30, "-threads": 50, "-rl": 150, "-retries": 2},
+            # -threads is a worker count, not a rate: httpx holds a worker for the
+            # full connect timeout, so a 60k-host estate at 20 rps and a 5s
+            # timeout needs ~100 workers to actually reach the ceiling (the old
+            # cap of 50 left it at ~10 rps, and 8 left it at ~1-2 rps). The
+            # engagement's -rl stays the binding control.
+            numeric_caps={"-timeout": 30, "-threads": 100, "-rl": 150, "-retries": 2},
         ),
     )
 )
@@ -115,17 +121,25 @@ async def http_probe(
         "-json", "-silent", "-nc", "-duc",
         "-title", "-tech-detect", "-status-code", "-content-length",
         "-web-server", "-ip", "-cname", "-cdn", "-location",
-        "-timeout", "10",
+        # Liveness probing does not need a 10s wait or a retry per dead name.
+        # On a 60k-host estate the dead names dominate the runtime: each one
+        # holds a worker for the full connect timeout, and -retries 1 doubles
+        # that. 5s and zero retries classifies "speaks HTTP" just as well and
+        # roughly halves the dead-host cost; a host that needs two chances to
+        # answer a HEAD request would be a flaky lead anyway.
+        "-timeout", "5",
         "-threads", str(max(1, engagement.scope.rules.max_concurrency)),
         "-rl", str(max(1, int(engagement.scope.rules.max_rps))),
-        "-retries", "1",
     ]
     if follow_redirects:
         argv.append("-follow-redirects")
     if ports:
         argv += ["-ports", ports]
 
-    run = await run_one("httpx", argv, timeout=800)
+    run = await run_one(
+        "httpx", argv,
+        timeout=subprocess_timeout_for(hosts, int(engagement.scope.rules.max_rps), minimum=800),
+    )
 
     live: list[dict[str, Any]] = []
     technologies: dict[str, int] = {}

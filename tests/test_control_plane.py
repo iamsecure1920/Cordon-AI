@@ -69,6 +69,37 @@ class TestRateLimit:
         await asyncio.gather(*(worker() for _ in range(10)))
         assert peak <= 2
 
+    async def test_nested_slot_does_not_deadlock(self) -> None:
+        # A tool body pacing its own requests calls slot() inside the wrapper's
+        # slot (exploit_chain → web_injection_probe → per-request probe). With
+        # the concurrency ceiling exhausted, re-acquiring the semaphore waits on
+        # a slot the same call holds — a 3-deep nesting under concurrency=2 hung
+        # the exploit phase for twenty minutes against a live target. A nested
+        # slot must take the rate tokens and skip the semaphore.
+        limiter = RateLimiter(rps=1000, concurrency=2)
+
+        async def nested() -> None:
+            async with limiter.slot(host="example.com"):
+                # Simulate the wrapper's slot: hold it while the body runs.
+                async with limiter.slot(host="example.com"):
+                    await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(nested(), timeout=5)
+
+    async def test_nested_slot_skips_the_semaphore_but_paces_tokens(self) -> None:
+        # The outer slot is one in-flight call; nested slots are its own pacing,
+        # not new calls. Peak in-flight must stay 1, proving the semaphore was
+        # not double-counted.
+        limiter = RateLimiter(rps=1000, concurrency=2)
+
+        async def nested() -> None:
+            async with limiter.slot(host="example.com"):
+                async with limiter.slot(host="example.com"):
+                    await asyncio.sleep(0.01)
+
+        await nested()
+        assert limiter.stats()["peak_in_flight"] == 1
+
     async def test_per_host_buckets_are_independent(self) -> None:
         limiter = RateLimiter(rps=1000, concurrency=10, per_host_rps=1000)
         await limiter.acquire(host="a.example.com")
@@ -300,6 +331,21 @@ class TestBudget:
         summary = budget.cost_summary()
         assert summary["by_tier_usd"] == {"t0": 0.01, "t2": 0.2}
         assert list(summary["by_phase_usd"]) == ["report", "triage"]
+
+    def test_enforce_false_disables_every_ceiling(self, tmp_path) -> None:
+        # Operator decision: no ceilings. check() must never raise and
+        # remaining() must report unlimited, no matter how much is spent.
+        budget = Budget(BudgetLimits(enforce=False, max_requests=10), path=tmp_path / "b.json")
+        budget.charge_tool(seconds=1, requests=9999)
+        assert budget.exhausted() is None
+        budget.check(need_requests=10**12)
+        assert budget.remaining()["requests"] == float("inf")
+        assert budget.remaining()["wall_clock_seconds"] == float("inf")
+
+    def test_enforce_defaults_to_true(self) -> None:
+        # A scope that says nothing about enforcement keeps the old behaviour.
+        assert BudgetLimits.from_dict({}).enforce is True
+        assert BudgetLimits.from_dict({"enforce": False}).enforce is False
 
 
 class TestEngagementWiring:

@@ -18,6 +18,7 @@ Three things are enforced here rather than left to the caller:
 from __future__ import annotations
 
 import logging
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -199,6 +200,168 @@ _REQUESTS_PER_TEMPLATE = 2.1
 #: clock, because the ceiling that kills a scan is time, not requests.
 _OBSERVED_RPS = 15.0
 
+#: Technology names as http_probe reports them (lowercased) mapped to the nuclei
+#: tags worth firing against that stack. The unattended pipeline calls
+#: ``nuclei_scan`` with no template selection; without this mapping the default
+#: load is every community template (~7,445), which the sizing gate correctly
+#: refuses on anything but a handful of hosts. Mapping the observed stack to its
+#: tags turns "everything, refused" into "what this estate actually runs", and
+#: a stack fingerprint says nothing about — the always-on core below.
+#: Keyed on substrings so "Apache HTTP Server:2.4.56" matches "apache".
+_STACK_TAGS: dict[str, str] = {
+    "wordpress": "wordpress",
+    "php": "php",
+    "java": "java,spring",
+    "spring": "spring",
+    "tomcat": "tomcat",
+    "weblogic": "weblogic",
+    "glassfish": "glassfish",
+    "jboss": "jboss",
+    "iis": "microsoft-iis",
+    "asp.net": "aspnet",
+    "sharepoint": "sharepoint",
+    "django": "django",
+    "rails": "ruby",
+    "node.js": "nodejs",
+    "express": "nodejs",
+    "next.js": "nextjs",
+    "nginx": "nginx",
+    "apache": "apache",
+    "graphql": "graphql",
+    "swagger": "swagger",
+    "salesforce": "salesforce",
+    "magento": "magento",
+    "drupal": "drupal",
+    "joomla": "joomla",
+    "laravel": "laravel",
+    "jenkins": "jenkins",
+    "gitlab": "gitlab",
+    "kibana": "kibana",
+    "elasticsearch": "elasticsearch",
+    "docker": "docker",
+    "kubernetes": "kubernetes",
+    "react": "react",
+    "angular": "angular",
+}
+
+#: Tags worth firing regardless of what the stack fingerprint says: exposed
+#: files/config and default credentials are the classes a scanner earns its
+#: keep on, and none of them depend on knowing the framework.
+_CORE_TAGS = "exposure,misconfig,default-login,tech"
+
+#: Severity tiers tried, broadest first, when the unattended pipeline must
+#: size its own scan. The full tier usually cannot fit a large estate; each
+#: narrowing cuts roughly half the templates until the set fits the ceiling.
+_SEVERITY_TIERS = ("low,medium,high,critical", "high,critical", "critical")
+
+
+def _derive_stack_tags(engagement: Any) -> str:
+    """Nuclei tags for the technologies http_probe observed, plus the core set."""
+    matched: set[str] = set()
+    for tech in engagement.assets.values("technology"):
+        name = str(tech).lower()
+        for needle, tags in _STACK_TAGS.items():
+            if needle in name:
+                matched.update(t for t in tags.split(","))
+    matched.update(_CORE_TAGS.split(","))
+    return ",".join(sorted(matched))
+
+
+def _prioritize_targets(engagement: Any, targets: list[str]) -> list[str]:
+    """Order targets so a budget-limited scan covers the reward surface first.
+
+    Scope focus URLs (``in_scope.urls``, the assets a program names explicitly)
+    come first, then hosts that share a focus host, then everything else. A
+    scan that can only afford a fraction of a large estate should spend it on
+    what the program said matters, not on the alphabetically-first live URL.
+    """
+    focus = getattr(engagement.scope, "_allow", None)
+    focus_hosts: set[str] = set()
+    for host, _path in (getattr(focus, "urls", []) or []):
+        if host:
+            focus_hosts.add(host.lower())
+
+    def host_of(url: str) -> str:
+        try:
+            from urllib.parse import urlsplit
+
+            return (urlsplit(url).hostname or "").lower()
+        except ValueError:
+            return ""
+
+    def rank(url: str) -> tuple[int, int, str]:
+        host = host_of(url)
+        if host in focus_hosts:
+            return (0, 0, url)
+        if any(host == f or host.endswith("." + f) for f in focus_hosts):
+            return (1, 0, url)
+        return (2, 0, url)
+
+    return sorted(targets, key=rank)
+
+
+async def _size_unattended_scan(
+    engagement: Any, targets: list[str], tags: str,
+) -> tuple[list[str], str, dict[str, Any]] | None:
+    """Pick the severity tier and target subset a scan can actually finish.
+
+    The sizing gate refuses a selection it cannot complete inside the ceiling
+    rather than start a scan that will be killed mid-run and read as a clean
+    estate. That refusal is right for an agent that can narrow the selection.
+    The unattended pipeline cannot, so it must narrow itself: try progressively
+    tighter severity tiers until the full target set fits the ceiling and the
+    remaining request budget; if even ``critical`` cannot fit everything,
+    prioritize the targets (focus URLs first) and scan the largest subset that
+    fits, reporting exactly what was covered.
+
+    Returns ``(targets, severity, sizing)`` or ``None`` when even a single
+    target with the tightest tier cannot fit — the only case left where the
+    right answer is a refusal, not a narrower scan.
+    """
+    rules = engagement.scope.rules
+    rps = min(float(rules.max_rps or _OBSERVED_RPS), _OBSERVED_RPS)
+    ceiling = 3600.0
+    reachable = int(rps * ceiling)
+    budget_remaining = engagement.budget.remaining().get("requests") or 0
+    # With budget enforcement off the scope reports unlimited; the request
+    # ceiling is then the rate limit x wall clock, not a budget number.
+    budget_capped = not math.isinf(budget_remaining)
+
+    for tier in _SEVERITY_TIERS:
+        count = None
+        try:
+            count = await _count_templates(
+                engagement, templates=None, workflow=None, tags=tags, severity=tier
+            )
+        except Exception as exc:  # noqa: BLE001 — sizing must never block the scan
+            log.warning("template count unavailable for severity %s: %s", tier, exc)
+            pass
+        if not count:
+            continue
+        per_target = count * _REQUESTS_PER_TEMPLATE
+        if per_target <= 0:
+            continue
+        max_targets = int(reachable / per_target)
+        if budget_capped:
+            max_targets = min(max_targets, int(budget_remaining / per_target))
+        if max_targets <= 0:
+            # This tier cannot fit even one target; try the next (tighter) one.
+            continue
+        if max_targets >= len(targets):
+            return targets, tier, {
+                "templates": count, "severity": tier, "truncated": False,
+            }
+        # The tier fits some targets but not all. The tightest tier is the last
+        # word on what can fit; anything before it, keep trying to fit everyone.
+        if tier == _SEVERITY_TIERS[-1]:
+            ordered = _prioritize_targets(engagement, targets)
+            kept = ordered[:max_targets]
+            return kept, tier, {
+                "templates": count, "severity": tier, "truncated": True,
+                "scanned": len(kept), "total": len(targets),
+            }
+    return None
+
 
 async def _count_templates(
     engagement: Any, *, templates: list[str] | None, workflow: str | None,
@@ -275,6 +438,7 @@ async def _run(
     tags: str | None,
     severity: str,
     concurrency: int,
+    sizing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     engagement = get_engagement()
     rules = engagement.scope.rules
@@ -355,6 +519,12 @@ async def _run(
         "exit_code": result.exit_code,
         "timed_out": result.timed_out,
         "stderr_tail": result.stderr[-1000:] if result.stderr else "",
+        # When the unattended pipeline sized its own scan (derived stack tags,
+        # severity tier, possibly truncated target set), the phase result must
+        # say so — a scan that covered 52 of 944 URLs is not a full-estate scan,
+        # and the report must not let it read like one.
+        "sizing": sizing,
+        "selection": {"tags": tags, "severity": severity} if sizing else None,
         # Counts reflect what was kept, not what the scanner printed.
         "count": len(stored),
         "dropped_out_of_scope": dropped,
@@ -440,6 +610,17 @@ async def nuclei_scan(
 
     targets, target_origin = targets_or_assets(target, kind="url", tool="nuclei_scan")
 
+    # The unattended pipeline (hunt.sh) passes no template selection, which
+    # used to mean "every community template" — 7,445 of them, refused by the
+    # sizing gate before it starts. Derive a stack-matched selection instead:
+    # the technologies http_probe already observed, plus the always-on core.
+    # An explicit templates/workflow/tags argument still wins untouched; this
+    # is only the no-selection default.
+    explicit_selection = bool(templates or workflow or tags)
+    sizing: dict[str, Any] | None = None
+    if not explicit_selection:
+        tags = _derive_stack_tags(engagement)
+
     # Size the scan before running it. `estimated_requests` on the decorator is a
     # fixed 500, which on a real engagement was 437x too low: 5,148 templates
     # across 20 hosts needed 218,440 requests against a 100,000 budget, and the
@@ -450,16 +631,41 @@ async def nuclei_scan(
         tags=tags, severity=severity,
     )
     if feasibility.get("infeasible"):
-        return {
-            "ok": False,
-            "error": "scan_too_large",
-            "message": feasibility["message"],
-            "estimate": feasibility,
-            "hint": (
-                "Narrow the template selection (dropping 'cve' usually removes ~75% "
-                "of them), scan fewer hosts, or raise the timeout deliberately."
-            ),
-        }
+        if explicit_selection:
+            # The caller named the selection, so they can narrow it. Keep the
+            # refusal and say how.
+            return {
+                "ok": False,
+                "error": "scan_too_large",
+                "message": feasibility["message"],
+                "estimate": feasibility,
+                "hint": (
+                    "Narrow the template selection (dropping 'cve' usually removes ~75% "
+                    "of them), scan fewer hosts, or raise the timeout deliberately."
+                ),
+            }
+        # No explicit selection: the scan must size itself to what it can
+        # actually finish instead of refusing — a refusal here is the pipeline
+        # skipping the estate's only vuln scan. Try tighter severity tiers, and
+        # if even critical cannot fit everything, prioritize the targets
+        # (focus URLs first) and scan the largest subset that fits.
+        sized = await _size_unattended_scan(engagement, targets, tags)
+        if sized is None:
+            return {
+                "ok": False,
+                "error": "scan_too_large",
+                "message": feasibility["message"],
+                "estimate": feasibility,
+                "hint": (
+                    "Even critical-severity stack-matched templates cannot fit one "
+                    "target in the execution ceiling; raise the timeout deliberately."
+                ),
+            }
+        targets, severity, sizing = sized
+        feasibility = await _estimate_scan(
+            engagement, targets=targets, templates=templates, workflow=workflow,
+            tags=tags, severity=severity,
+        )
 
     job = engagement.jobs.launch(
         lambda j: _run(
@@ -470,6 +676,7 @@ async def nuclei_scan(
             tags=tags,
             severity=severity,
             concurrency=concurrency,
+            sizing=sizing if not explicit_selection else None,
         ),
         tool="nuclei_scan",
         phase="vuln_scan",
@@ -478,7 +685,14 @@ async def nuclei_scan(
 
     payload = await engagement.jobs.wait(job.id, timeout=max(0.0, min(wait_seconds, 300)))
     if payload.get("ready") and payload.get("ok"):
-        return {"job_id": job.id, "completed": True, **payload["result"]}
+        result = {"job_id": job.id, "completed": True, **payload["result"]}
+        # The unattended scan may have sized itself down (tighter severity, or
+        # focus URLs first when even critical cannot fit the whole estate). Say
+        # so in the result, or a truncated scan reads exactly like a clean one.
+        if not explicit_selection and "sizing" in locals():
+            result["selection"] = {"tags": tags, "severity": severity}
+            result["sizing"] = sizing
+        return result
     return {
         "job_id": job.id,
         "completed": False,

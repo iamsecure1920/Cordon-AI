@@ -30,6 +30,7 @@ from easyhunt.tools.common import (
     store_assets,
     targets_or_assets,
 )
+from easyhunt.util.parse import host_of
 
 __all__ = ["js_analyze"]
 
@@ -298,6 +299,24 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
 
     all_secrets: list[dict[str, Any]] = []
     all_endpoints: set[str] = set()
+    #: Endpoint -> origin host (``app.chime.com``). A route recovered from a
+    #: bundle belongs to the host that served that bundle; without this binding
+    #: the exploit chain resolves every endpoint against every live host and
+    #: spends its validator budget on ``app.chime.com``'s routes aimed at
+    #: ``affiliates.chime.com`` (a host that does not even resolve).
+    endpoint_origins: dict[str, str] = {}
+    #: Saved bundle file -> URL it was fetched from. jsluice/linkfinder run over
+    #: the saved files, whose timestamped names carry no URL; this map is how
+    #: their discoveries get attributed to the host that served them.
+    saved_urls: dict[str, str] = {}
+    #: Fetched URL -> the page that referenced it (``<script src>``). Routes
+    #: found in a bundle belong to the app that loaded it, NOT the CDN that
+    #: stored it: chime's bundles live on a ``*.chmfin.com`` asset host while
+    #: their routes (``/move-money/review``, ``/api/graphql``) are served by
+    #: ``app.chime.com``. Attributing to the bundle URL pinned 102 routes to a
+    #: CDN that is not even in the live host set — the exploit chain then had
+    #: nothing to aim them at. Seeds reference themselves.
+    page_urls: dict[str, str] = {}
     fetched: list[dict[str, Any]] = []
     #: Hosts that refused us. Their JavaScript is UNTESTED, not empty.
     blocked: list[dict[str, Any]] = []
@@ -310,6 +329,10 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     # capped, not followed without limit.
     queue: deque[str] = deque(urls)
     seen: set[str] = set()
+    #: Seed pages are their own referrer; anything the queue follows inherits
+    #: the page that named it.
+    for seed in urls:
+        page_urls[seed] = seed
 
     async with httpx.AsyncClient(
         timeout=20,
@@ -347,19 +370,26 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
 
             secrets, endpoints = _scan_text(body, url)
             all_secrets.extend(secrets)
-            all_endpoints.update(endpoints)
+            origin = host_of(page_urls.get(url, url))
+            for endpoint in endpoints:
+                all_endpoints.add(endpoint)
+                endpoint_origins.setdefault(endpoint, origin)
             record["secrets"] = len(secrets)
             if verdict == "not_javascript":
                 record["why"] = why
                 not_js.append(record)
-                # An HTML shell's value is the bundles it names.
+                # An HTML shell's value is the bundles it names. A bundle
+                # inherits the page that referenced it as its origin — see
+                # ``page_urls``.
                 for script_url in _script_urls(body, url):
                     if script_url not in seen and len(fetched) < max_files * 4:
                         queue.append(script_url)
+                        page_urls.setdefault(script_url, url)
             fetched.append(record)
 
             path = engagement.raw_path("js", "js")
             path.write_text(body, encoding="utf-8")
+            saved_urls[str(path)] = url
 
     for secret in all_secrets:
         finding = Finding(
@@ -399,10 +429,12 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     # minifier noise rather than routes.
     jsluice_endpoints: list[str] = []
     js_files = sorted(str(p) for p in engagement.raw_dir.glob("js-*.js"))
-    if js_files:
-        jsluice_run = await run_one(
-            "jsluice", ["urls", *js_files[:max_files]], timeout=180
-        )
+    # jsluice runs per file, not over the batch, so each discovery can be
+    # attributed to the host that served that bundle. It costs no network and is
+    # sub-second per file; the batch form silently lost the origin host.
+    for js_file in js_files[:max_files]:
+        origin = host_of(page_urls.get(saved_urls.get(js_file, ""), saved_urls.get(js_file, "")))
+        jsluice_run = await run_one("jsluice", ["urls", js_file], timeout=180)
         if jsluice_run.ran:
             for line in jsluice_run.values:
                 try:
@@ -411,8 +443,11 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
                     continue
                 found = record.get("url")
                 if found:
-                    jsluice_endpoints.append(str(found))
-            all_endpoints.update(jsluice_endpoints)
+                    found = str(found)
+                    jsluice_endpoints.append(found)
+                    if origin:
+                        endpoint_origins.setdefault(found, origin)
+    all_endpoints.update(jsluice_endpoints)
 
     # linkfinder recovers parameterised routes the native regex pass cannot.
     # Measured against 12 real bundles: 422 endpoints to the native pass's 210,
@@ -426,6 +461,7 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     linkfinder_endpoints: list[str] = []
     linkfinder_runs: list[ToolRun] = []
     for js_file in js_files[:max_files]:
+        origin = host_of(page_urls.get(saved_urls.get(js_file, ""), saved_urls.get(js_file, "")))
         lf_run = await run_one(
             "linkfinder", ["-i", js_file, "-o", "cli"], timeout=180
         )
@@ -435,6 +471,8 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
                 # `-o cli` prints one candidate per line; keep the URL-shaped ones.
                 if value.startswith(("/", "http")):
                     linkfinder_endpoints.append(value)
+                    if origin:
+                        endpoint_origins.setdefault(value, origin)
     all_endpoints.update(linkfinder_endpoints)
 
     # Endpoint snapshot is taken AFTER jsluice and linkfinder have contributed.
@@ -442,7 +480,13 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     # `endpoints_found` but absent from `endpoints` and from the asset store — a
     # tool that visibly ran, whose output was silently dropped on the floor.
     relative = sorted(e for e in all_endpoints if e.startswith("/"))
-    store_assets(relative, kind="endpoint", source="js_analyze", tags=["from-js"])
+    store_assets(
+        relative,
+        kind="endpoint",
+        source="js_analyze",
+        tags=["from-js"],
+        hosts={e: endpoint_origins.get(e, "") for e in relative},
+    )
 
     library_run = await run_one(
         "retire", ["--path", str(engagement.raw_dir), "--outputformat", "json"],

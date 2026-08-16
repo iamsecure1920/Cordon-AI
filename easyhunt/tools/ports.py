@@ -177,7 +177,11 @@ async def port_scan(target: str, ports: str = "top-100") -> dict[str, Any]:
         # floor. A floor of 10 would have silently ignored any program that
         # published a limit below that.
         "-rate", str(max(1, int(rules.max_rps))),
-        "-c", str(max(1, int(rules.max_concurrency))),
+        # Clamp to naabu's own policy ceiling: a scope may publish a higher
+        # max_concurrency than a scanner's argv policy allows, and run_one
+        # refuses (not clamps) an over-cap value. min() keeps us inside the cap
+        # instead of erroring out the whole phase.
+        "-c", str(min(max(1, int(rules.max_concurrency)), 25)),
         "-retries", "1",
     ]
     if ports == "top-100":

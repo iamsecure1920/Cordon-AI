@@ -524,7 +524,10 @@ async def content_discovery(
         [
             "-u", fuzz_url, "-w", str(normalized),
             "-mc", "200,201,204,301,302,307,401,403,405",
-            "-t", str(max(1, engagement.scope.rules.max_concurrency)),
+            # Clamp to ffuf's own policy ceiling (20). run_one refuses an
+            # over-cap value, and the scope may publish a higher concurrency
+            # than a scanner's argv policy allows.
+            "-t", str(min(max(1, int(engagement.scope.rules.max_concurrency)), 20)),
             "-rate", str(max(1, int(engagement.scope.rules.max_rps))),
             "-timeout", "15", "-ac", "-s",
             "-maxtime", str(min(max_seconds, 900)),

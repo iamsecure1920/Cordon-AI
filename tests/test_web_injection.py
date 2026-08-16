@@ -75,6 +75,27 @@ class TestInjector:
         # as themselves (they are in the always-safe set).
         assert injected.endswith("file=../../../../etc/passwd")
 
+    def test_bypass_payload_variants_survive_the_wire(self) -> None:
+        """The filter-bypass payloads arrive exactly as written — one decode
+        layer, not a second percent-encoding that would neuter them.
+        """
+        url = "https://www.example.com/view?file=index.php"
+        spec = w._CLASSES["lfi"]
+        for payload in spec["payloads"]:
+            injected = w._inject(url, "file", payload, spec["safe"])
+            assert "file=" + payload in injected, payload
+
+    def test_every_class_carries_a_filter_bypass_variant(self) -> None:
+        """The always-run native probes are the classes no scanner binary
+        owns, so they must carry the standard bypass forms, not just the
+        textbook payload.
+        """
+        assert any("%2F%2F" in p for p in w._CLASSES["open-redirect"]["payloads"])
+        assert any("..%2f" in p for p in w._CLASSES["lfi"]["payloads"])
+        assert any("%252e" in p for p in w._CLASSES["lfi"]["payloads"])  # double-encoded
+        assert any("XInclude" in p for p in w._CLASSES["xxe"]["payloads"])
+        assert any("&#x66;ile" in p for p in w._CLASSES["xxe"]["payloads"])
+
     def test_crlf_payload_is_not_double_encoded(self) -> None:
         url = "https://www.example.com/redirect?next=home"
         injected = w._inject(url, "next", "\r\nEasyHunt-Injected: 1", safe="")
@@ -100,6 +121,35 @@ class TestSignatureHit:
     def test_location_signature_reads_the_location_header(self) -> None:
         resp = httpx.Response(302, headers={"location": "https://easyhunt-canary.invalid/x"})
         assert w._signature_hit(resp, "location", w._CLASSES["open-redirect"]["signature"])
+
+    def test_scheme_relative_location_is_a_hit(self) -> None:
+        resp = httpx.Response(302, headers={"location": "//easyhunt-canary.invalid/x"})
+        assert w._signature_hit(resp, "location", w._CLASSES["open-redirect"]["signature"])
+
+    def test_relative_location_echoing_canary_is_not_an_open_redirect(self) -> None:
+        # Next.js canonical redirects (308 trailing-slash rewrite) echo the whole
+        # query string into a *relative* Location: /api?id=<injected>. Same-origin
+        # by construction — no victim can be redirected off-host. Without this
+        # guard every canonical redirect becomes a false open-redirect finding.
+        resp = httpx.Response(308, headers={"location": "/api?id=https%3A%2F%2Feasyhunt-canary.invalid%2Fredirect"})
+        assert not w._signature_hit(resp, "location", w._CLASSES["open-redirect"]["signature"])
+
+    def test_absolute_location_echoing_canary_in_query_is_not_an_open_redirect(self) -> None:
+        # The ATT false-positive class: nginx/Cloudflare scheme rewrites emit an
+        # *absolute* Location to the site's own www host with the injected value
+        # echoed into the query string:
+        #   Location: http://www.victim.example/api?id=easyhunt-canary.invalid
+        # The Location is absolute, so an "is it off-host" check passes; but the
+        # victim lands on victim.example, not on the canary. Only the canary as
+        # the parsed *destination host* is an open redirect.
+        resp = httpx.Response(301, headers={"location": "http://www.victim.example/api?id=easyhunt-canary.invalid"})
+        assert not w._signature_hit(resp, "location", w._CLASSES["open-redirect"]["signature"])
+        # Same page, genuine form: canary IS the destination host.
+        genuine = httpx.Response(302, headers={"location": "https://easyhunt-canary.invalid/redirect"})
+        assert w._signature_hit(genuine, "location", w._CLASSES["open-redirect"]["signature"])
+        # Triple-slash form browsers normalise to scheme-relative: still a hit.
+        triple = httpx.Response(302, headers={"location": "///easyhunt-canary.invalid/redirect"})
+        assert w._signature_hit(triple, "location", w._CLASSES["open-redirect"]["signature"])
 
     def test_body_signature_matches_the_body(self) -> None:
         resp = httpx.Response(200, text="root:x:0:0:root:/root:/bin/bash")

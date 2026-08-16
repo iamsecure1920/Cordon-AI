@@ -112,6 +112,20 @@ class TestTheSurfaceStaysSeparated:
         anonymous(engagement, f"https://{HOST}/doc?id=5")
         assert "worth_a_look" in (await hunt_plan())["instructions"]
 
+    async def test_junk_endpoints_do_not_crash_the_planner(self, engagement) -> None:
+        # js_analyze scrapes whatever looks link-like out of bundles, and that
+        # is not always a URL: an XPath selector like //*[@id='...'] reads to
+        # urlsplit as a malformed IPv6 literal and raises ValueError. One junk
+        # endpoint took the whole planning phase down on ATT; it must be
+        # skipped, not fatal.
+        anonymous(engagement, f"https://{HOST}/pricing")
+        engagement.assets.add_many(
+            [Asset(value="//*[@id='widget']", kind="endpoint", source="js_analyze", host=HOST)]
+        )
+        result = await hunt_plan()
+        assert result["ok"] is True
+        assert "worth_a_look" in result["instructions"]
+
 
 class TestGapsTrackWhatWasActuallyDone:
     async def test_no_session_asks_for_one(self, engagement) -> None:

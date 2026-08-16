@@ -881,3 +881,22 @@ class TestScope:
         with pytest.raises(EasyHuntError):
             await REGISTRY[name].fn(target="https://not-ours.example.net/", **kwargs)
         assert calls == [], f"{name} ran the binary before the scope check"
+
+
+def test_is_own_output_filters_intermediates_not_bundles() -> None:
+    """secrets hits inside EasyHunt's own logs are noise; downloaded bundles are not.
+
+    gitleaks regex-matches URL/JSON text in dnsx/httpx output (an ``edgekey.net``
+    CNAME looks like an API key), and kingfisher flags the noseyparker datastore's
+    rule SQL. Those are OUR files, not the target's artifacts — filtering them is
+    what keeps a secrets report honest. ``js-*.js`` bundles are the target's
+    downloaded code and must survive the filter.
+    """
+    from easyhunt.tools.secrets import _is_own_output
+
+    assert _is_own_output("/ws/raw/dnsx-234549229.jsonl")
+    assert _is_own_output("/ws/raw/httpx-025205041.jsonl")
+    assert _is_own_output("/ws/np-datastore/datastore.db/rule.sql")
+    assert _is_own_output("/ws/raw/kingfisher-142513503.jsonl")
+    assert not _is_own_output("/ws/raw/js-043533508.js")
+    assert not _is_own_output("/ws/raw/js-043519178.js")

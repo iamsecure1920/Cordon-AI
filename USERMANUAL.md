@@ -396,14 +396,25 @@ flowchart LR
     subgraph GLOBAL[global: once over everything]
       TK[takeover_detect]
       SC[nuclei_scan]
+      P1[ports: naabu on live hosts]
+      SV[services: nmap -sV on focus]
+      PA[params: arjun on focus]
+      CO[content: ffuf juicy-paths]
+      NK[nikto lead list]
+      WP[wapiti crawl scan]
       EX[exploit_chain<br/>only with --exploit]
       PL[hunt_plan]
       RP[report_generate]
     end
-    TK --> RP
+    TK --> P1 --> SV
     SC --> EX
+    PA --> EX
+    CO --> EX
+    NK --> EX
+    WP --> EX
     EX --> PL
     PL --> RP
+    SV --> RP
     style S fill:#1e3a8a,color:#fff
     style RP fill:#065f46,color:#fff
 ```
@@ -413,16 +424,28 @@ flowchart LR
 | Phase | Tool | Inherits | Wants | Count gate |
 |---|---|---|---|---|
 | `recon` | `subdomain_enum` | — | argument | `subdomains` |
+| `permute` | `dns_permute` | ✅ | subdomain | `new_hosts` |
 | `resolve` | `dns_resolve` | ✅ | subdomain | `resolved` |
 | `probe` | `http_probe` | ✅ | subdomain/host | `live` |
+| `cdn` | `cdn_check` | ✅ | host | — |
 | `waf` | `waf_detect` | — | argument (URL) | — |
 | `tls` | `tls_audit` | — | argument | `checks` |
 | `cors` | `cors_audit` | — | argument (URL) | — |
 | `endpoints` | `endpoint_discovery` | ✅ | subdomain | `urls` |
 | `js` | `js_analyze` | ✅ | url (tag `live`) | — |
 | `auth` | `auth_surface` | ✅ | url (tag `live`) | `hosts_examined` |
+| `secrets` | `secret_scan` | — | workspace `raw/` path | — |
+| `pattern` | `pattern_scan` | ✅ | url (tag `live`) | `count` |
+| `graphql` | `graphql_audit` | — | focus URL | — |
+| `websocket` | `websocket_probe` | — | focus URL | — |
 | `takeover` | `takeover_detect` | ✅ | subdomain | — |
 | `scan` | `nuclei_scan` | ✅ | url (tag `live`) | — |
+| `ports` | `port_scan` | ✅ | url (tag `live`, hosts only) | `count` |
+| `services` | `service_scan` | — | focus URL | `count` |
+| `params` | `param_discovery` | — | focus URL | `count` |
+| `content` | `content_discovery` | — | focus URL | `count` |
+| `nikto` | `nikto_scan` | — | focus URL | `items` |
+| `wapiti` | `wapiti_scan` | — | focus URL | `candidates` |
 | `exploit` | `exploit_chain` | ✅ | url | `tested` |
 | `plan` | `hunt_plan` | — | argument | `actionable` |
 | `report` | `report_generate` | — | argument | — |
@@ -772,9 +795,9 @@ sets `allow_exploitation: true` (the program authorizes it), and you pass
 3. Resolves JS-named sinks (`/rest/products/search?q=`) first, then crawled
    params, then guesses — so a bounded heavy-validator cap trims the guesses,
    never the named sinks.
-4. Always fires `web_injection_probe` (open redirect, CRLF, LFI, XXE, HPP) on
-   every point; fires `sqli_validate` + `xss_validate` on the first few when
-   `--exploit` is passed.
+4. Always fires `web_injection_probe` (open redirect, CRLF, LFI, XXE, HPP),
+   `cmdi_probe` (commix) and `ssti_probe` (SSTImap) on every point; fires
+   `sqli_validate` + `xss_validate` on the first few when `--exploit` is passed.
 5. Reads `proven` from the validators and files a CANDIDATE finding for each
    proven class.
 
@@ -788,6 +811,9 @@ the chain drives must be in `auto_approve`.
   Detection only; **no extraction flags** (`--dump`, `--dbs`, `--tables`,
   `--os-shell`, `--file-read`… are hard-denied by the `ArgPolicy`).
 - `xss_validate` — dalfox, proving XSS with `alert(document.domain)`. No exfil.
+- `cmdi_probe` — commix, detection-only (classic/eval/time-based). No shell.
+- `ssti_probe` — SSTImap, detection-only (template evaluation, `{{7*7}} → 49`).
+  No `--os-shell`, `--eval-code` or file transfer.
 - `web_injection_probe` — native read-only differential probes. LFI/XXE read
   `/etc/passwd` (the standard proof) and nothing else.
 

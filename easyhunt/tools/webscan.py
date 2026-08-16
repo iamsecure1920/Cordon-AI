@@ -1500,7 +1500,12 @@ async def nikto_scan(target: str, max_minutes: int = 10) -> dict[str, Any]:
             install="git clone https://github.com/sullo/nikto /opt/nikto",
         )
 
-    data = _read_json(report)
+    # nikto appends its own extension to -output: asking for "foo.json" with
+    # -Format json makes it write "foo.json.json". The wrapper computes raw_path
+    # as "<ts>.json", so the real file is that plus ".json". Read whichever
+    # exists — the appended form first, since that is what nikto actually wrote.
+    actual = report.with_name(report.name + ".json")
+    data = _read_json(actual if actual.exists() else report)
     hosts = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
 
     items: list[dict[str, Any]] = []

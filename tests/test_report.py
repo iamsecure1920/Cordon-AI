@@ -110,6 +110,22 @@ class TestMarkdown:
         # TruffleHog's AGPL status matters for redistribution and must be visible.
         assert "AGPL-3.0" in text
 
+    async def test_inventory_marks_wrapper_driven_binaries_as_used(self, populated) -> None:
+        # The catalog lists binaries (subfinder, testssl, sqlmap...); the audit
+        # records wrappers (subdomain_enum, tls_audit, sqli_validate...). A
+        # binary_run event from guarded_run must mark the catalog entry used, or
+        # a fully-driven engagement shows half the fleet as "no".
+        populated.audit.record(
+            "binary_run", tool="testssl", ran=True, exit_code=0, timed_out=False
+        )
+        populated.audit.record(
+            "binary_run", tool="sqlmap", ran=True, exit_code=0, timed_out=False
+        )
+        await generate_report(populated, formats=["md"])
+        text = (populated.reports_dir / "Report.md").read_text()
+        assert "| testssl |" in text and "| testssl |" in text.split("## Coverage")[0]
+        assert "| sqlmap |" in text
+
     async def test_task_graph_is_rendered(self, populated) -> None:
         await generate_report(populated, formats=["md"])
         text = (populated.reports_dir / "Report.md").read_text()

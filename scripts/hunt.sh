@@ -63,11 +63,13 @@ done
 # over everything every host contributed — scanning is sized against the real
 # total instead of a set that grows under it, and the report covers the run
 # rather than the last host in it.
-PER_TARGET_PHASES="recon resolve probe waf tls cors endpoints js auth"
+PER_TARGET_PHASES="recon permute resolve probe cdn waf tls cors endpoints js auth"
 # exploit is listed so --from/--only can name it, but it only *runs* when
 # --exploit is passed: its validators are individually approval-gated and must
 # never fire on a run the operator did not explicitly authorise for exploitation.
-GLOBAL_PHASES_LIST="takeover scan exploit plan report"
+# ports/services/params/content/pattern/graphql/websocket/nikto/wapiti are global:
+# they consume the whole estate once, not once per host.
+GLOBAL_PHASES_LIST="secrets pattern graphql websocket takeover scan ports services params content nikto wapiti exploit plan report"
 ALL_PHASES="$PER_TARGET_PHASES $GLOBAL_PHASES_LIST"
 # Only probe is genuinely required: if nothing is alive, later phases scan hosts
 # nobody confirmed exist. `resolve` was in here too, so any target already

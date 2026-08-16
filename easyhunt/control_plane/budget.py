@@ -25,6 +25,11 @@ __all__ = ["Budget", "BudgetLimits", "Ledger"]
 
 @dataclass
 class BudgetLimits:
+    #: Master switch. When ``False`` no ceiling is enforced: ``check()`` never
+    #: raises and ``remaining()`` reports unlimited. The operator's scope file
+    #: is the place to flip it (``budget.enforce: false``); the code keeps the
+    #: machinery so a program that wants ceilings still has them.
+    enforce: bool = True
     llm_usd: float = 5.0
     wall_clock_minutes: float = 240.0
     max_requests: int = 50_000
@@ -35,6 +40,9 @@ class BudgetLimits:
     def from_dict(cls, data: dict[str, Any] | None, *, phase_tokens: dict[str, int] | None = None) -> BudgetLimits:
         data = data or {}
         return cls(
+            # Default stays True so a scope that says nothing is unchanged;
+            # an operator who does not want ceilings writes enforce: false.
+            enforce=bool(data.get("enforce", True)),
             llm_usd=float(data.get("llm_usd", 5.0)),
             wall_clock_minutes=float(data.get("wall_clock_minutes", 240)),
             max_requests=int(data.get("max_requests", 50_000)),
@@ -99,6 +107,16 @@ class Budget:
         return time.time() - self.ledger.started_at
 
     def remaining(self) -> dict[str, float]:
+        if not self.limits.enforce:
+            # Unlimited: every consumer (sizing, decorators, report) sees a
+            # ceiling that cannot be hit, so nothing narrows or refuses on
+            # budget grounds. Ledger still records what was spent.
+            return {
+                "llm_usd": float("inf"),
+                "wall_clock_seconds": float("inf"),
+                "requests": float("inf"),
+                "tool_seconds": float("inf"),
+            }
         return {
             "llm_usd": max(0.0, self.limits.llm_usd - self.ledger.llm_usd),
             "wall_clock_seconds": max(
@@ -120,6 +138,8 @@ class Budget:
 
     def exhausted(self) -> str | None:
         """Name of the first exhausted ceiling, or ``None``."""
+        if not self.limits.enforce:
+            return None
         if not self.llm_disabled and self.ledger.llm_usd >= self.limits.llm_usd:
             return "llm_usd"
         if self.elapsed_seconds >= self.limits.wall_clock_minutes * 60:
@@ -134,8 +154,11 @@ class Budget:
         """Pre-flight check. Raises :class:`BudgetExceeded` when a ceiling is hit.
 
         Called by the tool decorator *before* work starts, so an over-budget run
-        never issues the request in the first place.
+        never issues the request in the first place. With ``enforce: false`` in
+        the scope this is a no-op — the operator said they do not want ceilings.
         """
+        if not self.limits.enforce:
+            return
         hit = self.exhausted()
         if hit:
             self.aborted_reason = hit

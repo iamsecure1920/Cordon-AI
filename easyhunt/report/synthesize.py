@@ -195,13 +195,12 @@ def _markdown(engagement: Any, summary: dict[str, Any], executive: str) -> str:
 
     parts += [
         "",
-        "## Coverage and cost",
+        "## Coverage",
         "",
         "```json",
         json.dumps(
             {
                 "assets": summary.get("assets", {}),
-                "budget": summary.get("budget", {}),
                 "rate_limit": summary.get("rate_limit", {}),
                 "approvals": summary.get("approvals", {}),
                 "jobs": summary.get("jobs", {}),
@@ -254,6 +253,52 @@ def _markdown(engagement: Any, summary: dict[str, Any], executive: str) -> str:
     return "\n".join(parts)
 
 
+#: Wrapper tool -> binaries it drives. The audit records binary_run events at
+#: the guarded_run chokepoint, but engagements started before that instrumentation
+#: (or wrappers that invoke binaries outside it) only have the wrapper's tool_call
+#: event. Without this map, an inventory taken from such an audit would report
+#: sqlmap/dalfox/commix/sstimap as "did not run" on the very engagement where the
+#: exploit chain drove all of them. The map is the honest fallback: a wrapper
+#: that completed ok marks every binary it is known to drive as used.
+_WRAPPER_BINARIES: dict[str, tuple[str, ...]] = {
+    # Verified against the wrappers' own run_one() calls; a binary listed here
+    # is one the wrapper is known to invoke, so a wrapper success marks it used.
+    "subdomain_enum": ("subfinder", "assetfinder", "findomain", "amass", "theHarvester"),
+    "dns_resolve": ("dnsx", "dig"),
+    "dns_permute": ("alterx", "dnsx"),
+    "netblock_lookup": ("asnmap", "amass"),
+    "whois_lookup": ("whois",),
+    "http_probe": ("httpx",),
+    "waf_detect": ("wafw00f",),
+    "tls_audit": ("testssl", "tlsx"),
+    "cors_audit": ("corscanner",),
+    "endpoint_discovery": ("katana", "gau", "waybackurls", "waymore", "paramspider", "netsanitizer"),
+    "js_analyze": ("linkfinder", "jsluice", "secretfinder"),
+    "takeover_detect": ("subjack", "subzy", "dnsreaper", "nuclei"),
+    "nuclei_scan": ("nuclei",),
+    "content_discovery": ("ffuf",),
+    "param_discovery": ("arjun",),
+    "port_scan": ("naabu",),
+    "service_scan": ("nmap",),
+    "nikto_scan": ("nikto",),
+    "wapiti_scan": ("wapiti",),
+    "secret_scan": ("kingfisher", "noseyparker", "gitleaks"),
+    "secret_validate": ("kingfisher",),
+    "pattern_scan": ("gf",),
+    "graphql_audit": ("graphql-cop",),
+    "websocket_probe": ("websocat",),
+    "cdn_check": ("cdncheck",),
+    "ssrf_probe": ("ssrfmap",),
+    "ssti_probe": ("sstimap",),
+    "cmdi_probe": ("commix",),
+    "smuggling_probe": ("smuggler",),
+    "nosqli_probe": ("nosqli",),
+    # sqli_validate and xss_validate are driven by the exploit chain, not by
+    # standalone run_one calls, so they are listed under the chain below.
+    "exploit_chain": ("sqlmap", "dalfox", "xsstrike"),
+}
+
+
 def _tool_inventory(engagement: Any) -> list[tuple[str, Any, str, bool]]:
     """Which tools exist, their licenses, and whether this run used them.
 
@@ -261,6 +306,13 @@ def _tool_inventory(engagement: Any) -> list[tuple[str, Any, str, bool]]:
     effects, so an inventory taken from a partially-imported process would
     silently omit tools — and the licenses column is exactly the part nobody
     should have to trust to import order.
+
+    "Used" has two sources, both read from the audit: ``binary_run`` events
+    (the binary itself executed) and ``tool_call`` events of wrappers that
+    completed ok (whose driven binaries are resolved through
+    ``_WRAPPER_BINARIES``). Either marks the tool; a wrapper success counts for
+    its binaries even when no binary_run event was recorded (pre-instrumentation
+    engagements).
     """
     from easyhunt.mcp_server import load_capabilities
     from easyhunt.tools.common import CATALOG, installed
@@ -270,6 +322,15 @@ def _tool_inventory(engagement: Any) -> list[tuple[str, Any, str, bool]]:
     used: set[str] = set()
     for record in engagement.audit.read_all():
         if record.get("event") == "tool_call" and record.get("outcome") == "ok":
+            wrapper = str(record.get("tool"))
+            used.add(wrapper)
+            used.update(_WRAPPER_BINARIES.get(wrapper, ()))
+        elif record.get("event") == "binary_run" and record.get("ran"):
+            # The binary itself executed: subfinder, testssl, sqlmap... These
+            # events are written by guarded_run, so a wrapper that drives several
+            # binaries (subdomain_enum -> subfinder/assetfinder/findomain)
+            # marks every one of them as used — the audit's wrapper name alone
+            # could not.
             used.add(str(record.get("tool")))
 
     rows: list[tuple[str, Any, str, bool]] = []

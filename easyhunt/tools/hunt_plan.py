@@ -98,6 +98,23 @@ _SINK_HINT = re.compile(
 )
 
 
+def _safe_split(url: str) -> Any | None:
+    """urlsplit without the crash on non-URL scraps.
+
+    The surface feeds this parser a deliberately mixed bag: live URLs, archived
+    URLs, and endpoints scraped out of JavaScript bundles. JS scraping returns
+    whatever looked link-like, which is not always a URL — an XPath selector
+    (``//*[@id='...']``) is one real example. urlsplit raises ``ValueError:
+    Invalid IPv6 URL`` on those bracket-heavy scraps because it reads the ``[``
+    as a malformed IPv6 literal. One junk endpoint must not take down the whole
+    planning phase; skip what does not parse.
+    """
+    try:
+        return urlsplit(url)
+    except ValueError:
+        return None
+
+
 def _interesting(urls: list[str]) -> dict[str, list[str]]:
     """Group URLs by why they are worth a human's attention.
 
@@ -110,8 +127,10 @@ def _interesting(urls: list[str]) -> dict[str, list[str]]:
     sinks = sorted({u for u in urls if _SINK_HINT.search(u)})
     params: set[str] = set()
     for url in urls:
-        query = urlsplit(url).query
-        params.update(k for k, _ in parse_qsl(query))
+        parsed = _safe_split(url)
+        if parsed is None:
+            continue
+        params.update(k for k, _ in parse_qsl(parsed.query))
     return {
         "object_reference_candidates": refs[:60],
         "server_side_sink_candidates": sinks[:60],

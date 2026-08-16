@@ -614,6 +614,16 @@ async def guarded_run(
     )
     output_path = engagement.raw_path(output_name or spec.name) if output_name else None
     result = await run_process(plan, timeout=timeout, stdin=stdin, output_path=output_path)
+    # The audit already records the wrapper call (``tool_call``). Record which
+    # *binary* actually executed too: the report's tool inventory lists catalog
+    # entries (subfinder, testssl, sqlmap...) while the audit records wrappers
+    # (subdomain_enum, tls_audit, sqli_validate...), so a run where every
+    # wrapper succeeded showed most tools as "no" — half the installed fleet
+    # looked unused while driving the entire engagement.
+    engagement.audit.record(
+        "binary_run", tool=spec.name, ran=True,
+        exit_code=result.exit_code, timed_out=result.timed_out,
+    )
     if check:
         result.raise_for_status(tool=spec.name, allow_codes=allow_codes)
     return result

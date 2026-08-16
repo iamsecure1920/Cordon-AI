@@ -14,6 +14,9 @@ scope.yaml
 # Every per-engagement scope, not just the active one. These name real
 # targets, contacts, and authorization references.
 scope.*.yaml
+# Hand-edited backups of an active scope (e.g. scope.yaml.bak-chime) name the
+# same live targets and must never ship either.
+scope.yaml.bak*
 !scope.example.yaml
 # The loopback validation lab names no real target — it is 127.0.0.1/32 and a
 # script in this repo. It has to ship, or nobody else can reproduce the runs

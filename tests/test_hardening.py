@@ -317,6 +317,86 @@ class TestScanSizing:
 
         sanitize_argv("nuclei", ["-tl", "-silent"], policy=SPEC.arg_policy)
 
+    async def test_unattended_scan_sizes_itself_to_fit(self, engagement, monkeypatch) -> None:
+        """No explicit selection must derive stack tags and tier down to fit.
+
+        hunt.sh calls nuclei_scan with no templates/tags. Before this fix that
+        meant "every community template" (7,445), which the sizing gate refused
+        — so the unattended pipeline never scanned at all. The engine must
+        derive a stack-matched selection, and when even that cannot fit the
+        whole estate in the ceiling, narrow severity and prioritize targets
+        instead of refusing.
+        """
+        from easyhunt.engines import nuclei_engine
+
+        # The fixture scope has max_rps 5 and the estimator caps observed
+        # throughput at 15, so reachable = 15 * 3600 = 54,000 requests. With
+        # 2.1 req/template-target, a 5000-template tier cannot fit 20 targets.
+        counts = {
+            "low,medium,high,critical": 5000,  # infeasible for 20 targets
+            "high,critical": 5000,             # still infeasible
+            "critical": 200,                   # fits 20 targets: 200*2.1*20 = 8.4k
+        }
+
+        async def tiered(*a, **k):
+            return counts.get(k.get("severity"), 5000)
+
+        monkeypatch.setattr(nuclei_engine, "_count_templates", tiered)
+        targets = [f"https://h{i}.example.com" for i in range(20)]
+        sized = await nuclei_engine._size_unattended_scan(engagement, targets, tags="wordpress")
+        assert sized is not None
+        kept, severity, sizing = sized
+        assert severity == "critical"
+        assert sizing["truncated"] is False
+        assert len(kept) == 20
+
+    async def test_unattended_scan_prioritizes_when_nothing_fits(self, engagement, monkeypatch) -> None:
+        """When even critical cannot fit everything, keep focus URLs first."""
+        from easyhunt.engines import nuclei_engine
+
+        async def huge(*a, **k):
+            # Fixture max_rps is 5, so reachable = 5*3600 = 18,000 requests.
+            # 8000*2.1 = 16.8k req per target: exactly one target fits.
+            return 8000
+
+        monkeypatch.setattr(nuclei_engine, "_count_templates", huge)
+        # Focus URL in the fixture scope is https://app.example.org/v2/
+        targets = ["https://zzz.example.com", "https://app.example.org/v2/"]
+        sized = await nuclei_engine._size_unattended_scan(engagement, targets, tags="wordpress")
+        assert sized is not None
+        kept, severity, sizing = sized
+        assert severity == "critical"
+        assert sizing["truncated"] is True
+        # The focus URL survives the truncation; the non-focus one is dropped.
+        assert kept == ["https://app.example.org/v2/"]
+
+    async def test_unattended_scan_refuses_only_when_nothing_can_fit(self, engagement, monkeypatch) -> None:
+        from easyhunt.engines import nuclei_engine
+
+        async def absurd(*a, **k):
+            return 1_000_000  # 2.1M req per target > 54k ceiling
+
+        monkeypatch.setattr(nuclei_engine, "_count_templates", absurd)
+        sized = await nuclei_engine._size_unattended_scan(
+            engagement, ["https://a.example.com"], tags="wordpress"
+        )
+        assert sized is None
+
+    def test_stack_tags_derive_from_observed_technologies(self, engagement) -> None:
+        from easyhunt.engines import nuclei_engine
+        from easyhunt.knowledge.findings import Asset
+
+        engagement.assets.add_many(
+            [
+                Asset(value="WordPress", kind="technology", source="test"),
+                Asset(value="Apache HTTP Server:2.4.56", kind="technology", source="test"),
+                Asset(value="PHP", kind="technology", source="test"),
+            ]
+        )
+        tags = nuclei_engine._derive_stack_tags(engagement)
+        for expected in ("wordpress", "php", "apache", "exposure", "misconfig"):
+            assert expected in tags.split(",")
+
 
 class TestAmpersandInUrls:
     """A query separator is not a shell operator when argv goes to execve.
