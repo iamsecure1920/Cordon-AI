@@ -682,6 +682,9 @@ class TestSsrfmapIsUngovernable:
         """The number has to bite, or it is a comment with extra steps."""
         from easyhunt.errors import BudgetExceeded
 
+        # Ceilings are opt-in since the default flipped to enforce: false;
+        # this test exercises the ceiling, so it must ask for one.
+        engagement.budget.limits.enforce = True
         engagement.budget.limits.max_requests = 2000
         with pytest.raises(BudgetExceeded):
             engagement.budget.check(need_requests=inj.SSRFMAP_REQUEST_COST)

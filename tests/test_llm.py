@@ -134,6 +134,9 @@ class TestBudgetIntegration:
         assert calls[-1]["tier"] == "t1" and calls[-1]["usd"] == 0.002
 
     async def test_exhausted_budget_blocks_the_call(self, engagement, client: LLMClient) -> None:
+        # Ceilings are opt-in since the default flipped to enforce: false;
+        # this test exercises the ceiling, so it must ask for one.
+        engagement.budget.limits.enforce = True
         engagement.budget.charge_llm(usd=engagement.budget.limits.llm_usd, phase="triage", tier="t2")
         with pytest.raises(BudgetExceeded):
             await client.complete([{"role": "user", "content": "hi"}], tier="t2")

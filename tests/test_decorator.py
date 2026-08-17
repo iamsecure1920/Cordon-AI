@@ -130,6 +130,9 @@ class TestApprovalEnforcement:
 
 class TestBudgetEnforcement:
     async def test_exhausted_budget_stops_new_work(self, engagement) -> None:
+        # Ceilings are opt-in since the default flipped to enforce: false;
+        # this test exercises the ceiling, so it must ask for one.
+        engagement.budget.limits.enforce = True
         engagement.budget.charge_tool(seconds=0, requests=engagement.budget.limits.max_requests)
         with pytest.raises(BudgetExceeded):
             await REGISTRY["t_passive"].fn(target="www.example.com")

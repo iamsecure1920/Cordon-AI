@@ -96,8 +96,11 @@ scope.yaml before running" means you cannot proceed.
 5. **Report honestly.** Confirmed findings need a reproducible PoC. Everything
    else is "needs manual review." Never round a maybe up to a yes.
 
-Budget is finite and shared. `report_generate` is budget-exempt so you can always
-produce a partial report when you run out — do that rather than stopping silently.
+Budget ceilings are **off unless the engagement's scope opts in** with
+`budget.enforce: true`, so by default nothing stops a run partway through. The
+counters still record spend and requests for the report. When an engagement does
+set ceilings, `report_generate` stays budget-exempt so you can always produce a
+partial report when you run out — do that rather than stopping silently.
 
 ---
 
@@ -130,7 +133,7 @@ produce a partial report when you run out — do that rather than stopping silen
 | Question | File |
 |---|---|
 | **Picking this up cold — what exists, what is left** | `HANDOFF.md` |
-| How is it built, what's the flow? | `docs/ARCHITECTURE.md` |
+| Why the design is shaped this way | `docs/ARCHITECTURE.md` |
 | Fresh machine setup | `docs/BOOTSTRAP.md`, `./bootstrap.sh` |
 | Every tool, flags, when to use | `tools.md` |
 | Complete reference — install, config, API keys, architecture, operation | `USERMANUAL.md` |

@@ -95,8 +95,21 @@ rules:
     - /admin/delete
     - /api/v1/payments/execute
 
-budget:
-  llm_usd: 5.00
-  wall_clock_minutes: 240
-  max_requests: 50000
-  max_tool_seconds: 14400
+# Budget ceilings are OFF by default and this whole block is optional — delete
+# it and the engagement runs until the work is done.
+#
+# They are a cost control, not a safety control, and the difference matters when
+# one fires. `rules.max_rps` above protects the target and must bind. A budget
+# ceiling protects your wallet, and tripping mid-engagement truncates coverage:
+# phases left unrun, which this tool reports as UNTESTED, not clean. A partial
+# report you have to remember the reason for is worse than a slow complete one.
+#
+# Uncomment to opt in. `enforce: true` is required — the numbers alone do
+# nothing, so a stale ceiling left in a copied scope file cannot surprise you.
+#
+# budget:
+#   enforce: true
+#   llm_usd: 5.00              # only read when OPENROUTER_API_KEY is set
+#   wall_clock_minutes: 240
+#   max_requests: 50000
+#   max_tool_seconds: 14400

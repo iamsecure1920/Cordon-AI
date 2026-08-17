@@ -290,7 +290,7 @@ class TestAudit:
 
 class TestBudget:
     def test_llm_ceiling_aborts(self, tmp_path) -> None:
-        budget = Budget(BudgetLimits(llm_usd=0.10), path=tmp_path / "b.json")
+        budget = Budget(BudgetLimits(enforce=True, llm_usd=0.10), path=tmp_path / "b.json")
         budget.charge_llm(usd=0.09, prompt_tokens=100, completion_tokens=50, phase="triage", tier="t0")
         budget.check()
         budget.charge_llm(usd=0.02, phase="triage", tier="t0")
@@ -298,13 +298,13 @@ class TestBudget:
             budget.check()
 
     def test_preflight_refuses_work_it_cannot_afford(self, tmp_path) -> None:
-        budget = Budget(BudgetLimits(max_requests=100), path=tmp_path / "b.json")
+        budget = Budget(BudgetLimits(enforce=True, max_requests=100), path=tmp_path / "b.json")
         budget.charge_tool(seconds=1, requests=95)
         with pytest.raises(BudgetExceeded, match="requests"):
             budget.check(need_requests=50)
 
     def test_wall_clock_ceiling(self, tmp_path) -> None:
-        budget = Budget(BudgetLimits(wall_clock_minutes=0.0001), path=tmp_path / "b.json")
+        budget = Budget(BudgetLimits(enforce=True, wall_clock_minutes=0.0001), path=tmp_path / "b.json")
         time.sleep(0.02)
         with pytest.raises(BudgetExceeded, match="wall_clock"):
             budget.check()
@@ -342,10 +342,15 @@ class TestBudget:
         assert budget.remaining()["requests"] == float("inf")
         assert budget.remaining()["wall_clock_seconds"] == float("inf")
 
-    def test_enforce_defaults_to_true(self) -> None:
-        # A scope that says nothing about enforcement keeps the old behaviour.
-        assert BudgetLimits.from_dict({}).enforce is True
-        assert BudgetLimits.from_dict({"enforce": False}).enforce is False
+    def test_enforce_defaults_to_false(self) -> None:
+        # A scope that says nothing about budget gets no ceilings: the control
+        # truncates coverage rather than protecting the target, so opting in is
+        # explicit. The numbers alone must not enable it — a stale ceiling left
+        # in a copied scope file would otherwise stop a run nobody expected to
+        # be capped.
+        assert BudgetLimits.from_dict({}).enforce is False
+        assert BudgetLimits.from_dict({"llm_usd": 1.0, "max_requests": 10}).enforce is False
+        assert BudgetLimits.from_dict({"enforce": True}).enforce is True
 
 
 class TestEngagementWiring:

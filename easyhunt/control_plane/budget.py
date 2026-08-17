@@ -25,11 +25,21 @@ __all__ = ["Budget", "BudgetLimits", "Ledger"]
 
 @dataclass
 class BudgetLimits:
-    #: Master switch. When ``False`` no ceiling is enforced: ``check()`` never
-    #: raises and ``remaining()`` reports unlimited. The operator's scope file
-    #: is the place to flip it (``budget.enforce: false``); the code keeps the
-    #: machinery so a program that wants ceilings still has them.
-    enforce: bool = True
+    #: Master switch, **off by default**. When ``False`` no ceiling is enforced:
+    #: ``check()`` never raises and ``remaining()`` reports unlimited. The
+    #: counters below still run, so a report can say what a run cost and how
+    #: many requests it sent — the accounting is useful, stopping the run
+    #: partway through was not.
+    #:
+    #: It defaults off because a budget ceiling is a *cost* control that
+    #: presents as a *safety* control, and the two behave differently when they
+    #: fire. A rate limit protects the target and must bind. A budget ceiling
+    #: protects the operator's wallet, and when it trips mid-engagement it
+    #: truncates coverage — leaving phases unrun, which this project treats as
+    #: UNTESTED rather than clean. An operator who wants ceilings writes
+    #: ``budget.enforce: true`` in the engagement's scope file and sets them
+    #: deliberately; nothing is removed, only the default is reversed.
+    enforce: bool = False
     llm_usd: float = 5.0
     wall_clock_minutes: float = 240.0
     max_requests: int = 50_000
@@ -40,9 +50,11 @@ class BudgetLimits:
     def from_dict(cls, data: dict[str, Any] | None, *, phase_tokens: dict[str, int] | None = None) -> BudgetLimits:
         data = data or {}
         return cls(
-            # Default stays True so a scope that says nothing is unchanged;
-            # an operator who does not want ceilings writes enforce: false.
-            enforce=bool(data.get("enforce", True)),
+            # Default is False: a scope that says nothing about budget gets no
+            # ceilings. Opting in is explicit (``budget.enforce: true``), which
+            # is the right way round for a control that truncates coverage
+            # rather than protecting the target.
+            enforce=bool(data.get("enforce", False)),
             llm_usd=float(data.get("llm_usd", 5.0)),
             wall_clock_minutes=float(data.get("wall_clock_minutes", 240)),
             max_requests=int(data.get("max_requests", 50_000)),

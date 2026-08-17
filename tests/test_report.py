@@ -169,6 +169,9 @@ class TestPartialReports:
     async def test_budget_abort_marks_the_report_partial(self, populated) -> None:
         from easyhunt.errors import BudgetExceeded
 
+        # Ceilings are opt-in since the default flipped to enforce: false;
+        # this test exercises the ceiling, so it must ask for one.
+        populated.budget.limits.enforce = True
         populated.budget.charge_llm(usd=populated.budget.limits.llm_usd, phase="x", tier="t2")
         with pytest.raises(BudgetExceeded):
             populated.budget.check()

@@ -9,7 +9,7 @@ invariants, and those govern everything else here.
 | Document | Answers |
 |---|---|
 | [`../CLAUDE.md`](../CLAUDE.md) | What am I, what may I do, what will bite me? Loaded automatically. |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | How is it built? System diagram, control-plane sequence, engagement flow, module map, why the security boundary sits where it does. |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | *Why* the system is shaped this way: where the security boundary sits and why, and how untrusted scanner output is defended against. The mechanics are in `USERMANUAL.md` §5–8. |
 | [`BOOTSTRAP.md`](BOOTSTRAP.md) | How do I set up a new machine? Requirements, steps, verification, troubleshooting. |
 | [`PAYLOADS.md`](PAYLOADS.md) | The vetted payload store — tiers, quarantine, tool mapping, licensing, and an honest note on scale. |
 | [`../USERMANUAL.md`](../USERMANUAL.md) | The complete reference: install, configuration, provider API keys, how the modules interlink, running an engagement, troubleshooting. |
@@ -29,7 +29,7 @@ invariants, and those govern everything else here.
 
 1. `CLAUDE.md` — the invariants, first, before anything is run.
 2. `BOOTSTRAP.md` — get it working.
-3. `ARCHITECTURE.md` — understand the flow before changing anything.
+3. `ARCHITECTURE.md` — understand *why* the boundary sits where it does, before changing it.
 4. `USERMANUAL.md` / `tools.md` — reference, as needed.
 
 ## The one thing that blocks everything
