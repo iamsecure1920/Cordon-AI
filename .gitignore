@@ -53,5 +53,9 @@ payloads/*
 # these; named explicitly so a workspace configured elsewhere is still caught.
 sessions.json
 
-# Per-session engineering log: names live engagement targets, stays local.
+# Per-session engineering logs. SESSION_LOG.md itself is gone — git history and
+# HANDOFF.md already carried the same ground, and a running log that names live
+# engagement targets is one edit away from being committed by accident. The
+# pattern stays ignored so a future one cannot be.
 SESSION_LOG.md
+SESSION_LOG*.md

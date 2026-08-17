@@ -977,7 +977,6 @@ EasyHunt-AI/
 ├── tools.md                # per-binary reference: flags, cost, when to reach for it
 ├── HANDOFF.md              # cold-start state of the project
 ├── CLAUDE.md               # orientation for the Claude CLI (strategy layer)
-├── SESSION_LOG.md          # running log of every change, in order (local only)
 ├── scope.yaml              # THE authorization record (never ships, not committed)
 ├── scope.example.yaml      # template — transcribe it, do not copy it
 ├── config.yaml             # runtime config (copied from config.example.yaml)
