@@ -12,8 +12,9 @@ invariants, and those govern everything else here.
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | How is it built? System diagram, control-plane sequence, engagement flow, module map, why the security boundary sits where it does. |
 | [`BOOTSTRAP.md`](BOOTSTRAP.md) | How do I set up a new machine? Requirements, steps, verification, troubleshooting. |
 | [`PAYLOADS.md`](PAYLOADS.md) | The vetted payload store — tiers, quarantine, tool mapping, licensing, and an honest note on scale. |
-| [`../tools.md`](../tools.md) | Every tool: flags, when to reach for it, what it costs. 1,206 lines. |
-| [`../USER_GUIDE.md`](../USER_GUIDE.md) | Day-to-day operation, configuration, tool categories. 1,086 lines. |
+| [`../USERMANUAL.md`](../USERMANUAL.md) | The complete reference: install, configuration, provider API keys, how the modules interlink, running an engagement, troubleshooting. |
+| [`../tools.md`](../tools.md) | Every tool: flags, when to reach for it, what it costs. |
+| [`../HANDOFF.md`](../HANDOFF.md) | Picking this up cold: what exists, what is measured, what is left to build. |
 | [`../README.md`](../README.md) | Project overview, install, extending, cost control. |
 
 ## Executables
@@ -28,8 +29,8 @@ invariants, and those govern everything else here.
 
 1. `CLAUDE.md` — the invariants, first, before anything is run.
 2. `BOOTSTRAP.md` — get it working.
-4. `ARCHITECTURE.md` — understand the flow before changing anything.
-5. `tools.md` / `USER_GUIDE.md` — reference, as needed.
+3. `ARCHITECTURE.md` — understand the flow before changing anything.
+4. `USERMANUAL.md` / `tools.md` — reference, as needed.
 
 ## The one thing that blocks everything
 

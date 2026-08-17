@@ -133,8 +133,7 @@ produce a partial report when you run out — do that rather than stopping silen
 | How is it built, what's the flow? | `docs/ARCHITECTURE.md` |
 | Fresh machine setup | `docs/BOOTSTRAP.md`, `./bootstrap.sh` |
 | Every tool, flags, when to use | `tools.md` |
-| Complete reference — install, config, architecture, interlinking | `USERMANUAL.md` |
-| Day-to-day operation | `USER_GUIDE.md` |
+| Complete reference — install, config, API keys, architecture, operation | `USERMANUAL.md` |
 | Payload store + safety tiers | `docs/PAYLOADS.md` |
 | Per-class techniques + payload wiring | `docs/TECHNIQUES.md` |
 | Per-phase playbooks | `skills/` |

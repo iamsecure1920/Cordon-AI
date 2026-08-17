@@ -266,6 +266,69 @@ approval:
 
 `auto_deny` always wins, regardless of order.
 
+### Provider API keys — optional, but they change what recon finds
+
+None of these are required. Every tool below works without them; they widen the
+sources it can reach. Subfinder without keys still queries the public sources
+(crt.sh and friends) — with keys it typically returns several times as many
+subdomains, which is why an engagement that looks thin is worth re-checking here
+before concluding the estate is small.
+
+Keys live in each tool's own config, not in `config.yaml`, because the tools
+read them directly:
+
+**Subfinder** — `~/.config/subfinder/provider-config.yaml` (create the directory
+first):
+
+```yaml
+binaryedge:    [YOUR_BINARYEDGE_KEY]
+censys:        [YOUR_CENSYS_APP_ID:YOUR_CENSYS_SECRET]
+certspotter:   [YOUR_CERTSPOTTER_KEY]
+chaos:         [YOUR_CHAOS_KEY]
+github:        [YOUR_GITHUB_PAT]
+hunter:        [YOUR_HUNTER_KEY]
+securitytrails:[YOUR_SECURITYTRAILS_KEY]
+shodan:        [YOUR_SHODAN_KEY]
+virustotal:    [YOUR_VT_KEY]
+```
+
+**theHarvester** — `<install_dir>/api-keys.yaml`:
+
+```yaml
+apikeys:
+  shodan:         {key: YOUR_SHODAN_KEY}
+  virustotal:     {key: YOUR_VT_KEY}
+  hunter:         {key: YOUR_HUNTER_KEY}
+  securitytrails: {key: YOUR_ST_KEY}
+  censys:         {id: YOUR_CENSYS_APP_ID, secret: YOUR_CENSYS_SECRET}
+```
+
+**Amass** — `~/.config/amass/datasources.yaml` ([full list
+upstream](https://github.com/owasp-amass/amass/blob/master/examples/datasources.yaml)):
+
+```yaml
+datasources:
+  - name: Shodan
+    creds: {apikey: YOUR_SHODAN_KEY}
+  - name: VirusTotal
+    creds: {apikey: YOUR_VT_KEY}
+```
+
+**Cloud** — needed only for the `easyhunt-cloud` tools:
+
+```bash
+aws configure                              # or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_DEFAULT_REGION
+gcloud auth application-default login      # GCP
+az login                                   # Azure
+```
+
+**LLM** — only for triage and report synthesis. `easyhunt doctor` reports when
+it is missing, and everything else runs without it:
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+```
+
 ---
 
 ## 5. The whole system in one picture
@@ -951,11 +1014,10 @@ EasyHunt-AI/
 ├── install.sh              # application setup (package, tools, skills, MCP registration)
 ├── README.md               # overview + quick start
 ├── USERMANUAL.md           # this document
-├── USER_GUIDE.md           # per-tool usage reference
+├── tools.md                # per-binary reference: flags, cost, when to reach for it
 ├── HANDOFF.md              # cold-start state of the project
 ├── CLAUDE.md               # orientation for the Claude CLI (strategy layer)
-├── SESSION_LOG.md          # running log of every change, in order
-├── tools.md                # per-tool flags and when to use
+├── SESSION_LOG.md          # running log of every change, in order (local only)
 ├── scope.yaml              # THE authorization record (never ships, not committed)
 ├── scope.example.yaml      # template — transcribe it, do not copy it
 ├── config.yaml             # runtime config (copied from config.example.yaml)
