@@ -15,11 +15,11 @@
 ## Table of Contents
 
 1. [Runtime Requirements](#runtime-requirements)
-2. [Quick Install Commands by Group](#quick-install-commands-by-group)
-3. [Master Tool Matrix](#master-tool-matrix)
-4. [Detailed Profiles](#detailed-profiles)
+2. [Installing](#installing)
+3. [Master Tool Matrix](#master-tool-matrix) — generated from the install recipes
+4. [Detailed Profiles](#detailed-profiles) — purpose and usage, per tool
 5. [Critical Notes for Auto-Installation](#critical-notes-for-auto-installation)
-6. [API Keys Reference](#api-keys-reference)
+6. [API keys](#api-keys)
 
 ---
 
@@ -67,155 +67,115 @@ sudo apt install -y libpcap-dev dnsutils whois nmap masscan git curl wget unzip 
 
 ---
 
-## Quick Install Commands by Group
+## Installing
 
-### Group A — ProjectDiscovery Go Tools
-```bash
-PD_TOOLS=(
-  "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-  "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
-  "github.com/projectdiscovery/alterx/cmd/alterx@latest"
-  "github.com/projectdiscovery/cdncheck/cmd/cdncheck@latest"
-  "github.com/projectdiscovery/shuffledns/cmd/shuffledns@latest"
-  "github.com/projectdiscovery/httpx/cmd/httpx@latest"
-  "github.com/projectdiscovery/asnmap/cmd/asnmap@latest"
-  "github.com/projectdiscovery/tlsx/cmd/tlsx@latest"
-  "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"
-  "github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest"
-  "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
-)
-for pkg in "${PD_TOOLS[@]}"; do go install -v "$pkg"; done
-# katana needs CGO enabled:
-CGO_ENABLED=1 go install github.com/projectdiscovery/katana/cmd/katana@latest
-```
+`./bootstrap.sh` installs everything below; `easyhunt install` adds what is
+missing and `easyhunt install --core` limits it to the minimum viable
+pipeline. The per-tool commands used to be copied into this section by hand,
+which is how the matrix below ended up missing 32 tools — the recipes in
+`easyhunt/install/recipes.py` are the source of truth and are what actually
+runs. Read them there, or run `easyhunt doctor` to see what is working on
+this machine.
 
-### Group B — Other Go Tools
-```bash
-GO_TOOLS=(
-  "github.com/tomnomnom/assetfinder@latest"
-  "github.com/tomnomnom/waybackurls@latest"
-  "github.com/lc/gau/v2/cmd/gau@latest"
-  "github.com/ffuf/ffuf/v2@latest"
-  "github.com/BishopFox/jsluice/cmd/jsluice@latest"
-  "github.com/PentestPad/subzy@latest"
-  "github.com/owasp-amass/amass/v4/...@latest"
-  "github.com/sa7mon/s3scanner@latest"
-  "github.com/BishopFox/cloudfox@latest"
-  "github.com/hahwul/dalfox/v2@latest"
-  "github.com/gitleaks/gitleaks/v8@latest"
-  "github.com/trufflesecurity/trufflehog/v3@latest"
-  "github.com/jaeles-project/jaeles@latest"
-)
-for pkg in "${GO_TOOLS[@]}"; do go install -v "$pkg"; done
-```
-
-### Group C — Python Tools
-```bash
-pip3 install wafw00f waymore sqlmap prowler garak deepteam semgrep kingfisher-bin
-pipx install arjun bbot
-
-git clone https://github.com/GerbenJavado/LinkFinder /opt/linkfinder
-pip3 install -r /opt/linkfinder/requirements.txt
-
-git clone https://github.com/devanshbatham/ParamSpider /opt/paramspider
-pip3 install -e /opt/paramspider/
-
-git clone https://github.com/initstring/cloud_enum /opt/cloud_enum
-pip3 install -r /opt/cloud_enum/requirements.txt
-
-git clone https://github.com/laramies/theHarvester /opt/theHarvester
-pip3 install -r /opt/theHarvester/requirements/base.txt
-
-git clone https://github.com/punk-security/dnsReaper /opt/dnsreaper
-pip3 install -r /opt/dnsreaper/requirements.txt
-```
-
-### Group D — Rust Tools
-```bash
-cargo install findomain dalfox
-curl -sL https://raw.githubusercontent.com/epi052/feroxbuster/main/install-nix.sh | bash
-brew install noseyparker 2>/dev/null || {
-  curl -sLO https://github.com/praetorian-inc/noseyparker/releases/latest/download/noseyparker-v0.21.0-x86_64-unknown-linux-musl.tar.gz
-  tar xzf noseyparker-*.tar.gz && sudo mv noseyparker /usr/local/bin/
-}
-```
-
-### Group E — Node.js
-```bash
-npm install -g retire promptfoo
-```
-
-### Group F — massdns (Required by shuffledns)
-```bash
-git clone https://github.com/blechschmidt/massdns /opt/massdns
-cd /opt/massdns && make -j$(nproc)
-sudo cp bin/massdns /usr/local/bin/
-```
-
-### Group G — System Packages
-```bash
-sudo apt install -y whatweb nmap masscan whois dnsutils libpcap-dev git
-```
-
----
 
 ## Master Tool Matrix
 
-| Tool | Category | Language | Install | License | Docker |
-|------|----------|----------|---------|---------|--------|
-| subfinder | Recon | Go | go install | MIT | ✅ |
-| assetfinder | Recon | Go | go install | MIT | ❌ |
-| findomain | Recon | Rust | cargo | GPL-3.0 | ✅ |
-| amass | Recon | Go | go install | Apache-2.0 | ✅ |
-| asnmap | Recon | Go | go install | MIT | ✅ |
-| tlsx | Recon | Go | go install | MIT | ✅ |
-| theHarvester | Recon | Python | pip+git | GPL-2.0 | ✅ |
-| whois | Recon | C | apt | GPL-2.0+ | ❌ |
-| dnsx | DNS | Go | go install | MIT | ✅ |
-| alterx | DNS | Go | go install | MIT | ✅ |
-| cdncheck | DNS | Go | go install | MIT | ✅ |
-| shuffledns | DNS | Go | go install | MIT | ✅ |
-| httpx | HTTP | Go | go install | MIT | ✅ |
-| whatweb | HTTP | Ruby | apt | GPL-2.0 | ✅ |
-| wafw00f | HTTP | Python | pip | BSD-3-Clause | ❌ |
-| katana | Endpoints | Go | go install (CGO=1) | MIT | ✅ |
-| gau | Endpoints | Go | go install | MIT | ✅ |
-| waybackurls | Endpoints | Go | go install | MIT | ❌ |
-| waymore | Endpoints | Python | pip | MIT | ❌ |
-| arjun | Endpoints | Python | pipx | AGPL-3.0 | ❌ |
-| paramspider | Endpoints | Python | git+pip | MIT | ✅ |
-| ffuf | Endpoints | Go | go install | MIT | ✅ |
-| feroxbuster | Endpoints | Rust | curl script | MIT | ✅ |
-| jsluice | JS | Go | go install | MIT | ❌ |
-| retire | JS | Node.js | npm -g | Apache-2.0 | ❌ |
-| linkfinder | JS | Python | git+pip | MIT | ✅ |
-| naabu | Ports | Go | go install | MIT | ✅ |
-| nmap | Ports | C | apt | NPSL | ❌ |
-| masscan | Ports | C | apt/source | AGPL-3.0 | ❌ |
-| subzy | Takeover | Go | go install | GPL-2.0 | ❌ |
-| dnsreaper | Takeover | Python | docker | AGPL-3.0 | ✅ |
-| dig | Takeover | C | apt | MPL-2.0 | ❌ |
-| kingfisher | Secrets | Rust | brew/pip | Apache-2.0 | ✅ |
-| noseyparker | Secrets | Rust | brew/binary | Apache-2.0 | ✅ |
-| trufflehog | Secrets | Go | go install | AGPL-3.0 | ✅ |
-| gitleaks | Secrets | Go | go install | MIT | ✅ |
-| git | Secrets | C | apt | GPL-2.0 | ❌ |
-| cloud_enum | Cloud | Python | git+pip | MIT | ✅ |
-| s3scanner | Cloud | Go | go install | MIT | ✅ |
-| cloudfox | Cloud | Go | go install | MIT | ❌ |
-| prowler | Cloud | Python | pip | Apache-2.0 | ✅ |
-| kubescape | Cloud | Go | curl script | Apache-2.0 | ✅ |
-| dalfox | Exploit | Rust/Go | cargo/go | MIT | ✅ |
-| sqlmap | Exploit | Python | pip | GPL-2.0 | ✅ |
-| interactsh-client | Exploit | Go | go install | MIT | ✅ |
-| garak | LLM | Python | pip | Apache-2.0 | ✅ |
-| promptfoo | LLM | Node.js | npm -g | MIT | ✅ |
-| deepteam | LLM | Python | pip | Apache-2.0 | ❌ |
-| bbot | Engine | Python | pipx | AGPL-3.0 | ✅ |
-| nuclei | Engine | Go | go install | MIT | ✅ |
-| semgrep | Engine | OCaml/Py | pip | LGPL-2.1 | ✅ |
-| jaeles | Engine | Go | go install | MIT | ❌ |
-| osmedeus | Engine | Go | curl script | MIT | ✅ |
+<!-- BEGIN GENERATED TOOL MATRIX -->
+
+**84 installable tools**, generated from `easyhunt/install/recipes.py` by `scripts/gen_tool_matrix.py`.
+Do not edit this table by hand — run the script.
+`easyhunt doctor` reports which of these are actually working on *this* machine.
+
+| Tool | Category | Install | License | Core |
+|------|----------|---------|---------|------|
+| `cloud_enum` | cloud | git clone | MIT |  |
+| `cloudfox` | cloud | go install | MIT |  |
+| `cloudpeass` | cloud | git clone | MIT |  |
+| `kubescape` | cloud | release | Apache-2.0 |  |
+| `prowler` | cloud | pipx | Apache-2.0 |  |
+| `s3scanner` | cloud | go install | MIT |  |
+| `aderyn` | contracts | cargo | MIT |  |
+| `forge` | contracts | release | Apache-2.0 OR MIT |  |
+| `medusa` | contracts | go install | AGPL-3.0 |  |
+| `slither` | contracts | pipx | AGPL-3.0 |  |
+| `alterx` | dns | go install | MIT |  |
+| `cdncheck` | dns | go install | MIT |  |
+| `dig` | dns | apt | MPL-2.0 | ✅ |
+| `dnsx` | dns | go install | MIT | ✅ |
+| `massdns` | dns | git clone | BSD-2-Clause |  |
+| `shuffledns` | dns | go install | MIT |  |
+| `arjun` | endpoints | pipx | AGPL-3.0 |  |
+| `dirsearch` | endpoints | pipx | GPL-2.0 |  |
+| `feroxbuster` | endpoints | script | MIT |  |
+| `ffuf` | endpoints | go install | MIT | ✅ |
+| `gau` | endpoints | go install | MIT | ✅ |
+| `gobuster` | endpoints | go install | Apache-2.0 |  |
+| `katana` | endpoints | go install | MIT | ✅ |
+| `netsanitizer` | endpoints | git clone | MIT |  |
+| `paramspider` | endpoints | git clone | MIT |  |
+| `waybackurls` | endpoints | go install | MIT | ✅ |
+| `waymore` | endpoints | pipx | MIT |  |
+| `jaeles` | engine | go install | MIT |  |
+| `nuclei` | engine | go install | MIT | ✅ |
+| `osmedeus` | engine | script | MIT |  |
+| `semgrep` | engine | pipx | LGPL-2.1 |  |
+| `strix` | engine | manual | Apache-2.0 |  |
+| `commix` | exploit | git clone | GPL-3.0 |  |
+| `dalfox` | exploit | go install | MIT | ✅ |
+| `interactsh-client` | exploit | go install | MIT |  |
+| `nosqli` | exploit | go install | AGPL-3.0 |  |
+| `smuggler` | exploit | git clone | MIT |  |
+| `smuggler-framework` | exploit | manual | operator-supplied |  |
+| `sqlmap` | exploit | pipx | GPL-2.0 | ✅ |
+| `ssrfmap` | exploit | git clone | MIT |  |
+| `sstimap` | exploit | git clone | GPL-3.0 |  |
+| `xsstrike` | exploit | git clone | GPL-3.0 |  |
+| `corscanner` | http | pipx | MIT |  |
+| `graphql-cop` | http | git clone | MIT |  |
+| `httpx` | http | go install | MIT | ✅ |
+| `jwt_tool` | http | git clone | GPL-3.0 |  |
+| `nikto` | http | git clone | GPL-3.0 |  |
+| `testssl` | http | git clone | GPL-2.0 |  |
+| `wafw00f` | http | pipx | BSD-3-Clause |  |
+| `wapiti` | http | pipx | GPL-2.0 |  |
+| `websocat` | http | release | MIT |  |
+| `whatweb` | http | apt | GPL-2.0 |  |
+| `gf` | js | go install | MIT |  |
+| `jsluice` | js | go install | MIT |  |
+| `linkfinder` | js | git clone | MIT |  |
+| `retire` | js | npm | Apache-2.0 |  |
+| `secretfinder` | js | git clone | GPL-3.0 |  |
+| `deepteam` | llmsec | pipx | Apache-2.0 |  |
+| `garak` | llmsec | pipx | Apache-2.0 |  |
+| `promptfoo` | llmsec | npm | MIT |  |
+| `masscan` | ports | apt | AGPL-3.0 |  |
+| `naabu` | ports | go install | MIT | ✅ |
+| `nmap` | ports | apt | NPSL | ✅ |
+| `amass` | recon | go install | Apache-2.0 |  |
+| `asnmap` | recon | go install | MIT |  |
+| `assetfinder` | recon | go install | MIT | ✅ |
+| `findomain` | recon | cargo | GPL-3.0 |  |
+| `subfinder` | recon | go install | MIT | ✅ |
+| `theHarvester` | recon | git clone | GPL-2.0 |  |
+| `tlsx` | recon | go install | MIT |  |
+| `uncover` | recon | go install | MIT |  |
+| `whois` | recon | apt | GPL-2.0+ | ✅ |
+| `google-chrome-stable` | runtime | script | proprietary |  |
+| `git` | secrets | apt | GPL-2.0 | ✅ |
+| `gitdorker` | secrets | git clone | MIT |  |
+| `gitleaks` | secrets | go install | MIT | ✅ |
+| `kingfisher` | secrets | release | Apache-2.0 | ✅ |
+| `noseyparker` | secrets | release | Apache-2.0 |  |
+| `trufflehog` | secrets | go install | AGPL-3.0 |  |
+| `dnsreaper` | takeover | git clone | AGPL-3.0 |  |
+| `subdomainsleuth` | takeover | manual | Apache-2.0 |  |
+| `subdominator` | takeover | pipx | MIT |  |
+| `subjack` | takeover | go install | MIT |  |
+| `subzy` | takeover | go install | GPL-2.0 | ✅ |
+
+**Core** marks the minimum viable pipeline (`easyhunt install --core`).
+
+<!-- END GENERATED TOOL MATRIX -->
 
 ---
 
@@ -1167,46 +1127,10 @@ pip uninstall httpx-cli
 
 ---
 
-## API Keys Reference
+## API keys
 
-### subfinder (~/.config/subfinder/provider-config.yaml)
-```yaml
-binaryedge: [YOUR_KEY]
-censys: [ID:SECRET]
-certspotter: [YOUR_KEY]
-github: [YOUR_TOKEN]
-securitytrails: [YOUR_KEY]
-shodan: [YOUR_KEY]
-virustotal: [YOUR_KEY]
-```
-
-### amass (~/.config/amass/datasources.yaml)
-Same providers as subfinder plus Robtex, DNSDB, NetworksDB.
-
-### theHarvester (api-keys.yaml)
-```yaml
-apikeys:
-  shodan:
-    key: YOUR_SHODAN_KEY
-  virustotal:
-    key: YOUR_VT_KEY
-  hunter:
-    key: YOUR_HUNTER_KEY
-```
-
-### Cloud Tools
-```bash
-aws configure                              # AWS credentials
-gcloud auth application-default login     # GCP
-az login                                  # Azure
-```
-
-### LLM Tools
-```bash
-export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
----
-
-*Research based on official GitHub repositories. All install commands verified. Last updated 2026-07-30.*
+Provider keys (subfinder, theHarvester, amass), cloud credentials and the
+LLM key are documented once, in
+[`USERMANUAL.md` section 4](USERMANUAL.md#4-configuration-files) — they are
+configuration, not tool reference, and a second copy here drifted from the
+first. None are required; they widen the sources recon can reach.

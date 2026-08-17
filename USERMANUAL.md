@@ -333,66 +333,37 @@ export OPENROUTER_API_KEY=sk-or-...
 
 ## 5. The whole system in one picture
 
-Two animated views ship in `docs/` and render live in the README:
+Four animated views ship in `docs/` and render live in the README. They are
+SVG with SMIL timing and no `<style>` block, which is what GitHub's image
+proxy will animate — a CSS `@keyframes` version renders as a still frame.
 
-- `docs/easyhunt-flow.svg` — one tool call flowing through the control plane
-  (a glowing packet loops model → MCP → scope → sanitize → budget → rate-limit
-  → approval → sandbox → audit → tool → back).
-- `docs/easyhunt-pipeline.svg` — the engagement phases chained through the
-  asset store.```mermaid
-flowchart TB
-    subgraph L5["L5 · Strategy — you"]
-        S1["Claude CLI"]
-        S2["picks targets and phases"]
-        S3["reads findings, decides next move"]
-        S4["no network of its own"]
-    end
+| File | Shows |
+|---|---|
+| `docs/easyhunt-hero.svg` | The wordmark and the seven control-plane gates firing in turn. |
+| `docs/easyhunt-layers.svg` | The five layers, L5 down to L1, and where the security boundary sits. |
+| `docs/easyhunt-flow.svg` | One tool call: model → MCP → scope → sanitize → budget → rate-limit → approval → sandbox → audit → tool, and back. |
+| `docs/easyhunt-pipeline.svg` | The engagement phases chained through the asset store. |
 
-    subgraph L4["L4 · Method"]
-        M1["skills/ — easyhunt, easyhunt-recon, easyhunt-scan, easyhunt-validate, easyhunt-takeover, easyhunt-cloud, easyhunt-triage, easyhunt-report"]
-        M2["OWASP WSTG · 115 tests (pinned)"]
-        M3["PAT technique index · 96 records"]
-        M4["coverage matrix · 27 bug classes"]
-        M5["vetted payload store · 62 lists"]
-    end
+![The five layers, and where the security boundary sits](docs/easyhunt-layers.svg)
 
-    subgraph L3["L3 · Control plane — the security boundary"]
-        C1["scope.py · denylist wins, fails closed"]
-        C2["sanitize.py · rejects, never cleans"]
-        C3["budget.py · USD + requests + wall clock"]
-        C4["ratelimit.py · token bucket + semaphore"]
-        C5["approval.py · elicitation / policy"]
-        C6["sandbox.py · docker isolation"]
-        C7["audit.py · hash-chained log"]
-        C8["auth.py · OAuth 2.1 + PKCE"]
-        C9["pins.py · third-party trust"]
-        C10["jobs.py · long-running job tracking"]
-    end
+The layer picture is the one to read first. Every call descends from L5 to L2
+and crosses **L3**; there is no code path that routes around it — not a
+wrapper, not a chained validator, not the unattended pipeline. That is the
+whole design, and everything below is detail.
 
-    subgraph L2["L2 · Execution"]
-        E1["80 MCP tools"]
-        E2["82 catalogued binaries"]
-        E3["6 engines — bbot, nuclei, jaeles, semgrep, osmedeus, strix"]
-        E4["one decorator, no privileged path"]
-    end
-
-    subgraph L1["L1 · Knowledge"]
-        K1["findings.py · Severity, Status, PoC"]
-        K2["taskgraph.py · penetration task graph"]
-        K3["attackgraph.py · reachability"]
-        K4["graphmemory.py · optional Neo4j"]
-        K5["memory.py · cross-engagement PoC store"]
-        K6["rules/ · detection packs (YAML, no code)"]
-    end
-
-    L5 --> L4
-    L4 --> L3
-    L3 --> L2
-    L2 --> L1
-
-    style L3 fill:#7f1d1d,color:#fff
-    style L2 fill:#1e3a5f,color:#fff
-```
+- **L5 Strategy** — the Claude CLI. Picks targets and phases, reads findings,
+  decides the next move. Holds no shell and no network of its own.
+- **L4 Method** — `skills/`, the pinned OWASP WSTG index (115 tests), the PAT
+  technique index (96 records), the coverage matrix (27 bug classes) and the
+  vetted payload store (62 lists).
+- **L3 Control plane** — `scope` (denylist wins, fails closed), `sanitize`
+  (rejects, never cleans), `budget`, `rate` (charged per request), `approval`,
+  `sandbox` (read-only root, capabilities dropped) and the hash-chained
+  `audit` log.
+- **L2 Execution** — the MCP tools and catalogued binaries, one container per
+  invocation.
+- **L1 Knowledge** — findings (PoC required), graph memory, detection rules
+  and the evidence store.
 
 ---
 
@@ -696,29 +667,18 @@ the live registry, not just against each other.
 
 ## 10. Every tool it drives
 
-**80 MCP tools** over **82 catalogued binaries** — `easyhunt doctor` reports
-**79 working / 3 not installed** (osmedeus, strix, subdomainsleuth — all
-optional, none blocks a phase).
+**80 MCP tools** over **84 catalogued binaries**. The authoritative list is
+generated from `easyhunt/install/recipes.py` into the
+[Master Tool Matrix in `tools.md`](tools.md#master-tool-matrix), with
+per-tool purpose and usage in the profiles below it. It is generated because
+the hand-maintained version drifted to 53 of 85 tools without anything
+failing.
 
-`·` passive · `!` aggressive · `!!` exploit — the mode decides whether a human
-is consulted.
+For what is working on *this* machine — executed inside the container it will
+actually run in, not merely found on `PATH` — run `easyhunt doctor`.
 
-| Category | Binaries |
-|---|---|
-| **Recon** | `subfinder` `amass` `assetfinder` `findomain` `asnmap` `cdncheck` `theHarvester` `uncover` `shuffledns` `alterx` `subdominator` `subdomainsleuth` `bbot` `osmedeus` `whois` `dig` |
-| **HTTP / TLS** | `httpx` `whatweb` `wafw00f` `tlsx` `testssl` `katana` `corscanner` `websocat` `graphql-cop` `jwt_tool` |
-| **Content & params** | `ffuf` `feroxbuster` `dirsearch` `gobuster` `arjun` `paramspider` `gau` `waybackurls` `waymore` `linkfinder` `secretfinder` `xsstrike` `jsluice` `retire` `netsanitizer` |
-| **Scanning** | `nuclei` `jaeles` `nikto` `wapiti` `semgrep` `nmap` `naabu` `masscan` `dnsx` |
-| **Exploitation** | `sqlmap` `dalfox` `commix` `ssrfmap` `sstimap` `smuggler` `smuggler-framework` `nosqli` `interactsh-client` `medusa` `strix` |
-| **Takeover** | `subzy` `subjack` `dnsreaper` |
-| **Secrets** | `trufflehog` `gitleaks` `noseyparker` `kingfisher` `gitdorker` |
-| **Cloud** | `prowler` `cloudfox` `kubescape` `s3scanner` `cloud_enum` `cloudpeass` |
-| **Smart contracts** | `slither` `aderyn` `forge` |
-| **LLM security** | `garak` `promptfoo` `deepteam` |
-
-Run `easyhunt doctor` for the live picture — it *executes* every tool inside
-the container it will actually run in, under the real read-only root and dropped
-capabilities. A filename on PATH says nothing about whether a program runs.
+`·` passive · `!` aggressive · `!!` exploit — the mode decides whether a
+human is consulted before the call runs.
 
 ---
 
