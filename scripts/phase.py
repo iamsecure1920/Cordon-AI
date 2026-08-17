@@ -50,7 +50,7 @@ from easyhunt.control_plane.scope import Scope  # noqa: E402
 #: 85,000 subdomains must not put all of them on a single command line — but a
 #: flat cap samples the *alphabetically first* names, which on a real estate
 #: can be one namespace with zero web servers (ATT's first 500 were all
-#: ``3pc.att.com`` telemetry hosts; the required probe then reported "nothing
+#: ``3pc.example-cdn.net`` telemetry hosts; the required probe then reported "nothing
 #: alive" for a 60k-subdomain target). Phases whose tools read a ``-l`` list
 #: file (dnsx, httpx, nuclei, subjack) override this with a large cap, and
 #: :func:`_inherited_sample` spreads the selection across the whole store
@@ -284,7 +284,7 @@ async def main() -> int:
         # engagement. When the active scope has changed since the last phase
         # ran (a fresh target, a different program), reusing the old workspace
         # binds every phase to the previous engagement's budget, assets, and
-        # findings — the ATT run inherited Chime's exhausted wall-clock and 96
+        # findings — one run inherited the previous engagement's exhausted wall-clock and 96
         # out-of-scope subdomains and failed every phase in 0.0s. Trust the
         # marker only when the workspace actually belongs to this scope.
         candidate = Path(marker.read_text().strip())

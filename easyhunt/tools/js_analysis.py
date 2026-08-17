@@ -299,11 +299,11 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
 
     all_secrets: list[dict[str, Any]] = []
     all_endpoints: set[str] = set()
-    #: Endpoint -> origin host (``app.chime.com``). A route recovered from a
+    #: Endpoint -> origin host (``app.example.com``). A route recovered from a
     #: bundle belongs to the host that served that bundle; without this binding
     #: the exploit chain resolves every endpoint against every live host and
-    #: spends its validator budget on ``app.chime.com``'s routes aimed at
-    #: ``affiliates.chime.com`` (a host that does not even resolve).
+    #: spends its validator budget on ``app.example.com``'s routes aimed at
+    #: ``legacy.example.com`` (a host that does not even resolve).
     endpoint_origins: dict[str, str] = {}
     #: Saved bundle file -> URL it was fetched from. jsluice/linkfinder run over
     #: the saved files, whose timestamped names carry no URL; this map is how
@@ -311,9 +311,9 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     saved_urls: dict[str, str] = {}
     #: Fetched URL -> the page that referenced it (``<script src>``). Routes
     #: found in a bundle belong to the app that loaded it, NOT the CDN that
-    #: stored it: chime's bundles live on a ``*.chmfin.com`` asset host while
-    #: their routes (``/move-money/review``, ``/api/graphql``) are served by
-    #: ``app.chime.com``. Attributing to the bundle URL pinned 102 routes to a
+    #: stored it: an app's bundles live on a ``*.example-cdn.net`` asset host while
+    #: their routes (``/account/transfer``, ``/api/graphql``) are served by
+    #: ``app.example.com``. Attributing to the bundle URL pinned 102 routes to a
     #: CDN that is not even in the live host set — the exploit chain then had
     #: nothing to aim them at. Seeds reference themselves.
     page_urls: dict[str, str] = {}

@@ -14,7 +14,7 @@ scope.yaml
 # Every per-engagement scope, not just the active one. These name real
 # targets, contacts, and authorization references.
 scope.*.yaml
-# Hand-edited backups of an active scope (e.g. scope.yaml.bak-chime) name the
+# Hand-edited backups of an active scope (e.g. scope.yaml.bak-acme) name the
 # same live targets and must never ship either.
 scope.yaml.bak*
 !scope.example.yaml

@@ -90,32 +90,32 @@ def _write_audit(workspace: Path, engagement: str) -> None:
 def test_workspace_matches_only_its_own_scope(tmp_path) -> None:
     """The resume marker must not hand a phase a foreign engagement's workspace.
 
-    Regression: after the Chime run, the .easyhunt-run marker pointed at the
-    chime-bbp workspace. Starting an ATT engagement reused it, so every phase
-    inherited Chime's exhausted budget (instant BudgetExceeded) and its 96
+    Regression: after one engagement, the .easyhunt-run marker pointed at the
+    acme-bbp workspace. Starting the next engagement reused it, so every phase
+    inherited the previous engagement's exhausted budget (instant BudgetExceeded) and its 96
     out-of-scope subdomains (instant OutOfScopeError). A workspace belongs to
     exactly the scope named in its first audit record.
     """
-    chime = tmp_path / "chime"
-    _write_audit(chime, "chime-bbp")
+    first = tmp_path / "first"
+    _write_audit(first, "acme-bbp")
 
     # Same scope resumes; any other scope starts fresh.
-    assert phase._workspace_scope_matches(chime, "chime-bbp") is True
-    assert phase._workspace_scope_matches(chime, "att-hackerone") is False
+    assert phase._workspace_scope_matches(first, "acme-bbp") is True
+    assert phase._workspace_scope_matches(first, "globex-h1") is False
 
     # A missing or malformed audit log is never treated as "this scope".
     bare = tmp_path / "bare"
     bare.mkdir(parents=True, exist_ok=True)
-    assert phase._workspace_scope_matches(bare, "att-hackerone") is False
+    assert phase._workspace_scope_matches(bare, "globex-h1") is False
 
-    assert phase._workspace_scope_matches(tmp_path / "absent", "att-hackerone") is False
+    assert phase._workspace_scope_matches(tmp_path / "absent", "globex-h1") is False
 
 
 def test_inherited_sample_spreads_instead_of_prefix() -> None:
     """A cap must not concentrate the selection in one namespace.
 
     Regression: on ATT, resolve inherited the first 500 subdomains of a 60k
-    store — all ``3pc.att.com`` telemetry hosts — and the required probe then
+    store — all ``3pc.example-cdn.net`` telemetry hosts — and the required probe then
     reported "nothing alive" for a target with 60k names. A sample must spread
     across the whole store so a single alphabetically-early namespace cannot
     starve the run.
