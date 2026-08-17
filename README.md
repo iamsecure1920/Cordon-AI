@@ -4,24 +4,12 @@
 
 **An agentic VAPT orchestrator where the control plane — not the model — is the security boundary.**
 
-[![Tests](https://img.shields.io/badge/tests-1%2C958-brightgreen)](#development)
+[![Tests](https://img.shields.io/badge/tests-1%2C983-brightgreen)](#development)
 [![Tools](https://img.shields.io/badge/tools-82%20catalogued-blue)](#every-tool-it-drives)
-[![MCP](https://img.shields.io/badge/MCP-80%20tools-8A2BE2)](#mcp-tools-by-phase)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#tech-stack)
-[![Sandbox](https://img.shields.io/badge/sandbox-read--only%20%C2%B7%20caps%20dropped-orange)](#isolation)
+[![MCP](https://img.shields.io/badge/MCP-80%20tools-8A2BE2)](#every-tool-it-drives)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#quick-start)
+[![Sandbox](https://img.shields.io/badge/sandbox-read--only%20%C2%B7%20caps%20dropped-orange)](#why-this-is-not-another-scanner-wrapper)
 [![License](https://img.shields.io/badge/license-see%20LICENSE-lightgrey)](LICENSE)
-
-</div>
-
-<div align="center">
-
-### The control plane — one call, end to end
-
-![One tool call through the control plane](docs/easyhunt-flow.svg)
-
-### The engagement pipeline — each phase feeds the next
-
-![The engagement pipeline](docs/easyhunt-pipeline.svg)
 
 </div>
 
@@ -41,6 +29,28 @@ tool that passes through a fixed sequence — scope, sanitize, budget, rate-limi
 approval, sandbox, parse, audit — enforced in code, server-side, with no path
 that skips a step. The model supplies strategy. The control plane decides what is
 permitted. **A jailbroken prompt cannot reach the network.**
+
+---
+
+## The whole system in one picture
+
+![The five layers, and where the security boundary sits](docs/easyhunt-layers.svg)
+
+Every call descends from L5 to L2 and crosses **L3**. There is no code path that
+routes around it — not a wrapper, not a chained validator, not the unattended
+pipeline.
+
+<div align="center">
+
+### One tool call, end to end
+
+![One tool call through the control plane](docs/easyhunt-flow.svg)
+
+### The engagement pipeline — each phase feeds the next
+
+![The engagement pipeline](docs/easyhunt-pipeline.svg)
+
+</div>
 
 ---
 
@@ -114,139 +124,6 @@ until a human or a validator proves it.
 
 ---
 
-## The whole system in one picture
-
-```mermaid
-flowchart TB
-    subgraph L5["L5 · Strategy — you"]
-        S1["Claude CLI"]
-        S2["no network of its own"]
-        S3["8 phase skills"]
-    end
-
-    subgraph L4["L4 · Method"]
-        M1["OWASP WSTG · 115 tests"]
-        M2["PAT technique index · 96 records"]
-        M3["coverage matrix · 27 bug classes"]
-        M4["adversarial triage taskflows"]
-        M5["payload store · 62 vetted lists"]
-    end
-
-    subgraph L3["L3 · Control plane — the security boundary"]
-        C1["scope · fails closed"]
-        C2["sanitize · rejects, never cleans"]
-        C3["budget · USD and requests"]
-        C4["rate limit · per request"]
-        C5["approval · policy or human"]
-        C6["sandbox · read-only, caps dropped"]
-        C7["audit · hash-chained"]
-    end
-
-    subgraph L2["L2 · Execution"]
-        E1["80 MCP tools"]
-        E2["82 catalogued binaries"]
-        E3["6 engines"]
-        E4["Docker per invocation"]
-    end
-
-    subgraph L1["L1 · Knowledge"]
-        K1["findings · PoC required"]
-        K2["graph memory"]
-        K3["detection rules"]
-        K4["evidence store"]
-    end
-
-    L5 --> L4
-    L4 --> L3
-    L3 --> L2
-    L2 --> L1
-
-    style L3 fill:#7f1d1d,color:#fff
-    style L2 fill:#1e3a5f,color:#fff
-```
-
-## How one tool call flows
-
-```mermaid
-flowchart TD
-    A([Agent requests a tool]) --> B{in scope?}
-    B -- no --> X1[scope_denied · stop]
-    B -- yes --> C{argv valid?}
-    C -- rejected --> X2[SanitizeError<br/>never cleaned-and-run]
-    C -- ok --> D{budget left?}
-    D -- no --> X3[BudgetExceeded<br/>report_generate still works]
-    D -- yes --> E{rate limit}
-    E -- over --> X4[RateLimited · names the ceiling]
-    E -- ok --> F{mode}
-    F -- passive --> H[execute]
-    F -- aggressive / exploit --> G{approved?}
-    G -- no --> X5[ApprovalDenied]
-    G -- yes --> H
-    H --> I[[sandbox<br/>read-only root · caps dropped · memory cap]]
-    I --> J[parse and normalize]
-    J --> K{did it actually run?}
-    K -- no --> L[status: UNTESTED<br/>never 'clean']
-    K -- yes --> M[findings as CANDIDATES]
-    M --> N[(hash-chained audit)]
-    L --> N
-    style X1 fill:#7f1d1d,color:#fff
-    style X2 fill:#7f1d1d,color:#fff
-    style L fill:#78350f,color:#fff
-    style I fill:#1e3a8a,color:#fff
-    style N fill:#065f46,color:#fff
-```
-
-The same path, as a sequence — the model, the server, and the tool are separate
-actors; the server is the one that says no:
-
-```mermaid
-sequenceDiagram
-    participant M as Model (Claude CLI)
-    participant S as MCP Server
-    participant C as Control Plane
-    participant T as Tool (sandboxed)
-
-    M->>S: call tool(target, args)
-    S->>C: scope.check(target)
-    alt out of scope
-        C-->>M: scope_denied · stop
-    else in scope
-        C->>C: sanitize · budget · rate-limit
-        alt aggressive / exploit
-            C->>M: approval required
-            M-->>C: approved (human)
-        end
-        S->>T: run in container (read-only, caps dropped)
-        T-->>S: raw output
-        S->>C: parse · audit (hash-chained)
-        C-->>M: structured result — candidate, never silently clean
-    end
-```
-
-## Engagement flow
-
-```mermaid
-flowchart LR
-    S[/scope.yaml<br/>transcribed by hand/] --> D{{easyhunt doctor}}
-    D --> R[recon<br/>passive first]
-    R --> P[http_probe<br/>what is alive]
-    P --> E[endpoints · js · params]
-    E --> V[vuln scan<br/>templates matched to stack]
-    V --> T[triage<br/>adversarial pair]
-    T --> X[PoC validation]
-    X --> RPT[/report/]
-    P -.-> TK[takeover check]
-    TK -.-> RPT
-    style S fill:#1e3a8a,color:#fff
-    style RPT fill:#065f46,color:#fff
-```
-
-`scripts/hunt.sh` runs this unattended and **stops when a phase produces
-nothing** — scanning hosts nobody confirmed alive is not a scan, it is a survey
-of someone's WAF.
-
----
-
 ## Quick start
 
 ```bash
@@ -296,9 +173,8 @@ In Claude Code: `/easyhunt`.
 ./scripts/hunt.sh target.example.com --only probe,scan
 ./scripts/hunt.sh target.example.com --from scan
 
-# Exploitation — refused unless scope.yaml permits it. Adds the `exploit` phase
-# after `scan`: chains web_injection_probe (and, when include_heavy is set,
-# sqli_validate/xss_validate) over the discovered injection points.
+# Exploitation — refused unless scope.yaml permits it. Chains the validators
+# over the injection points the earlier phases discovered.
 ./scripts/hunt.sh target.example.com --exploit
 ```
 
@@ -309,35 +185,6 @@ touching the run:
 {"phase":"probe","state":"ok","tool":"http_probe","seconds":4.1,"produced":248,"findings":0}
 {"phase":"cors","state":"failed","tool":"cors_audit","message":"killed at the timeout — UNTESTED, not clean"}
 ```
-
----
-
-## Tech stack
-
-| Layer | What it uses |
-| --- | --- |
-| Protocol | **MCP** via FastMCP 3.x — stdio and streamable-HTTP |
-| Auth (remote) | **OAuth 2.1 + PKCE**, RFC 9728 / RFC 8707 |
-| Language | **Python ≥ 3.11**, fully async; `uv` for installs |
-| Isolation | **Docker** — read-only root, all capabilities dropped, memory/CPU caps, one writable mount |
-| Models | **OpenRouter**, three tiers with price ceilings and fallbacks |
-| Memory | JSONL findings store · optional **Neo4j** graph · cross-engagement PoC memory |
-| Knowledge | **OWASP WSTG** — 115 tests, pinned, CC BY-SA · 62 vetted payload lists |
-| Audit | Hash-chained JSONL — tampering breaks the chain |
-| Code | ~32,500 lines · **1,958 tests** across 49 files · 85 install recipes |
-
-## Isolation
-
-Every containerised tool runs with:
-
-```
---read-only              --cap-drop ALL         --security-opt no-new-privileges
---memory 2g --cpus 2.0   --network <per-tool>   one writable mount (the workspace)
-```
-
-Per-tool scratch mounts exist only where a tool genuinely needs `$HOME` — and
-they mount the **leaf**, never the parent, because a tmpfs over a parent hides
-the tool store and makes a dozen tools vanish.
 
 ---
 
@@ -359,210 +206,28 @@ the tool store and makes a dozen tools vanish.
 | **Smart contracts** | `slither` `aderyn` `forge` |
 | **LLM security** | `garak` `promptfoo` `deepteam` |
 
-Run `easyhunt doctor` for the live picture.
+Run `easyhunt doctor` for the live picture, and see
+[`USERMANUAL.md`](USERMANUAL.md#11-mcp-tools-by-phase) for every MCP tool
+grouped by phase.
 
-### MCP tools by phase
+---
 
-| Phase | Tools |
+## Documentation
+
+| Read this | For |
 | --- | --- |
-| **Recon** | `subdomain_enum` `asn_lookup` `whois_lookup` `tls_info` `bbot_scan` `bbot_scan_active`! `osmedeus_flow`! |
-| **DNS** | `dns_resolve` `cdn_check` `dns_permute`! |
-| **HTTP** | `http_probe` `waf_detect` `tls_audit` `cors_audit` |
-| **Endpoints** | `endpoint_discovery` `content_discovery`! `param_discovery`! `graphql_audit` `websocket_probe` `payload_catalog` |
-| **JavaScript** | `js_analyze` |
-| **Ports** | `port_scan`! `service_scan`! |
-| **Takeover** | `takeover_detect`! `takeover_verify` `takeover_poc_plan` `takeover_confirm`!! |
-| **Vuln scan** | `nuclei_scan`! `jaeles_scan`! `nikto_scan`! `wapiti_scan`! `semgrep_scan` |
-| **Exploit** | `authz_compare`!! `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `smuggling_canary_probe`! `web_injection_probe`!! `exploit_chain`!! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
-| **Secrets** | `secret_scan` `secret_validate`! `jwt_inspect` `source_fetch` |
-| **Cloud** | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
-| **Contracts** | `contract_static_scan` `contract_toolchain` |
-| **LLM** | `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` |
-| **Method** | `wstg_lookup` `technique_lookup` `coverage_report` `hunt_plan` `auth_surface` `auth_crawl`! `session_register` `session_list` |
-| **Triage** | `triage_findings` `triage_taskflows` `triage_canary_preview` |
-| **Report** | `report_generate` `findings_list` `finding_detail` `finding_note` |
-| **Control** | `job_status` |
+| [`CLAUDE.md`](CLAUDE.md) | The invariants. Loaded automatically by the Claude CLI; read it first. |
+| [`USERMANUAL.md`](USERMANUAL.md) | The complete reference — install, configuration, API keys, architecture, how the modules interlink, running an engagement, troubleshooting. |
+| [`tools.md`](tools.md) | Every binary: flags, when to reach for it, what it costs. |
+| [`HANDOFF.md`](HANDOFF.md) | Picking the project up cold: what exists, what is measured, what is left to build. |
+| [`docs/`](docs/README.md) | Architecture, bootstrap, payload store, per-class techniques. |
 
 ---
-
-## Architecture
-
-```
-L5  STRATEGY   Claude CLI — plans and decides. No network access of its own.
-L4  METHOD     8 Claude Skills, one per VAPT phase.
-L3  CONTROL    MCP server — scope, sanitize, rate-limit, approve, sandbox, audit.
-L2  EXECUTION  6 engines (BBOT · Nuclei · Jaeles · Semgrep · Osmedeus · Strix)
-               + 69 atomic wrappers, each sandboxed.
-L1  KNOWLEDGE  Rule packs · task graph · findings store · evidence · PoC memory.
-
-               LLM traffic ──▶ OpenRouter (3 tiers, fallbacks, price ceilings)
-```
-
-**Engines over wrappers.** BBOT already orchestrates 80+ recon modules, so
-EasyHunt drives it through its Python API rather than wrapping each one. Atomic
-wrappers exist where surgical control matters.
-
-**Scope is enforced twice.** BBOT's own allow/deny lists are populated from
-`scope.yaml`, *and* every emitted event is re-checked before storage — a module
-that resolves outward cannot smuggle a host into the findings store.
-
-Module-level walk-through: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
----
-
-## Extending it
-
-Drop a YAML file into `rules/` and you have a new detection. No code change.
-
-| Directory | Format | Run by |
-| --- | --- | --- |
-| `rules/nuclei/` | Nuclei templates + workflows | Nuclei engine |
-| `rules/easyhunt/` | native matcher/extractor packs | built-in matcher |
-| `rules/jaeles/`, `rules/semgrep/`, `rules/bbot/` | those tools' native formats | their engines |
-
-A Python plugin gets the same treatment as a built-in tool: it is wrapped by the
-same decorator and passes through the same eight steps. There is no privileged
-path.
-
----
-
-## Safety properties worth knowing
-
-- **The model never holds a shell.** It calls MCP tools; the server executes.
-- **Denylist beats allowlist**, always, and unparseable input fails closed.
-- **Arguments are rejected, never sanitized-and-run** — a caller that quietly
-  strips a semicolon teaches the agent that malformed input sometimes works.
-- **No evasion capability, ever.** `--random-agent`, `--tor`, proxy chaining and
-  their equivalents are globally denied. Not configurable.
-- **Aggressive and exploit modes are gated**, and exploitation is additionally
-  refused when the engagement's rules disallow it.
-- **The audit log is hash-chained.** Editing an entry breaks verification.
-
----
-
-
-## Cost control
-
-Three tiers, configured in `config.yaml`, never hardcoded:
-
-- **T0** — dedupe, classify, bulk-summarize recon.
-- **T1** — correlation, candidate ranking, false-positive triage.
-- **T2** — exploit reasoning and the final report.
-
-With `models[]` fallbacks (billed only for the one that runs, `openrouter/auto`
-last so a renamed slug degrades instead of failing), a `max_price` ceiling per
-tier, per-phase token budgets, and rate-limit demotion to a cheaper tier rather
-than failing a phase.
-
-Raw tool output never reaches a model. It is parsed, deduplicated, and filtered
-in code first, then map-reduced on the cheap tier. **Everything except AI triage
-and report synthesis works with no API key at all.**
-
----
-
----
-
-## Remote access (OAuth 2.1 + PKCE)
-
-`stdio` — the normal Claude CLI setup — is a pipe to the parent process and needs
-no auth. The remote transport is different: a network-reachable EasyHunt runs
-scanners and exploitation tools on request, so **binding a non-loopback address
-without auth is refused outright**, not warned about.
-
-```yaml
-auth:
-  mode: jwt                                # or oauth_proxy
-  base_url: https://easyhunt.internal.example.com
-  jwks_uri: https://idp.example.com/.well-known/jwks.json
-  issuer: https://idp.example.com/
-  authorization_servers: [https://idp.example.com]
-```
-
-EasyHunt acts as an OAuth 2.1 **Resource Server**: it publishes RFC 9728
-protected-resource metadata, answers unauthenticated calls with
-`WWW-Authenticate: Bearer resource_metadata="…"`, and verifies bearer tokens
-against your IdP. PKCE is `S256`-only — the MCP SDK types the challenge method as
-`Literal["S256"]`, so `plain` cannot be negotiated. Tokens are audience-bound to
-`base_url` (RFC 8707), so one minted for another service that trusts the same IdP
-is rejected here.
-
-**Scopes map onto EasyHunt's risk tiers**, which is where this earns its keep:
-
-| Scope | Unlocks |
-| --- | --- |
-| `easyhunt:read` | status, findings, scope checks — no target contact |
-| `easyhunt:recon` | passive tools |
-| `easyhunt:scan` | aggressive tools (ports, nuclei, brute force) |
-| `easyhunt:exploit` | exploit tools (PoC validation, takeover confirmation) |
-| `easyhunt:approve` | answering approval prompts |
-| `easyhunt:admin` | loading a scope, reloading rules |
-
-A token is a **ceiling**, checked before the human approval gate rather than
-instead of it — a CI token holding only `easyhunt:recon` cannot invoke
-exploitation even if a human would have approved it. Scope filtering applies to
-discovery as well as invocation, so an unauthenticated caller cannot even
-enumerate the tooling.
-
-`easyhunt:approve` is deliberately separate from every operational scope. **If the
-agent's token could satisfy it, the agent could answer its own approval prompts
-and human-in-the-loop would be decorative.** Issue it to an operator's token and
-nothing else.
-
-For an IdP without Dynamic Client Registration (GitHub, Google), use
-`mode: oauth_proxy`; FastMCP fronts it and forwards PKCE and the resource
-indicator upstream. Credentials come from the environment, never `config.yaml`.
-
----
-
-## Reasoning across an engagement
-
-**Attack paths.** `cloud_attack_paths` turns posture findings into reachability:
-which internet-facing entry point reaches which valuable resource, in how many
-hops. Paths are ranked by what the destination is worth against how exposed the
-entry is — a two-hop path to customer data outranks a one-hop path to an empty
-dev bucket. With Cartography + Neo4j the edges are *observed*; without it they
-are inferred from control failures and labelled as such.
-
-**Graph memory.** Every asset, finding, and relationship is indexed as the run
-proceeds, so `graph_recall("api.example.com")` answers "what do I already know
-about this host" without a re-scan. Native by default — Neo4j is optional and
-only adds cross-engagement persistence. Stores the index, never the loot.
-
-**Rendered graphs.** Reports get `taskgraph.svg` and `attack-paths.svg` (plus
-`.dot`, and `.png` when a converter is installed). SVG is generated by a
-dependency-free layered-DAG layout, because a report artifact that only exists
-when Graphviz happens to be installed is one you cannot rely on.
-
-**Prompt caching.** Stable instructions carry an explicit `cache_control`
-breakpoint with volatile data after them, so a triage phase pays for its rubric
-once instead of twenty times. Cached tokens and the resulting savings are
-recorded per call in the audit log.
-
----
-
----
-
-## Layout
-
-```
-easyhunt/
-  control_plane/   scope · sanitize · budget · ratelimit · approval
-                   · sandbox · audit · auth · jobs · pins · context
-  tools/           66 wrappers, one decorator, no privileged path
-  engines/         bbot · nuclei · jaeles · semgrep · osmedeus · strix
-  knowledge/       findings · WSTG · payloads · graph memory
-  install/         85 recipes, identity-verified
-  llm/             OpenRouter routing, 3 tiers
-skills/            8 phase playbooks for the agent
-rules/             detection packs — YAML, no code
-scripts/           hunt.sh · phase.py · summary.py · lab_target.py
-docs/              architecture · bootstrap · payloads
-```
 
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 1,958 tests
+.venv/bin/python -m pytest tests/ -q          # 1,983 tests
 .venv/bin/ruff check easyhunt/ tests/
 easyhunt doctor                                # executed, not just found on PATH
 ```
