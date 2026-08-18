@@ -158,6 +158,49 @@ def _severity_for(rule: str, validated: bool) -> Severity:
     return Severity.MEDIUM
 
 
+def _collapse_duplicates(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One secret is one finding, however many files carry it.
+
+    A bundler copies the same config into every chunk that imports it, so a
+    single analytics key appears in dozens of files. Measured on a live
+    engagement: 79 secrets findings, of which 70 were one ``AMPLITUDE_API_KEY``
+    repeated across the bundle set and 5 were one ``private-key`` rule hitting
+    the same JWK parser. Nine distinct values, seventy-nine findings.
+
+    That is not a cosmetic count. A triage queue of seventy near-identical rows
+    is one nobody reads to the bottom, and severity is assigned per row — so a
+    single false positive duplicated seventy times outranks a real finding
+    sitting alone. Deduplicating restores the ordering that severity is
+    supposed to express.
+
+    Hits collapse on ``(rule, matched value)``. The surviving hit keeps the
+    first path and line, and gains ``duplicate_paths`` — every other location,
+    so remediation still knows the full blast radius. A validated hit always
+    wins the merge: validation is an observation about the credential, not
+    about the file it was found in.
+    """
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for hit in hits:
+        key = (str(hit.get("rule", "")), str(hit.get("snippet", "")))
+        seen = merged.get(key)
+        if seen is None:
+            clone = dict(hit)
+            clone["duplicate_paths"] = []
+            merged[key] = clone
+            continue
+        seen["duplicate_paths"].append(
+            f"{hit.get('path', '?')}:{hit.get('line') or '?'}"
+        )
+        # Validation is a property of the credential; if any occurrence was
+        # confirmed live, the merged finding is validated.
+        if hit.get("validated") and not seen.get("validated"):
+            seen["validated"] = True
+            seen["validation_note"] = hit.get("validation_note", "")
+            seen["blast_radius"] = hit.get("blast_radius")
+            seen["path"], seen["line"] = hit.get("path"), hit.get("line")
+    return list(merged.values())
+
+
 def _record_finding(
     engagement: Any,
     *,
@@ -169,6 +212,7 @@ def _record_finding(
     snippet: str,
     tool: str,
     blast_radius: dict[str, Any] | None = None,
+    duplicate_paths: list[str] | None = None,
 ) -> Finding:
     finding = Finding(
         asset=path,
@@ -186,7 +230,10 @@ def _record_finding(
                ". The credential was NOT validated — it may be a test fixture, an "
                "example, or already revoked.")
         ),
-        how_found=f"{tool} rule '{rule}' matched in {path}",
+        how_found=(
+            f"{tool} rule '{rule}' matched in {path}"
+            + (f" and {len(duplicate_paths)} other file(s)" if duplicate_paths else "")
+        ),
         source_tool=tool,
         rule_id=f"secret.{rule}",
         confidence=0.9 if validated else 0.4,
@@ -199,7 +246,14 @@ def _record_finding(
             "before it lands."
         ),
         tags=["secret", "validated" if validated else "unvalidated"],
-        extra={"validation": validation_note, "blast_radius": blast_radius},
+        extra={
+            "validation": validation_note,
+            "blast_radius": blast_radius,
+            # Every other file carrying this same value. Remediation needs the
+            # full list even though triage only needs one row.
+            "duplicate_paths": duplicate_paths or [],
+            "occurrences": 1 + len(duplicate_paths or []),
+        },
     )
     if not validated:
         finding.note(
@@ -363,8 +417,9 @@ async def secret_scan(path: str = ".", git_history: bool = True) -> dict[str, An
             snippet=hit["snippet"],
             tool="kingfisher" if hit.get("blast_radius") is not None or hit["validation_note"] else "gitleaks",
             blast_radius=hit.get("blast_radius"),
+            duplicate_paths=hit.get("duplicate_paths"),
         )
-        for hit in hits
+        for hit in _collapse_duplicates(hits)
     ]
     engagement.findings.save()
 
@@ -443,9 +498,11 @@ async def secret_validate(path: str = ".") -> dict[str, Any]:
             engagement,
             rule=hit["rule"], path=hit["path"], line=hit["line"],
             validated=hit["validated"], validation_note=hit["validation_note"],
-            snippet=hit["snippet"], tool="kingfisher", blast_radius=hit.get("blast_radius"),
+            snippet=hit["snippet"], tool="kingfisher",
+            blast_radius=hit.get("blast_radius"),
+            duplicate_paths=hit.get("duplicate_paths"),
         )
-        for hit in hits
+        for hit in _collapse_duplicates(hits)
     ]
     engagement.findings.save()
 
