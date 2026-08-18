@@ -676,6 +676,28 @@ async def brain_history(
     }
 
 
+@mcp.tool(
+    name="dashboard_state",
+    description=(
+        "The live engagement dashboard blob: which phase is running, each phase's "
+        "outcome, the findings ledger with severity/status, discovered assets, and "
+        "the brain's recent sensed activity. One JSON snapshot of the whole run — "
+        "use it to answer 'where is the scan, what has it found' without reading "
+        "workspace files directly. The CLI mirrors this as `easyhunt dashboard`."
+    ),
+    tags={"control", "reporting"},
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+async def dashboard_state() -> dict[str, Any]:
+    from easyhunt.tools.dashboard import collect_state
+
+    try:
+        state = collect_state()
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    return {"ok": True, **state}
+
+
 # --------------------------------------------------------------------------- #
 # Rules and plugins
 # --------------------------------------------------------------------------- #

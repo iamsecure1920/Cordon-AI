@@ -753,6 +753,24 @@ hook, no per-tool wiring) and writes a JSON activity stream to
 CLI: `easyhunt brain state` (one-shot snapshot), `easyhunt brain history
 [--phase X --tool Y --outcome ok]` (episodic memory).
 
+### The live dashboard
+
+See the whole run at a glance — findings so far, which phase is executing,
+recent activity, reports:
+
+```bash
+easyhunt dashboard              # static snapshot -> dashboard.html (self-contained)
+easyhunt dashboard --serve      # live: http://127.0.0.1:8765, page auto-refreshes
+```
+
+The page shows: stat cards (findings by severity/status, phases done, assets
+found), the full phase pipeline with each phase's state (pending / running /
+ok / empty / failed) and a scanning animation on the active phase, a
+severity-sorted findings table, the brain's sensed activity feed, and links
+to generated reports. `--serve` re-reads the workspace on every poll, so a
+running `hunt.sh` updates it in real time. The agent gets the same blob over
+MCP via `dashboard_state`.
+
 ### The coverage matrix (27 bug classes, two tiers)
 
 - **auto (19)** — a validator *proves* it: SQLi→sqlmap, XSS→dalfox, SSRF→ssrfmap,

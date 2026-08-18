@@ -61,11 +61,35 @@ every script — and gave it a face. `2120 passed, 1 skipped`.
   any front-end can consume. `easyhunt brain export [--open]` writes a
   self-contained `brain.html` (no external deps) that replays the same JSON as
   an animated neural net — shareable, attachable to a report.
-- **MCP**: `brain_state` (live pulse), `brain_history` (episodic memory).
+- **MCP**: `brain_state` (live pulse), `brain_history` (episodic memory),
+  `brain_recall` (query experience), `brain_learn` (teach manually).
 - **CLI**: `easyhunt brain watch|state|history|export`.
 - **Tests**: 8 new in `tests/test_neuron.py` (TestSensing), incl. the audit
   observer wiring and observer-failure isolation (a crashing observer cannot
   break the audit trail).
+
+### The live dashboard (`easyhunt/tools/dashboard.py`)
+
+Turns any engagement workspace into a live ops view — the answer to "what
+has the run found, and what phase is it on right now":
+
+- **Data layer**: `collect_state()` reads status.jsonl (phase machine),
+  findings.json (severity/status ledger, severity-sorted), assets.json
+  (discovered estate), and the brain's activity feed, into one JSON blob.
+  Audit phase slugs are canonicalized to pipeline labels exactly like the
+  animation (http_probe→probe, etc.).
+- **Two modes**: `easyhunt dashboard` writes a self-contained `dashboard.html`
+  (zero external deps — inline CSS/JS, embeddable in a report);
+  `easyhunt dashboard --serve` runs a stdlib ThreadingHTTPServer where the
+  page polls `/api/state` every 2s and re-renders — live phase pipeline with
+  running animations, findings table (severity + status badges), stat cards,
+  the brain's recent activity feed, and links to generated reports.
+- **MCP**: `dashboard_state` returns the same blob to the agent — "where is
+  the scan, what has it found" without reading workspace files.
+- **CLI**: `easyhunt dashboard [--out path] [--serve] [--port N]`.
+- **Tests**: 6 new in `tests/test_dashboard.py` (phase mapping incl. the
+  canonical-slug fix, findings sorting/counting, full state blob, embedded
+  page render).
 
 ---
 

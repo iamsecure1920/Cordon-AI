@@ -616,6 +616,11 @@ def cmd_brain_history(args: argparse.Namespace) -> int:
               f"{str(event.get('tool') or '?'):<26} {mark} {event.get('outcome')}")
     return 0
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    from easyhunt.tools.dashboard import dashboard as _dashboard
+
+    return _dashboard(args)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -707,6 +712,16 @@ def build_parser() -> argparse.ArgumentParser:
     history.add_argument("--outcome")
     history.add_argument("--limit", type=int, default=30)
     history.set_defaults(func=cmd_brain_history)
+
+    dash = sub.add_parser(
+        "dashboard", parents=[common],
+        help="live engagement dashboard: phases, findings, activity, reports",
+    )
+    dash.add_argument("--out", default="dashboard.html", help="output path")
+    dash.add_argument("--serve", action="store_true",
+                      help="run a live local server; the page polls /api/state")
+    dash.add_argument("--port", default="8765", help="serve port (default 8765)")
+    dash.set_defaults(func=cmd_dashboard)
 
     export = brain_sub.add_parser(
         "export",
