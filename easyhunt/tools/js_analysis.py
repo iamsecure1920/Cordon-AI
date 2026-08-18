@@ -15,7 +15,7 @@ import json
 import re
 from collections import deque
 from typing import Any
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlparse, urlsplit
 
 import httpx
 
@@ -280,6 +280,56 @@ def _script_urls(body: str, base: str) -> list[str]:
             yield url
 
 
+def _prioritise(candidates: list[str], limit: int) -> list[str]:
+    """Choose which URLs are worth the fetch budget, before it is spent.
+
+    The budget is ``max_files`` fetches. It used to be handed to the first N
+    URLs in asset-store order, which is alphabetical — so a run against an
+    estate with wildcard DNS spent 22 of 25 fetches on ``blairwalnuts``,
+    ``hellofreshuk``, ``humble`` and ``husband``, every one of them a phantom
+    host resolving to the same edge, and every one returning the byte-identical
+    960 KB interstitial. Zero bundles were scanned; the phase reported PARTIAL,
+    which was honest but useless.
+
+    Three rules, in order:
+
+    * **One URL per host.** Five paths on one host cannot yield five different
+      bundle sets, and each costs a fetch another host will not get.
+    * **https beats http.** Plain HTTP on a modern estate is usually an edge
+      redirect or a block page. Where both schemes are live for a host, the
+      http one is the worse read.
+    * **A ``.js`` path beats a page.** A bundle is what this tool came for; a
+      page is only a means of finding one via ``<script src>``.
+    """
+    best: dict[str, str] = {}
+    for url in candidates:
+        if not url.startswith("http"):
+            continue
+        host = urlparse(url).netloc.lower()
+        if not host:
+            continue
+        current = best.get(host)
+        if current is None or _url_rank(url) < _url_rank(current):
+            best[host] = url
+    return sorted(best.values(), key=_url_rank)[:limit]
+
+
+def _url_rank(url: str) -> tuple[int, int, int]:
+    """Lower sorts first: prefer https, then a real script path, then brevity."""
+    parsed = urlparse(url)
+    return (
+        0 if parsed.scheme == "https" else 1,
+        0 if parsed.path.endswith(".js") else 1,
+        len(url),
+    )
+
+
+#: How many byte-identical blocked bodies to tolerate before concluding the
+#: estate answers everything with one interstitial. Two could be coincidence
+#: (a shared error page); three from three different hosts is a wildcard.
+_WILDCARD_BLOCK_THRESHOLD = 3
+
+
 def _fetch_verdict(status: int, body: str, content_type: str) -> tuple[str, str]:
     """What did we actually receive? Returns ``(verdict, why)``.
 
@@ -324,7 +374,7 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     # hostname here used to give `no_urls` in 0.0 seconds, which the pipeline
     # then printed a green tick over.
     candidates, origin = targets_or_assets(target, kind="url", tool="js_analyze")
-    urls = [u for u in candidates if u.startswith("http")][:max_files]
+    urls = _prioritise(candidates, max_files)
     if not urls:
         return {"ok": False, "error": "no_urls", "message": "js_analyze needs http(s) URLs"}
 
@@ -351,6 +401,9 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     fetched: list[dict[str, Any]] = []
     #: Hosts that refused us. Their JavaScript is UNTESTED, not empty.
     blocked: list[dict[str, Any]] = []
+    #: Blocked-body size -> how many distinct hosts returned exactly that size.
+    block_bodies: dict[int, int] = {}
+    wildcard_stop: str = ""
     #: Fetched, but a document rather than a bundle.
     not_js: list[dict[str, Any]] = []
 
@@ -397,6 +450,19 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
                 record["why"] = why
                 blocked.append(record)
                 fetched.append(record)
+                # Wildcard DNS plus a catch-all edge answers every host with the
+                # same interstitial. Once the same body has come back from
+                # several different hosts, the remaining fetches will return it
+                # too — so stop, and say why, instead of spending the budget
+                # proving it repeatedly.
+                block_bodies[len(body)] = block_bodies.get(len(body), 0) + 1
+                if block_bodies[len(body)] >= _WILDCARD_BLOCK_THRESHOLD:
+                    wildcard_stop = (
+                        f"stopped after {len(fetched)} fetches: {block_bodies[len(body)]} hosts "
+                        f"returned a byte-identical {len(body)}-byte interstitial, which is a "
+                        f"wildcard/catch-all edge rather than {len(urls)} distinct applications"
+                    )
+                    break
                 continue
 
             secrets, endpoints = _scan_text(body, url)
@@ -536,6 +602,10 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
         "files_fetched": len(fetched),
         "files_scanned": scanned,
         "blocked": blocked,
+        # Present only when the run was cut short because the estate answers
+        # every host with one interstitial. Without this the caller sees a
+        # short `fetched` list and no reason for it.
+        **({"wildcard_stop": wildcard_stop} if wildcard_stop else {}),
         "not_javascript": not_js,
         "coverage_note": (
             f"{len(blocked)} of {len(fetched)} responses were an edge or origin "

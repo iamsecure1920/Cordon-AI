@@ -202,3 +202,57 @@ class TestScriptUrls:
         assert "http://127.0.0.1:3000/chunk-x.js" in list(
             _script_urls(body, "http://127.0.0.1:3000/")
         )
+
+
+class TestFetchBudgetPrioritisation:
+    """The fetch budget must not be spent on wildcard phantoms.
+
+    Measured against a live estate with wildcard DNS: `js_analyze` took the
+    first 25 URLs in asset-store order — alphabetical — and 22 of them were
+    hosts like `blairwalnuts`, `hellofreshuk`, `humble` and `husband` that
+    exist only because `*.target` resolves. Every one returned the same
+    960,758-byte edge interstitial. files_fetched: 25, files_scanned: 0.
+
+    The phase reported PARTIAL rather than clean, which was honest, but the
+    budget was already gone and not one real bundle was read.
+    """
+
+    def test_https_wins_over_http_for_the_same_host(self) -> None:
+        from easyhunt.tools.js_analysis import _prioritise
+
+        chosen = _prioritise(["http://a.example.com/", "https://a.example.com/"], 10)
+        assert chosen == ["https://a.example.com/"], "plain HTTP is the worse read"
+
+    def test_one_url_per_host(self) -> None:
+        from easyhunt.tools.js_analysis import _prioritise
+
+        chosen = _prioritise(
+            [f"https://a.example.com/page{i}" for i in range(5)]
+            + ["https://b.example.com/"],
+            10,
+        )
+        hosts = {u.split("/")[2] for u in chosen}
+        assert hosts == {"a.example.com", "b.example.com"}
+        assert len(chosen) == 2, "five paths on one host cannot yield five bundle sets"
+
+    def test_a_script_path_outranks_a_page(self) -> None:
+        from easyhunt.tools.js_analysis import _prioritise
+
+        chosen = _prioritise(["https://a.example.com/", "https://b.example.com/app.js"], 1)
+        assert chosen == ["https://b.example.com/app.js"], "a bundle is what we came for"
+
+    def test_budget_reaches_distinct_hosts_not_one_hosts_paths(self) -> None:
+        """The regression, in the shape it actually occurred."""
+        from easyhunt.tools.js_analysis import _prioritise
+
+        wildcard = [f"http://phantom{i}.example.com/" for i in range(40)]
+        real = ["https://app.example.com/main.js", "https://api.example.com/"]
+        chosen = _prioritise(real + wildcard, 25)
+        assert chosen[0] == "https://app.example.com/main.js"
+        assert "https://api.example.com/" in chosen[:2], "https must outrank 40 http phantoms"
+        assert len({u.split("/")[2] for u in chosen}) == len(chosen), "no host twice"
+
+    def test_non_http_input_is_dropped(self) -> None:
+        from easyhunt.tools.js_analysis import _prioritise
+
+        assert _prioritise(["ftp://x.example.com/", "not-a-url", ""], 5) == []
