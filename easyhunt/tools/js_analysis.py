@@ -222,13 +222,20 @@ def _scan_text(text: str, url: str) -> tuple[list[dict[str, Any]], list[str]]:
 #: Bodies that are an edge or origin refusing us, not application JavaScript.
 #: Matched on the response body because the status code alone is not enough —
 #: an interstitial is sometimes served with HTTP 200.
+#: NOTE on `__cf$cv$params`: deliberately NOT a marker. Cloudflare injects its
+#: challenge-platform script (`__CF$cv$params`, `/cdn-cgi/challenge-platform/`)
+#: into EVERY page it serves when Bot Fight / Managed Challenge is on — the
+#: browser passes it transparently and the page content is real. Matching it
+#: flagged genuine pages (a real 960 KB Next.js homepage with a title, script
+#: srcs and all) as "blocked", so js_analyze refused to scan them and the
+#: exploit chain had zero endpoints to aim at. Only the human-readable block
+#: text and the error-page markers below are evidence of a refusal.
 _BLOCK_PAGE = re.compile(
     r"""(?i)(?:sorry,\s*you\s*have\s*been\s*blocked
         | attention\s+required!?\s*\|\s*cloudflare
         | request\s+rejected
         | access\s+denied
         | \bcf-error-details\b
-        | \b__cf\$cv\$params\b
         | you\s+are\s+unable\s+to\s+access
         | <title>\s*4\d\d\s+forbidden)""",
     re.VERBOSE,
@@ -343,6 +350,13 @@ def _fetch_verdict(status: int, body: str, content_type: str) -> tuple[str, str]
 
     Zero findings from a body we were refused is not a result about the target.
     """
+    if status in (404, 410):
+        # A definitive answer, not a refusal: this URL does not exist. It is a
+        # result about the target ("nothing is served here"), so it must not
+        # flip the phase to PARTIAL the way a WAF refusal does. It still feeds
+        # the wildcard tally below, so a catch-all edge answering every host
+        # with one byte-identical soft-404 is detected and stopped.
+        return "not_found", f"HTTP {status}"
     if status >= 400:
         return "blocked", f"HTTP {status}"
     if _block_marker(body):
@@ -401,6 +415,9 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     fetched: list[dict[str, Any]] = []
     #: Hosts that refused us. Their JavaScript is UNTESTED, not empty.
     blocked: list[dict[str, Any]] = []
+    #: URLs that are genuinely gone (HTTP 404/410). A result, not a refusal:
+    #: the origin answered "nothing is here" instead of refusing the request.
+    not_found: list[dict[str, Any]] = []
     #: Blocked-body size -> how many distinct hosts returned exactly that size.
     block_bodies: dict[int, int] = {}
     wildcard_stop: str = ""
@@ -460,6 +477,25 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
                     wildcard_stop = (
                         f"stopped after {len(fetched)} fetches: {block_bodies[len(body)]} hosts "
                         f"returned a byte-identical {len(body)}-byte interstitial, which is a "
+                        f"wildcard/catch-all edge rather than {len(urls)} distinct applications"
+                    )
+                    break
+                continue
+            if verdict == "not_found":
+                # The URL is gone. This is a result, not a refusal: the origin
+                # answered "nothing here" instead of refusing the request. Do
+                # not scan a 404 body, do not let it fail the phase — but still
+                # feed the wildcard tally, because a catch-all edge answering
+                # every host with one byte-identical soft-404 is the same
+                # budget-wasting estate the interstitial stop exists for.
+                record["why"] = why
+                not_found.append(record)
+                fetched.append(record)
+                block_bodies[len(body)] = block_bodies.get(len(body), 0) + 1
+                if block_bodies[len(body)] >= _WILDCARD_BLOCK_THRESHOLD:
+                    wildcard_stop = (
+                        f"stopped after {len(fetched)} fetches: {block_bodies[len(body)]} hosts "
+                        f"returned a byte-identical {len(body)}-byte soft-404, which is a "
                         f"wildcard/catch-all edge rather than {len(urls)} distinct applications"
                     )
                     break
@@ -593,15 +629,18 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
     engagement.findings.save()
     engagement.assets.save(engagement.workspace / "assets.json")
 
-    scanned = len(fetched) - len(blocked)
+    scanned = len(fetched) - len(blocked) - len(not_found)
     return {
         # A phase that was refused by half its targets did not succeed at those.
-        "ok": not blocked,
-        "status": "PARTIAL" if blocked else "COMPLETE",
-        "complete": not blocked,
+        # A 404 is not a refusal: the origin answered "nothing is here", which
+        # is a genuine result about that URL rather than an UNTESTED gap.
+        "ok": not blocked and not wildcard_stop,
+        "status": "PARTIAL" if (blocked or wildcard_stop) else "COMPLETE",
+        "complete": not blocked and not wildcard_stop,
         "files_fetched": len(fetched),
         "files_scanned": scanned,
         "blocked": blocked,
+        "not_found": not_found,
         # Present only when the run was cut short because the estate answers
         # every host with one interstitial. Without this the caller sees a
         # short `fetched` list and no reason for it.
@@ -614,6 +653,11 @@ async def js_analyze(target: str, max_files: int = 25) -> dict[str, Any]:
             "a statement about the target. Re-run them, or report them as uncovered."
             if blocked else
             f"{scanned} of {len(fetched)} responses were scanned."
+            + (
+                f" {len(not_found)} returned HTTP 404/410 — genuinely absent, "
+                "a result rather than an uncovered gap."
+                if not_found else ""
+            )
         ),
         "fetched": fetched,
         "secret_candidates": len(all_secrets),

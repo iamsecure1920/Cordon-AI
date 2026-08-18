@@ -204,6 +204,45 @@ class TestScriptUrls:
         )
 
 
+class TestFetchVerdictDistinguishesAbsenceFromRefusal:
+    """HTTP 404 is a result, not a refusal.
+
+    `js_analyze` once classified every status >= 400 as "blocked". On a live
+    estate that meant two 404s out of 100 fetches — a retired Google Code CDN
+    and one dead host — flipped the whole phase to `ok: False` / PARTIAL and
+    exit 3, even though 98 files had genuinely been scanned and 1708 endpoints
+    extracted. A 404 answers "nothing is served here", which is a statement
+    about that URL; a WAF refusal answers nothing. Only the latter is an
+    UNTESTED gap, and only the latter may fail the phase.
+    """
+
+    def _verdict(self, status: int, body: str = "", content_type: str = "text/javascript"):
+        from easyhunt.tools.js_analysis import _fetch_verdict
+
+        return _fetch_verdict(status, body, content_type)
+
+    def test_404_is_not_found_not_blocked(self) -> None:
+        assert self._verdict(404)[0] == "not_found"
+
+    def test_410_is_not_found_not_blocked(self) -> None:
+        assert self._verdict(410)[0] == "not_found"
+
+    def test_other_4xx_is_still_a_refusal(self) -> None:
+        for status in (401, 403, 429):
+            assert self._verdict(status)[0] == "blocked", f"{status} is a refusal"
+
+    def test_5xx_is_still_a_refusal(self) -> None:
+        for status in (500, 502, 503):
+            assert self._verdict(status)[0] == "blocked", f"{status} is a refusal"
+
+    def test_block_marker_still_beats_a_2xx(self) -> None:
+        body = (
+            "<html>Sorry, you have been blocked. You are unable to access "
+            "this website.</html>"
+        )
+        assert self._verdict(200, body)[0] == "blocked"
+
+
 class TestFetchBudgetPrioritisation:
     """The fetch budget must not be spent on wildcard phantoms.
 
