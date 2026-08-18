@@ -37,6 +37,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from easyhunt.control_plane.context import get_engagement
 from easyhunt.control_plane.sanitize import ArgPolicy
 from easyhunt.knowledge.findings import Evidence, Finding, Severity, Status
@@ -54,6 +56,7 @@ from easyhunt.tools.common import (
 __all__ = [
     "WEBSCAN_SPECS",
     "cors_audit",
+    "fuzz_compare",
     "graphql_audit",
     "jwt_inspect",
     "nikto_scan",
@@ -1790,4 +1793,120 @@ _WAPITI_LEVELS: dict[int, Severity] = {
     3: Severity.HIGH,
     4: Severity.CRITICAL,
 }
+
+
+@easyhunt_tool(
+    phase="endpoints", mode="passive", targets_arg=None, timeout=120,
+    name="fuzz_compare", tags={"endpoints", "fuzzing"}, estimated_requests=3,
+    rationale=(
+        "Diff one or more responses against a baseline by body hash, status, "
+        "length, duration and headers — the soft-404 / cache-poisoning check "
+        "ffuf's single-scalar filters cannot give."
+    ),
+)
+async def fuzz_compare(
+    baseline_url: str,
+    case_urls: list[str],
+    re_request: bool = False,
+) -> dict[str, Any]:
+    """Diff responses against a baseline to find what a payload actually changed.
+
+    ``baseline_url`` is the unmodified request; ``case_urls`` are the injected
+    variants. Each case is diffed against the baseline across status, mime,
+    body hash, length, duration and headers, and cases are clustered by body
+    hash so identical responses (the catch-all page) read as one cluster.
+
+    ``re_request`` adds a second fetch of every case — the cache-poisoning
+    probe. If the second response differs from the first *and* matches the
+    injected body while a fresh requester asked only for the baseline URL, the
+    cache served the poisoned copy; that is the only honest way to move web
+    cache poisoning from "manual" toward detectable.
+
+    Read-only: GET requests through the engagement's rate limiter, nothing is
+    sent beyond the URLs you name.
+    """
+    import time as _time
+
+    from easyhunt.tools.fuzz_diff import Case, diff_case, group_cases, label_clusters
+
+    engagement = get_engagement()
+    headers = {"User-Agent": engagement.scope.rules.user_agent}
+    urls = [u for u in case_urls if isinstance(u, str) and u.startswith("http")][:20]
+    if not urls:
+        return {"ok": False, "error": "no_case_urls", "message": "no http(s) case URLs supplied"}
+
+    async def _fetch(url: str) -> Case | None:
+        async with engagement.limiter.slot(host=url):
+            try:
+                started = _time.monotonic()
+                async with httpx.AsyncClient(timeout=20, follow_redirects=False, headers=headers) as client:
+                    response = await client.get(url)
+                duration_ms = (_time.monotonic() - started) * 1000
+                return Case(
+                    url=url,
+                    status=response.status_code,
+                    mime=response.headers.get("content-type"),
+                    body=response.content,
+                    duration_ms=duration_ms,
+                    headers=dict(response.headers),
+                )
+            except httpx.HTTPError:
+                return Case(url=url, status=0, body=b"", headers={}, duration_ms=0.0)
+
+    baseline = await _fetch(baseline_url)
+    if baseline is None or baseline.status in (None, 0):
+        return {
+            "ok": False, "error": "baseline_failed",
+            "message": f"baseline request to {baseline_url} failed", "untested": True,
+        }
+
+    first: list[Case] = []
+    for url in urls:
+        case = await _fetch(url)
+        if case is not None and case.status not in (None, 0):
+            first.append(case)
+
+    diffs = [diff_case(baseline, case).to_dict() for case in first]
+    clusters = group_cases(first, baseline=baseline)
+    labelled = label_clusters(clusters, baseline=baseline)
+
+    poison: list[dict[str, Any]] = []
+    if re_request:
+        for case in first:
+            second = await _fetch(case.url)
+            if second is None or second.status in (None, 0):
+                continue
+            # The cache served the injected body to a second (clean) requester
+            # when the second response matches the first case AND differs from
+            # the baseline — the poison signature.
+            if (
+                second.hash == case.hash
+                and second.hash != baseline.hash
+                and case.hash != baseline.hash
+            ):
+                poison.append(
+                    {
+                        "url": case.url,
+                        "status": second.status,
+                        "body_hash": second.hash,
+                        "note": "cache re-served the injected body on a fresh request — poisoning confirmed",
+                    }
+                )
+
+    return {
+        "ok": True,
+        "baseline": baseline_url,
+        "baseline_status": baseline.status,
+        "cases": len(first),
+        "diffs": diffs,
+        "clusters": labelled,
+        "cache_poison_candidates": poison,
+        "note": (
+            "Diffs are per-case deltas against the baseline; clusters are "
+            "identical-body responses grouped. A cluster matching the baseline "
+            "is the catch-all/soft-404 page, not a discovery. A cache_poison "
+            "candidate means a fresh request was served the injected body — "
+            "confirm by hand and record the PoC before reporting."
+        ),
+    }
 

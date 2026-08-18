@@ -35,12 +35,14 @@ from easyhunt.util.run import ProcResult
 __all__ = [
     "CATALOG",
     "ToolRun",
+    "VerifyVerdict",
     "register_spec",
     "run_many",
     "split_targets",
     "resolve_binary",
     "store_assets",
     "verify_identity",
+    "verify_output",
 ]
 
 CATALOG: dict[str, ToolSpec] = {}
@@ -451,3 +453,132 @@ HOST_PATTERN = re.compile(r"[A-Za-z0-9._*:/-]{1,253}")
 URL_PATTERN = re.compile(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'*+,;=%-]{1,2000}")
 PORT_PATTERN = re.compile(r"[0-9,\-]{1,64}")
 PATH_PATTERN = re.compile(r"[A-Za-z0-9._/-]{1,512}")
+
+
+# --------------------------------------------------------------------------- #
+# Output verification — "absence ≠ negative" made machine-enforced
+# --------------------------------------------------------------------------- #
+
+#: Verdict a wrapper attaches to a tool run that returned nothing or failed.
+class VerifyVerdict:
+    __slots__ = ("status", "hint")
+
+    def __init__(self, status: str, hint: str = "") -> None:
+        #: ok | suspicious | empty | failed
+        self.status = status
+        #: Corrected-command hint, when the fix is a flag change.
+        self.hint = hint
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"status": self.status, "hint": self.hint}
+
+    def __bool__(self) -> bool:
+        return self.status == "ok"
+
+
+#: Per-tool post-checks. Each entry is a callable ``(argv, exit_code, stdout) ->
+#: VerifyVerdict``. Ported in concept from autopentest-ai's ``tool_verification.py``
+#: (MIT, bhavsec): the invariant "a tool that produced no output proves nothing"
+#: is enforced per binary, with a corrected-command hint when the cause is a flag
+#: rather than an absent vulnerability.
+_VERIFIERS: dict[str, Any] = {}
+
+
+def _verify_nmap(argv: list[str], exit_code: int, stdout: str) -> VerifyVerdict:
+    if "Host is up" not in stdout and "1 host up" not in stdout:
+        return VerifyVerdict(
+            "suspicious",
+            "nmap reported no live host — if the target drops ICMP, add -Pn "
+            "(host discovery off) so the port scan still runs.",
+        )
+    return VerifyVerdict("ok")
+
+
+def _verify_nuclei(argv: list[str], exit_code: int, stdout: str) -> VerifyVerdict:
+    # Empty JSON ([] or {"results":[]}) with exit 0 is nuclei saying "nothing
+    # matched" — but an empty result file can also mean the template library was
+    # not found (nuclei exits 0 with a warning to stderr).
+    empty_result = not stdout.strip() or ("{" in stdout and "results" in stdout and "}" in stdout)
+    if empty_result:
+        return VerifyVerdict(
+            "suspicious",
+            "nuclei returned an empty result set — verify the template library "
+            "is mounted (~/nuclei-templates) and the run actually scanned, not "
+            "that the estate is clean.",
+        )
+    return VerifyVerdict("ok")
+
+
+def _verify_sqlmap(argv: list[str], exit_code: int, stdout: str) -> VerifyVerdict:
+    lowered = stdout.lower()
+    if "no parameter" in lowered and "injectable" not in lowered:
+        return VerifyVerdict(
+            "suspicious",
+            "sqlmap found no injectable parameter — if the target sits behind a "
+            "WAF, re-run with a bypass boundary (sqli_validate bypass_vendor) or "
+            "raise --level. An empty result here means UNTESTED for a WAF-filtered "
+            "parameter, not clean.",
+        )
+    if "all tested parameters" in lowered and "injectable" not in lowered:
+        return VerifyVerdict("suspicious", "sqlmap tested parameters but none injectable — genuine negative.")
+    return VerifyVerdict("ok")
+
+
+def _verify_dalfox(argv: list[str], exit_code: int, stdout: str) -> VerifyVerdict:
+    if not stdout.strip():
+        return VerifyVerdict(
+            "empty",
+            "dalfox produced no output — check the binary ran (it is silent on "
+            "absence) and whether a headless browser exists for DOM XSS.",
+        )
+    return VerifyVerdict("ok")
+
+
+def _verify_ffuf(argv: list[str], exit_code: int, stdout: str) -> VerifyVerdict:
+    if not stdout.strip() and "-o" not in " ".join(argv):
+        return VerifyVerdict(
+            "empty",
+            "ffuf found nothing — confirm the wordlist resolves and -ac is not "
+            "filtering everything as the catch-all page.",
+        )
+    return VerifyVerdict("ok")
+
+
+def _verify_commix(argv: list[str], exit_code: int, stdout: str) -> VerifyVerdict:
+    lowered = stdout.lower()
+    if "not vulnerable" in lowered or "no injection point" in lowered:
+        return VerifyVerdict("suspicious", "commix reports no injection point — genuine negative under its payload set.")
+    return VerifyVerdict("ok")
+
+
+#: Wire the verifiers above to catalog tool names.
+_VERIFIER_TABLE: dict[str, Any] = {
+    "nmap": _verify_nmap,
+    "nuclei": _verify_nuclei,
+    "sqlmap": _verify_sqlmap,
+    "dalfox": _verify_dalfox,
+    "ffuf": _verify_ffuf,
+    "commix": _verify_commix,
+}
+
+
+def register_verifier(tool: str, verifier: Any) -> None:
+    """Attach a custom verifier to a catalog tool (plugins, operator tools)."""
+    _VERIFIER_TABLE[tool] = verifier
+
+
+def verify_output(tool: str, argv: list[str], exit_code: int, stdout: str) -> VerifyVerdict:
+    """Post-check one tool run: empty/failed ⇒ UNTESTED, with a fix hint.
+
+    Wrappers call this after ``run_one``; a non-``ok`` verdict should be recorded
+    in the wrapper's result (``untested`` + hint) instead of reading as a clean
+    negative. Tools without a registered verifier default to ``ok`` — the
+    registry covers the scanners whose silence is ambiguous, not everything.
+    """
+    verifier = _VERIFIER_TABLE.get(tool)
+    if verifier is None:
+        return VerifyVerdict("ok")
+    try:
+        return verifier(list(argv), int(exit_code or 0), stdout or "")
+    except Exception:  # noqa: BLE001 — a verifier bug must not crash the scan
+        return VerifyVerdict("ok")

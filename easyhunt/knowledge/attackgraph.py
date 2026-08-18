@@ -43,7 +43,214 @@ from easyhunt.knowledge.findings import Severity
 
 log = logging.getLogger("easyhunt.attackgraph")
 
-__all__ = ["AttackGraph", "AttackPath", "Edge", "Node", "build_from_prowler"]
+__all__ = [
+    "AttackGraph",
+    "AttackPath",
+    "Edge",
+    "Node",
+    "FindingChain",
+    "build_from_prowler",
+    "find_finding_chains",
+]
+
+
+# --------------------------------------------------------------------------- #
+# Finding-level chains (web/API engagements, not cloud)
+# --------------------------------------------------------------------------- #
+
+#: Named chains across *findings*: two or more separately-medium findings that
+#: become one higher-severity story when they touch the same asset. This is the
+#: manual-class evidence the blueprint asks for — IDOR and business logic have
+#: no scanner of their own, but a chain (XSS + no CSP, SSRF + cloud metadata,
+#: open redirect + OAuth) is the reachability argument that upgrades them from
+#: "candidate" toward "worth a human's hour".
+#:
+#: Each pattern is a predicate over the finding list and a severity-upgrade
+#: suggestion applied when the chain matches. Ported in concept from
+#: autopentest-ai's ``knowledge_graph`` CHAIN_PATTERNS (MIT, bhavsec); the
+#: predicates here are reimplemented against EasyHunt's Finding model.
+CHAIN_PATTERNS: dict[str, dict[str, Any]] = {
+    "xss-no-csp": {
+        "name": "Reflected XSS on a host with no CSP",
+        "description": (
+            "A Content-Security-Policy is the mitigation that makes most reflected "
+            "XSS unexploitable. An XSS finding on the same host where the policy "
+            "is absent or permissive is the difference between a finding a triager "
+            "downgrades and one they escalate."
+        ),
+        "upgrade_to": "high",
+        "requires": ("xss", "no-csp"),
+    },
+    "ssrf-cloud-metadata": {
+        "name": "SSRF reaching cloud metadata",
+        "description": (
+            "An SSRF that can reach 169.254.169.254 or the cloud metadata service "
+            "is a pivot to credentials — the single most impactful SSRF chain. "
+            "Look for the loopback/metadata address in the SSRF finding's observed "
+            "output or the presence of a cloud-hosted asset."
+        ),
+        "upgrade_to": "critical",
+        "requires": ("ssrf", "cloud"),
+    },
+    "idor-admin": {
+        "name": "IDOR toward an admin/privilege endpoint",
+        "description": (
+            "An object reference on an administrative or privilege-changing route "
+            "is access-control impact rather than mere information disclosure — "
+            "the chain that separates an IDOR worth reporting from one that is not."
+        ),
+        "upgrade_to": "high",
+        "requires": ("idor", "admin"),
+    },
+    "open-redirect-oauth": {
+        "name": "Open redirect on an OAuth/SSO surface",
+        "description": (
+            "An open redirect on a login/OAuth endpoint turns into token theft: "
+            "the redirect destination carries the authorization code or token. "
+            "A redirect finding on an auth-shaped URL is an account-takeover chain, "
+            "not a phishing footnote."
+        ),
+        "upgrade_to": "high",
+        "requires": ("redirect", "oauth"),
+    },
+    "reflected-input-authz": {
+        "name": "Reflected input on an authenticated endpoint",
+        "description": (
+            "Reflected user input on a route that carries authorization data is a "
+            "token/cookie-exfiltration primitive; the same reflection on a public "
+            "page is self-XSS. The chain is what tells the difference."
+        ),
+        "upgrade_to": "medium",
+        "requires": ("reflected", "auth"),
+    },
+}
+
+#: Severity rank table for upgrades.
+_RANK = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+#: Marker substrings used by the predicates. A finding matches a marker when any
+#: of these appears in its title/tags/rule_id (lowercased).
+_XSS_MARKERS = ("xss", "cross-site scripting", "script injection")
+_NO_CSP_MARKERS = ("csp", "content-security-policy", "content security policy")
+_SSRF_MARKERS = ("ssrf", "server-side request forgery", "server side request forgery")
+_CLOUD_MARKERS = ("169.254.169.254", "metadata", "aws", "gcp", "azure", "cloud")
+_IDOR_MARKERS = ("idor", "object reference", "access control", "authorization")
+_ADMIN_MARKERS = ("admin", "privilege", "role", "impersonat")
+_REDIRECT_MARKERS = ("open redirect", "open-redirect", "redirect")
+_OAUTH_MARKERS = ("oauth", "sso", "saml", "oidc", "login", "sign-in", "authorize", "token")
+_REFLECTED_MARKERS = ("reflected", "reflection")
+_AUTH_MARKERS = ("authenticated", "auth", "session", "cookie", "logged-in", "csrf")
+
+
+def _finding_text(finding: Any) -> str:
+    return " ".join(
+        str(part).lower()
+        for part in (
+            finding.title,
+            finding.rule_id or "",
+            " ".join(finding.tags or []),
+            finding.how_found,
+        )
+    )
+
+
+def _asset_key(finding: Any) -> str:
+    """The host an asset-level chain should bind to.
+
+    A URL asset binds to its hostname; a hostname binds to itself. This is what
+    lets an XSS on ``https://app.example.com/x`` chain with a CSP finding on
+    ``https://app.example.com`` — same host, same mitigation story.
+    """
+    from urllib.parse import urlsplit
+
+    asset = str(finding.asset or "")
+    if "://" in asset:
+        host = urlsplit(asset).hostname
+        return (host or asset).lower()
+    return asset.lower()
+
+
+def _matches(finding: Any, markers: tuple[str, ...]) -> bool:
+    text = _finding_text(finding)
+    return any(marker in text for marker in markers)
+
+
+@dataclass
+class FindingChain:
+    """One matched chain: the pattern, the findings, and the upgrade suggested."""
+
+    pattern_id: str
+    name: str
+    description: str
+    findings: list[Any]
+    upgrade_to: str
+    asset: str
+
+    @property
+    def ids(self) -> list[str]:
+        return [f.id for f in self.findings]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pattern": self.pattern_id,
+            "name": self.name,
+            "description": self.description,
+            "upgrade_to": self.upgrade_to,
+            "asset": self.asset,
+            "finding_ids": self.ids,
+            "titles": [f.title for f in self.findings],
+        }
+
+
+def find_finding_chains(findings: Iterable[Any]) -> list[FindingChain]:
+    """Find chain patterns across a finding list, per asset.
+
+    Each pattern needs two *different* findings on the same asset matching its
+    two required markers. Chains are computed only over reportable findings
+    (the caller filters); a chain is evidence for a human, never a status change
+    by itself — the report surfaces the upgrade as a suggestion, and a triager
+    or the agent decides.
+    """
+    items = list(findings)
+    by_asset: dict[str, list[Any]] = {}
+    for finding in items:
+        by_asset.setdefault(_asset_key(finding), []).append(finding)
+
+    chains: list[FindingChain] = []
+    for pattern_id, pattern in CHAIN_PATTERNS.items():
+        first_marker, second_marker = pattern["requires"]
+        marker_sets: dict[str, tuple[str, ...]] = {
+            "xss": _XSS_MARKERS,
+            "no-csp": _NO_CSP_MARKERS,
+            "ssrf": _SSRF_MARKERS,
+            "cloud": _CLOUD_MARKERS,
+            "idor": _IDOR_MARKERS,
+            "admin": _ADMIN_MARKERS,
+            "redirect": _REDIRECT_MARKERS,
+            "oauth": _OAUTH_MARKERS,
+            "reflected": _REFLECTED_MARKERS,
+            "auth": _AUTH_MARKERS,
+        }
+        first_markers = marker_sets[first_marker]
+        second_markers = marker_sets[second_marker]
+        for asset, asset_findings in by_asset.items():
+            firsts = [f for f in asset_findings if _matches(f, first_markers)]
+            seconds = [f for f in asset_findings if _matches(f, second_markers)]
+            # Same finding cannot satisfy both sides (an XSS finding is not a
+            # CSP finding).
+            seconds = [f for f in seconds if f not in firsts]
+            if firsts and seconds:
+                chains.append(
+                    FindingChain(
+                        pattern_id=pattern_id,
+                        name=pattern["name"],
+                        description=pattern["description"],
+                        findings=firsts[:2] + seconds[:2],
+                        upgrade_to=pattern["upgrade_to"],
+                        asset=asset,
+                    )
+                )
+    return chains
 
 # What a node is worth to an attacker who reaches it. Drives path scoring, so a
 # short path to something worthless ranks below a longer path to real data.

@@ -291,6 +291,9 @@ def _candidate_for(url: str, cls: str, spec: dict[str, Any], excerpt: str) -> Fi
         "Injects read-only payloads (open redirect, CRLF, LFI, XXE, HPP) into one parameter.",
         "The LFI/XXE payloads read /etc/passwd through the target — the standard "
         "proof — and nothing else. No out-of-band callback, no command execution.",
+        "regex_bypass derives WAF-regex-breaking variants of each payload (up to "
+        "500 per call) — more requests, every one an attack string. Tier-B "
+        "behaviour, behind the exploit gate like everything here.",
     ],
     rationale=(
         "Prove the bug classes no scanner binary covers: open redirect, CRLF, "
@@ -301,12 +304,21 @@ async def web_injection_probe(
     target: str,
     parameter: str,
     bug_class: str = "open-redirect",
+    regex_bypass: bool = False,
 ) -> dict[str, Any]:
     """Detect open redirect, CRLF, LFI, XXE or HPP in one parameter.
 
     ``target`` is the full URL carrying the parameter to test (one parameter —
     ``&`` is refused project-wide). ``parameter`` names it. ``bug_class`` is one
     of ``open-redirect``, ``crlf``, ``lfi``, ``xxe``, ``hpp``.
+
+    ``regex_bypass`` expands the class's payload set with generated WAF-regex
+    bypass variants (every mode x every encoding, bounded at 500): a WAF regex
+    that blocks the textbook ``../`` or ``<script>`` often lets the same byte
+    through when written as ``%2e%2e/`` or split by a metachar replacement. It
+    multiplies the request count and is strictly a second pass — run the plain
+    probe first and reach for this only when a parameter reflects but nothing
+    fires.
 
     Every result is a CANDIDATE: the class signature must appear in the injected
     response and not in the baseline request. Nothing is confirmed here.
@@ -337,7 +349,41 @@ async def web_injection_probe(
             "message": f"{parameter!r} is not a parameter of {url}",
         }
 
-    spec = _CLASSES[bug_class]
+    spec = dict(_CLASSES[bug_class])
+    if regex_bypass:
+        from easyhunt.knowledge.bypass import BypassError, generate_regex_bypass
+
+        expanded: list[str] = []
+        # A narrow byte set keeps generation inside the 500 cap while still
+        # breaking the regexes that matter: null, tab, LF, VT, FF, CR, ESC and
+        # space are the bytes WAF regexes typically fail to anticipate, and
+        # excluding the full 0-255 range keeps a long traversal payload from
+        # exploding into thousands of separator variants.
+        _BYPASS_BYTES = (0x00, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x1B, 0x20)
+        for payload in spec["payloads"]:
+            try:
+                expanded.extend(
+                    generate_regex_bypass(
+                        payload,
+                        modes=("start", "separator", "end", "regex_metachar"),
+                        encoding="url",
+                        bytes=_BYPASS_BYTES,
+                        max_payloads=500,
+                    )
+                )
+            except BypassError:
+                continue
+        # The plain payloads stay first (they are the textbook forms a human
+        # checks); generated variants follow, all deduplicated, bounded at 500.
+        combined: list[str] = []
+        seen: set[str] = set()
+        for payload in list(spec["payloads"]) + expanded:
+            if payload not in seen:
+                seen.add(payload)
+                combined.append(payload)
+            if len(combined) >= 500:
+                break
+        spec["payloads"] = combined
     baseline = f"{parsed.scheme}://{parsed.netloc}{parsed.path or '/'}?{urlencode(dict(parse_qsl(parsed.query, keep_blank_values=True)))}"
     headers = {"User-Agent": engagement.scope.rules.user_agent}
 

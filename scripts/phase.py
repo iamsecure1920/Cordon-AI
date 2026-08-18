@@ -125,6 +125,11 @@ PHASES: dict[str, dict[str, Any]] = {
     # history, reporting the project's own test fixtures as leaked secrets.
     # git_history=false keeps it to the files actually on disk.
     "secrets":   {"tool": "secret_scan",          "count": None,       "extra": {"path": "raw", "git_history": False}},
+    # White-box pre-recon audit of source fetched into the workspace: semgrep
+    # parsing rules + gitleaks merged into code-audit.json/.md. Global (runs
+    # once over the workspace, not per target). With no source present it
+    # degrades to a graceful empty result — source_fetch must run first.
+    "code_audit": {"tool": "code_audit",            "count": "count",    "extra": {"path": "source"}},
     # gf pattern pass: classifies URLs by sink shape (ssrf, sqli, xss, lfi,
     # redirect, idor, debug...) using the vetted rules/gf/ pattern pack.
     "pattern":   {"tool": "pattern_scan",         "count": "count",    "inherits": True, "wants": ("url",), "tag": "live"},

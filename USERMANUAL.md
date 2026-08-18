@@ -246,6 +246,7 @@ Copied from `config.example.yaml`. Sections:
 | `report` | output formats |
 | `audit` | hash-chained log |
 | `hardening` | tool-definition pinning, prompt-injection scrubbing |
+| `tools` | per-tool runtime settings — currently `tools.burp.proxy_url` (default `http://127.0.0.1:8080`), the local Burp proxy `burp_send` forwards through |
 
 ### The `approval` backend — the unattended switch
 
@@ -428,6 +429,8 @@ flowchart LR
     J --> A[auth_surface]
     A --> GLOBAL
     subgraph GLOBAL[global: once over everything]
+      SK[secrets: kingfisher on raw bundles]
+      CA[code_audit: semgrep + gitleaks on source if fetched]
       TK[takeover_detect]
       SC[nuclei_scan]
       P1[ports: naabu on live hosts]
@@ -469,6 +472,7 @@ flowchart LR
 | `js` | `js_analyze` | ✅ | url (tag `live`) | — |
 | `auth` | `auth_surface` | ✅ | url (tag `live`) | `hosts_examined` |
 | `secrets` | `secret_scan` | — | workspace `raw/` path | — |
+| `code_audit` | `code_audit` | — | workspace `source/` path | `count` |
 | `pattern` | `pattern_scan` | ✅ | url (tag `live`) | `count` |
 | `graphql` | `graphql_audit` | — | focus URL | — |
 | `websocket` | `websocket_probe` | — | focus URL | — |
@@ -486,7 +490,9 @@ flowchart LR
 
 - **Per-target phases** run once per host: `recon resolve probe waf tls cors
   endpoints js auth`.
-- **Global phases** run once over everything: `takeover scan exploit plan report`.
+- **Global phases** run once over everything: `secrets code_audit pattern graphql
+  websocket takeover scan ports services params content nikto wapiti exploit
+  plan report`.
 - **Only `probe` is required.** If nothing is alive, later phases are scanning
   hosts nobody confirmed exist, so the run stops instead.
 
@@ -571,10 +577,13 @@ actually run, *before* the subprocess spawns.
 | `findings.py` | `Severity` (subclasses `str`), `Status`, `Finding`, `FindingStore`, `AssetStore`, `PoC` |
 | `wstg.py` | OWASP WSTG — 115 tests, pinned, the "what to check" brain |
 | `techniques.py` | PAT index — 96 records, the "how + bypass" brain |
-| `coverage.py` | 27 bug-class coverage matrix (auto / manual) |
+| `coverage.py` | 27 bug-class coverage matrix (auto / manual) + runtime `CoverageLedger` (what a run actually touched) |
+| `waf.py` | WAF fingerprint DB (12 vendors) + per-class bypass payload tables + encoding strategies |
+| `bypass.py` | regex-bypass payload generator (4 modes × 4 encodings, bounded) |
+| `prompts.py` | exploit/validation prompt packs — 18 classes, each with role/objective/scope/denies/success-criteria/evidence-format (the "No PoC, no finding" protocol for LLM-mode testing) |
 | `payloads.py` | vetted payload store (tier A/B/C) |
 | `taskgraph.py` | penetration task graph |
-| `attackgraph.py` | reachability / attack paths |
+| `attackgraph.py` | reachability / attack paths + `CHAIN_PATTERNS` + `find_finding_chains` (cross-finding severity upgrades) |
 | `graphmemory.py` | optional Neo4j graph |
 | `memory.py` | cross-engagement PoC store |
 
@@ -689,7 +698,11 @@ human is consulted before the call runs.
 | **Recon** | `subdomain_enum` `asn_lookup` `whois_lookup` `tls_info` `bbot_scan` `bbot_scan_active`! `osmedeus_flow`! |
 | **DNS** | `dns_resolve` `cdn_check` `dns_permute`! |
 | **HTTP** | `http_probe` `waf_detect` `tls_audit` `cors_audit` |
-| **Endpoints** | `endpoint_discovery` `content_discovery`! `param_discovery`! `graphql_audit` `websocket_probe` `payload_catalog` |
+| **Endpoints** | `endpoint_discovery` `content_discovery`! `param_discovery`! `graphql_audit` `websocket_probe` `payload_catalog` `fuzz_compare` |
+| **Bypass** | `waf_bypass` `fingerprint_waf` `waf_vendors` |
+| **Prompts** | `exploit_prompt` `prompt_classes` |
+| **White-box** | `code_audit` `source_fetch` `semgrep_scan` |
+| **Handoff** | `burp_send`! (forwards scope-checked requests through the operator's Burp proxy for manual review) |
 | **JavaScript** | `js_analyze` |
 | **Ports** | `port_scan`! `service_scan`! |
 | **Takeover** | `takeover_detect`! `takeover_verify` `takeover_poc_plan` `takeover_confirm`!! |
@@ -823,6 +836,21 @@ sets `allow_exploitation: true` (the program authorizes it), and you pass
    `sqli_validate` + `xss_validate` on the first few when `--exploit` is passed.
 5. Reads `proven` from the validators and files a CANDIDATE finding for each
    proven class.
+6. **WAF-bypass depth (v2.1):** when the `waf` phase recorded a vendor
+   (`phase-waf--*.json`) and a heavy validator's base pass came back clean, the
+   chain re-fires it with the vendor's bypass set — `sqli_validate` gets the
+   boundary derived from the vendor's SQLi table via `--prefix/--suffix`,
+   `xss_validate` gets the vendor's XSS set via `--custom-payload`.
+   `waf_bypass` / `fingerprint_waf` expose the same tables read-only to an
+   agent. Ordering of injection points is now risk-scored (`_score_injection_point`),
+   not regex-tiered.
+7. Records per-class outcomes into the engagement's runtime `coverage` ledger,
+   which the report renders as a per-class coverage table.
+
+On any point, `web_injection_probe` also accepts `regex_bypass=True` to expand
+its payload set with generated WAF-regex-breaking variants (4 modes × 4
+encodings, bounded at 500) — reach for it when a parameter reflects but nothing
+fires.
 
 **Each sub-validator runs through its own approval gate.** Approving
 `exploit_chain` does not approve sqlmap. For an unattended run, every validator

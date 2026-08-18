@@ -80,6 +80,12 @@ class Engagement:
         self.findings = FindingStore(
             self.workspace / "findings.json", classifier=scope.excluded_finding
         )
+        # Runtime per-class coverage ledger: what this run actually touched, as
+        # opposed to what the static matrix says is possible. Phases/tools write
+        # it; the report renders it as a coverage table.
+        from easyhunt.knowledge.coverage import CoverageLedger
+
+        self.coverage = CoverageLedger(self.workspace / "coverage.json")
         self.assets = AssetStore()
         # Resuming into an existing workspace inherits what earlier phases found.
         # The pipeline runs one process per phase, so without this every phase

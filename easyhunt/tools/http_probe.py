@@ -262,8 +262,11 @@ async def waf_detect(target: str) -> dict[str, Any]:
     """Identify the WAF or protection layer in front of a host.
 
     Knowing the WAF changes what is worth trying and what will simply be blocked.
-    EasyHunt does not implement WAF bypass — identifying one is context for a
-    human, not a step toward evasion.
+    The vendor names this reports are what the exploit chain's bypass pass
+    consumes: ``waf_bypass`` looks up the vendor's payload set and the validators
+    re-fire with it only when a base pass came back clean — still behind the
+    exploit gate. Identifying the vendor stays passive; sending bypass payloads
+    is exploitation and goes through the same approvals as any other.
     """
     url = split_targets(target)[0]
     if not url.startswith("http"):

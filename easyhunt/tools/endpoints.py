@@ -554,14 +554,78 @@ async def content_discovery(
                         "status": entry.get("status"),
                         "length": entry.get("length"),
                         "words": entry.get("words"),
+                        # ffuf's JSON results carry the response body in ``data``
+                        # when the run is not ``-s``-silent; when present it lets
+                        # the diff engine cluster identical bodies instead of
+                        # trusting ffuf's single-scalar filters.
+                        "data": entry.get("data") or "",
                     }
                 )
         except json.JSONDecodeError:
             pass
 
+    # Post-process with the response-diff engine: cluster identical bodies and
+    # label clusters that match the soft-404 baseline. ffuf's -ac/-fs filters
+    # compare one scalar; body-hash clustering catches the catch-all page even
+    # when its length drifts between requests, and labels each cluster as
+    # distinct vs catch-all so a report can say what was actually discovered.
+    from easyhunt.tools.fuzz_diff import Case, group_cases, label_clusters
+
+    cluster_view: dict[str, Any] = {"counts": {"distinct": 0, "catch_all": 0, "unclassified": 0}}
+    if results:
+        cases = [
+            Case(
+                url=str(r.get("url") or ""),
+                status=r.get("status"),
+                body=str(r.get("data") or ""),
+                headers={},
+            )
+            for r in results
+            if r.get("url")
+        ]
+        clusters = group_cases(cases, baseline=None)
+        # Label a cluster as the catch-all when every member's length sits in
+        # the soft-404 baseline size set (the probe's random-string pages) —
+        # body hashes are usually absent from a silent ffuf run, so length is
+        # the signal that survives. A cluster with a real body that differs
+        # from the catch-all length stays distinct by default.
+        for cluster in clusters:
+            if (
+                baseline["sizes"]
+                and cluster.length_min in baseline["sizes"]
+                and cluster.length_max in baseline["sizes"]
+            ):
+                cluster.different_from_baseline = False
+        cluster_view = label_clusters(clusters, baseline=None)
+
     found = [r["url"] for r in results if r.get("url")]
     kept, dropped = in_scope_only(found, phase="endpoints", tool="content_discovery")
     store_assets(kept, kind="url", source="ffuf", tags=["brute-forced"])
+
+    # A wordlist run that found nothing is verified before it reads as clean:
+    # ffuf's verifier flags an empty result with the wordlist/auto-calibration
+    # hints, so "0 paths" carries the correction instead of proving absence.
+    output_verification: dict[str, Any] | None = None
+    if run.ran and not results:
+        from easyhunt.tools.common import verify_output
+
+        verdict = verify_output("ffuf", ["ffuf"], run.exit_code or 0, "")
+        if verdict.status != "ok":
+            output_verification = verdict.to_dict()
+
+    # A result whose body hash matches the catch-all cluster is not a discovery
+    # — it is the soft-404 page served for a path that does not exist. Drop it
+    # from the kept set so the phase gate does not count a catch-all as found,
+    # and count what was removed so the ``dropped`` figure stays truthful.
+    if cluster_view.get("catch_all"):
+        catch_all_urls = {
+            u
+            for c in cluster_view["catch_all"]
+            for u in c.get("sample_urls", [])
+        }
+        before = len(kept)
+        kept = [u for u in kept if u not in catch_all_urls]
+        dropped += before - len(kept)
 
     return {
         "ok": True,
@@ -570,7 +634,9 @@ async def content_discovery(
         "payload_list": listed,
         "count": len(kept),
         "results": [r for r in results if r.get("url") in set(kept)],
+        "clusters": cluster_view,
         "dropped_out_of_scope": dropped,
+        "output_verification": output_verification,
         "tools": [run.to_dict()],
     }
 

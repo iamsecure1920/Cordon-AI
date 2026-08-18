@@ -159,6 +159,36 @@ def _mask(value: str) -> str:
     return value[:6] + "…" + value[-4:] if len(value) > 14 else "…"
 
 
+#: Escape sequences a minifier or JSON-encoder leaves in a bundle, normalised
+#: back to the characters a browser would decode (HuntProxy's page_analyzer
+#: technique, Apache-2.0). ``https:\/\/host`` and ``\u002Fapi`` are the two that
+#: hide real endpoints: without normalisation they read as ``https:\/\/host``
+#: and the endpoint pattern never matches them, so a bundle full of JSON-string
+#: URLs yields zero endpoints. Normalise BEFORE regexing, never after — the
+#: pattern expects the decoded form.
+_ESCAPE_NORMALIZATIONS = (
+    (re.compile(r"\\/"), "/"),
+    (re.compile(r"\\u002[fF]"), "/"),
+    (re.compile(r"\\u003[aA]"), ":"),
+    (re.compile(r"\\u002[eE]"), "."),
+    (re.compile(r"\\u005[bB]"), "["),
+    (re.compile(r"\\u005[dD]"), "]"),
+)
+
+#: A backslash-escaped URL character (``\?``, ``\=``, ``\&``, ``\%``…) left by
+#: a string-encoder. Only URL-safe characters are decoded — a blanket
+#: backslash-strip would turn ``\n`` inside a template literal into a newline
+#: and corrupt the source before the pattern scans it.
+_ESCAPED_URL_CHAR = re.compile(r"\\([?=&%.+#~])")
+
+
+def _normalize_escapes(text: str) -> str:
+    """Decode the escape sequences minified bundles use for URL characters."""
+    for pattern, replacement in _ESCAPE_NORMALIZATIONS:
+        text = pattern.sub(replacement, text)
+    return _ESCAPED_URL_CHAR.sub(r"\1", text)
+
+
 def _scan_text(text: str, url: str) -> tuple[list[dict[str, Any]], list[str]]:
     secrets: list[dict[str, Any]] = []
     for name, pattern, severity in SECRET_PATTERNS:
@@ -182,8 +212,9 @@ def _scan_text(text: str, url: str) -> tuple[list[dict[str, Any]], list[str]]:
             if len(secrets) >= 200:
                 return secrets, []
 
+    normalized = _normalize_escapes(text)
     endpoints: set[str] = set()
-    for match in ENDPOINT_PATTERN.finditer(text):
+    for match in ENDPOINT_PATTERN.finditer(normalized):
         endpoints.add(match.group(1) or match.group(2) or match.group(3))
     return secrets, sorted(endpoints)[:2000]
 

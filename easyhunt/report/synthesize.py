@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from easyhunt.knowledge.attackgraph import find_finding_chains
 from easyhunt.knowledge.findings import Finding
 from easyhunt.report.templates import (
     AUDIT_NOTE,
@@ -95,8 +96,24 @@ def _severity_table(findings: list[Finding]) -> str:
     return "\n".join(rows) if len(rows) > 2 else "_No findings._"
 
 
+def chain_escalation_note(chains: list[Any]) -> str:
+    """One sentence on how to use chain upgrades, written for the report."""
+    if not chains:
+        return ""
+    total = len(chains)
+    upgraded = sum(1 for c in chains if c.upgrade_to in {"high", "critical"})
+    return (
+        f"**{total} chain(s) matched; {upgraded} suggest a high-or-critical upgrade.** "
+        "Re-read each chained finding with the chain in mind: the pair is the "
+        "impact statement, and the suggested severity applies only if a human "
+        "confirms the reachability (the XSS is actually exploitable, the SSRF "
+        "really reaches metadata). Chain evidence alone never changes a status."
+    )
+
+
 def _markdown(engagement: Any, summary: dict[str, Any], executive: str) -> str:
     reportable = {f.id for f in engagement.findings.reportable()}
+    reportable_findings = [f for f in engagement.findings.reportable()]
     confirmed = [f for f in engagement.findings.confirmed() if f.id in reportable]
     review = [f for f in engagement.findings.needs_review() if f.id in reportable]
     candidates = [f for f in engagement.findings.candidates() if f.id in reportable]
@@ -158,11 +175,34 @@ def _markdown(engagement: Any, summary: dict[str, Any], executive: str) -> str:
             parts.append(f"| … | | {len(candidates) - 100} more in findings.json | |")
         parts.append("")
 
-    parts += [
-        "---",
-        "",
-        "## Scope",
-        "",
+    parts += ["---", "", "## Finding chains", ""]
+
+    chains = find_finding_chains(reportable_findings)
+    if chains:
+        parts += [
+            "Two or more findings on the same asset that together tell a higher-",
+            "severity story than either alone. The upgrade is a suggestion for a ",
+            "triager — chain evidence is not a status change by itself.",
+            "",
+            "| Pattern | Asset | Upgrade to | Findings |",
+            "| --- | --- | --- | --- |",
+        ]
+        for chain in chains:
+            titles = [f.title for f in chain.findings[:4]]
+            parts.append(
+                f"| {chain.name} | `{chain.asset[:60]}` | **{chain.upgrade_to}** | "
+                f"{'; '.join(titles)[:120]} |"
+            )
+        parts += ["", chain_escalation_note(chains)]
+    else:
+        parts += [
+            "_No cross-finding chains matched on the reportable findings._",
+            "",
+            "A chain needs two findings on the same asset (e.g. XSS + missing CSP).",
+            "",
+        ]
+
+    parts += ["---", "", "## Scope", "",
         "```yaml",
         json.dumps(scope.summary(), indent=2, default=str),
         "```",
@@ -209,6 +249,40 @@ def _markdown(engagement: Any, summary: dict[str, Any], executive: str) -> str:
             default=str,
         ),
         "```",
+        "",
+        "### Vulnerability-class coverage (runtime ledger)",
+        "",
+    ]
+    ledger = engagement.coverage
+    ledger_rows = ledger.rows()
+    if ledger_rows:
+        parts += [
+            "What this engagement actually touched, per class — as distinct from the",
+            "static capability matrix. `not_attempted` means the class was not tested",
+            "this run, which is an honest gap, not a clean bill.",
+            "",
+            "| Class | Status | Tool | Note |",
+            "| --- | --- | --- | --- |",
+        ]
+        parts += [
+            f"| {row['class']} | {row['status']} | {row.get('tool', '')} | "
+            f"{str(row.get('note', ''))[:60]} |"
+            for row in ledger_rows
+        ]
+        parts.append("")
+        ledger_summary = ledger.summary()
+        parts.append(
+            f"**{ledger_summary['validated_or_disproven']}/{ledger_summary['tracked']} "
+            "classes validated or disproven; "
+            f"{ledger_summary['not_attempted']} not attempted; "
+            f"{ledger_summary['detected']} detected but unproven.**"
+        )
+    else:
+        parts.append(
+            "_No runtime ledger records — the exploit chain (or a phase that writes "
+            "coverage) has not run in this workspace._"
+        )
+    parts += [
         "",
         "## Audit trail",
         "",
@@ -459,6 +533,11 @@ async def generate_report(
                     "summary": summary,
                     "findings": [f.to_dict() for f in engagement.findings.reportable()],
                     "program_excluded": [f.to_dict() for f in excluded],
+                    "coverage": {
+                        "rows": engagement.coverage.rows(),
+                        "summary": engagement.coverage.summary(),
+                    },
+                    "chains": [c.to_dict() for c in find_finding_chains(engagement.findings.reportable())],
                 },
                 indent=2,
                 default=str,

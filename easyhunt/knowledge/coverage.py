@@ -24,9 +24,102 @@ it cannot be silently skipped.
 
 from __future__ import annotations
 
+import json
+import threading
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
-__all__ = ["CoverageIndex", "COVERAGE", "load_coverage"]
+__all__ = ["CoverageIndex", "COVERAGE", "CoverageLedger", "load_coverage"]
+
+#: Runtime statuses a class can hold during an engagement. Distinct from the
+#: static matrix's ``auto``/``detect-only``/``manual`` grades: this is what
+#: actually HAPPENED in this run.
+LEDGER_STATUSES = ("not_attempted", "detected", "validated", "disproven", "n_a")
+
+
+class CoverageLedger:
+    """Runtime per-class coverage: what this engagement actually touched.
+
+    The static :data:`COVERAGE` matrix says what EasyHunt *can* do. The report's
+    oldest lie is implying the engagement did it — "we cover 27 classes" while
+    the run fired three. This ledger is written by each phase/tool as it runs
+    (``record(class, status, tool, note)``) and persisted to ``coverage.json``
+    in the workspace, so the report can say "9/27 classes validated in this run"
+    with the per-class rows to prove it.
+
+    Statuses:
+
+    * ``not_attempted`` — nothing touched this class this run.
+    * ``detected``     — a detector fired and produced candidates.
+    * ``validated``    — a validator proved or disproved at least one candidate.
+    * ``disproven``    — candidates were examined and dismissed.
+    * ``n_a``          — class not applicable (no such surface found).
+    """
+
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = path
+        self._rows: dict[str, dict[str, Any]] = {}
+        self._lock = threading.Lock()
+        if path and path.exists():
+            self.load(path)
+
+    def record(self, class_name: str, status: str, *, tool: str = "", note: str = "") -> None:
+        """Record one class's runtime status. Later records upgrade, never reset."""
+        status = status.strip().lower()
+        if status not in LEDGER_STATUSES:
+            status = "not_attempted"
+        rank = LEDGER_STATUSES.index(status)
+        with self._lock:
+            row = self._rows.setdefault(class_name, {"class": class_name, "status": "not_attempted"})
+            # validated > detected > not_attempted; n_a is explicit.
+            if status == "n_a":
+                row["status"] = "n_a"
+            elif rank > LEDGER_STATUSES.index(row["status"]):
+                row["status"] = status
+            row["tool"] = tool or row.get("tool", "")
+            if note:
+                row["note"] = note
+            row["last_seen"] = datetime.now(UTC).isoformat()
+
+    def get(self, class_name: str) -> dict[str, Any] | None:
+        return self._rows.get(class_name)
+
+    def rows(self) -> list[dict[str, Any]]:
+        return [self._rows[k] for k in sorted(self._rows)]
+
+    def summary(self) -> dict[str, Any]:
+        counts: dict[str, int] = {s: 0 for s in LEDGER_STATUSES}
+        for row in self._rows.values():
+            counts[row["status"]] = counts.get(row["status"], 0) + 1
+        total = len(self._rows)
+        validated = counts.get("validated", 0) + counts.get("disproven", 0)
+        return {
+            "tracked": total,
+            "validated_or_disproven": validated,
+            "detected": counts.get("detected", 0),
+            "not_attempted": counts.get("not_attempted", 0),
+            "n_a": counts.get("n_a", 0),
+            "by_status": counts,
+        }
+
+    def save(self, path: Path | None = None) -> Path:
+        target = Path(path or self.path or "coverage.json")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps({"rows": self.rows(), "summary": self.summary()}, indent=2, default=str),
+            encoding="utf-8",
+        )
+        return target
+
+    def load(self, path: Path) -> int:
+        try:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return 0
+        for row in payload.get("rows") or []:
+            self._rows[str(row.get("class"))] = row
+        return len(self._rows)
 
 #: One row per bug class a client engagement is expected to cover. ``class``
 #: matches the technique index slug where the two overlap; ``payloads`` names

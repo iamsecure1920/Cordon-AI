@@ -507,6 +507,22 @@ async def _run(
             fatal = line.strip()
             break
 
+    # "Absence ≠ negative", machine-enforced: a clean run that found nothing is
+    # verified against the per-tool verifier table (empty JSON, template library
+    # not mounted) so an empty result carries a correction hint instead of
+    # reading as proof the estate is clean.
+    verified: dict[str, Any] | None = None
+    if not fatal and not result.timed_out and not stored:
+        from easyhunt.tools.common import verify_output
+
+        verdict = verify_output("nuclei", argv, result.exit_code, result.stdout)
+        if verdict.status != "ok":
+            verified = verdict.to_dict()
+            engagement.audit.record(
+                "output_verification", tool="nuclei", status=verdict.status,
+                hint=verdict.hint[:300],
+            )
+
     return {
         "ok": not fatal,
         "error": "nuclei_failed" if fatal else None,
@@ -519,6 +535,7 @@ async def _run(
         "exit_code": result.exit_code,
         "timed_out": result.timed_out,
         "stderr_tail": result.stderr[-1000:] if result.stderr else "",
+        "output_verification": verified,
         # When the unattended pipeline sized its own scan (derived stack tags,
         # severity tier, possibly truncated target set), the phase result must
         # say so — a scan that covered 52 of 944 URLs is not a full-estate scan,
@@ -553,6 +570,10 @@ async def _run(
         ) + (
             "All results are CANDIDATES. Run triage, then validate the survivors "
             "with a PoC before any of them is reported as confirmed."
+        ) + (
+            f"\nOutput verification: {verified['hint']}"
+            if verified and verified.get("hint")
+            else ""
         ),
     }
 

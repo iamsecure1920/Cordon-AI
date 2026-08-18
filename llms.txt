@@ -1,0 +1,81 @@
+# EasyHunt AI
+
+> Agentic VAPT orchestrator: an LLM decides what to test, a control plane
+> decides what is allowed (scope, sanitize, budget, rate, approval, audit) and
+> enforces it in code, and 80+ catalogued open-source security tools execute
+> inside a sandbox. The security boundary is the MCP server, never the prompt.
+
+## Key facts
+
+- **Architecture**: 5 layers — Strategy (the agent) → Method (`skills/`
+  playbooks) → Control (`easyhunt/control_plane/`: scope, sanitize, budget,
+  rate-limit, approval, audit) → Execution (`easyhunt/tools/` + `engines/`
+  wrappers over sandboxed scanners) → Knowledge (`rules/`, memory, findings).
+- **Authorization**: `scope.yaml` is the legal authorization record,
+  transcribed from the target program's published policy. No scope file, no
+  engagement. `easyhunt scope validate` checks it.
+- **Every tool call** passes the fixed sequence `scope → sanitize → budget →
+  rate-limit → approval → sandbox exec → parse → audit`; there is no argument,
+  flag, or debug mode that skips a step (`easyhunt/tools/base.py`).
+- **No PoC, no finding**: a vulnerability is CONFIRMED only with a reproducible
+  proof; everything else is filed "needs manual review".
+- **The unattended pipeline** is `scripts/hunt.sh <target> [--exploit]`, which
+  chains per-target phases (recon → permute → resolve → probe → cdn → waf →
+  tls → cors → endpoints → js → auth) and global phases (secrets, code_audit,
+  pattern, graphql, websocket, takeover, scan, ports, services, params,
+  content, nikto, wapiti, exploit, plan, report); each phase must prove it did
+  something or the chain stops.
+- **Exploitation** runs only with `--exploit`, only when `scope.yaml` sets
+  `allow_exploitation: true`, and every validator it drives is individually
+  approval-gated.
+
+## Documentation
+
+- [USERMANUAL.md](USERMANUAL.md) — the single reference: install, config,
+  every phase, every tool, report format, and how the parts stay in sync.
+- [README.md](README.md) — product overview.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — why the system is shaped the
+  way it is; the security boundary.
+- [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md) — fresh-machine setup.
+- [docs/BLUEPRINT-v2.1.md](docs/BLUEPRINT-v2.1.md) — the v2.1 upgrade plan
+  (WAF bypass engine, response-diff fuzzing, bypass generator, endpoint
+  scoring, finding chains, output verification, coverage ledger, prompt packs,
+  Burp handoff, code audit) and its implemented status.
+- [docs/PAYLOADS.md](docs/PAYLOADS.md) — the vetted payload store and safety
+  tiers.
+- [docs/TECHNIQUES.md](docs/TECHNIQUES.md) — the PayloadsAllTheThings technique
+  index.
+- [tools.md](tools.md) — every tool, its flags, and when to use it.
+- [CLAUDE.md](CLAUDE.md) — operator orientation for agent sessions.
+- [HANDOFF.md](HANDOFF.md) — current state and what is left.
+- [skills/](skills/) — per-phase playbooks for agent sessions.
+
+## Source map
+
+- `easyhunt/control_plane/` — scope, sanitize, budget, rate-limit, approval,
+  audit, jobs, sandbox, sessions, context (the invariants, in code).
+- `easyhunt/tools/` — MCP capabilities: recon, dns, http_probe, endpoints,
+  js_analysis, pattern_scan, ports, takeover, secrets, exploitation,
+  exploit_chain, web_injection, webscan, waf_bypass, prompts, burp, code_audit,
+  and more.
+- `easyhunt/engines/` — scanner integration: bbot, nuclei, jaeles, semgrep,
+  osmedeus, strix.
+- `easyhunt/knowledge/` — findings, payloads, techniques (PAT index), waf
+  fingerprint DB + bypass tables, regex-bypass generator, prompt packs,
+  coverage ledger, attack graph, task graph, memory.
+- `easyhunt/report/` — report synthesis.
+- `scripts/` — hunt.sh (pipeline), phase.py (phase gate), summary.py,
+  vet_payloads.py, fetch_wstg.py, fetch_pat.py.
+- `rules/` — semgrep, nuclei, jaeles, gf pattern packs, custom rules.
+- `tests/` — 2,000+ tests including rate-declaration and control-plane guards.
+
+## Commands
+
+```bash
+easyhunt doctor            # health check — run first, always
+easyhunt install           # add missing tools
+easyhunt serve             # MCP server, stdio
+easyhunt scope validate    # check the authorization file
+./scripts/hunt.sh <target> [--only phase,...] [--from phase] [--exploit]
+python3 scripts/summary.py # digest a finished workspace
+```
