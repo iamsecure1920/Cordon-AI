@@ -22,6 +22,51 @@ measurement date and have *not* been re-derived. Treat them accordingly.
   `exploitation.py` +131. The gap is narrower than §6a describes but not shut;
   re-read that section against the code before trusting its shape.
 
+**Amended 2026-08-18 — the neuron brain.** Added the first *active* memory
+layer: `easyhunt/knowledge/neuron.py` (NeuronBrain), an associative
+(Hebbian-style) experience store. Unlike PoCMemory/GraphMemory/TechniqueIndex
+— which record what was seen or what the docs say — the brain learns from
+validator *outcomes* and feeds the lessons back into planning. `2112 passed,
+1 skipped` for this amendment (full suite, incl. 16 new `tests/test_neuron.py`).
+
+- **What it learns**: every `exploit_chain` validator result (sqli/xss/ssti/
+  cmdi/nosqli/ssrf/smuggling/web-injection per injection point, with the
+  observed tech stack + WAF as context) — `exploit_chain.py` now calls
+  `_brain_learn(...)` after each probe; every triage DROP teaches a false
+  positive (`llm/triage.py::_brain_learn_fp`).
+- **What it does**: `recall()` ranks techniques for a target context by learned
+  weight (fuzzy stack matching, trial-count confidence, recency decay —
+  half-life 90d); `suppress()` demotes fresh hits from tools that have
+  repeatedly false-positived on the same shape of target (the testssl
+  `ipv4_in_header`-over-a-cookie class is now learned, not hardcoded).
+- **Wiring**: `Engagement.brain` (config `memory.brain_store`, default
+  `~/.easyhunt/neuron-brain.jsonl`), persisted on `finish()` and per exploit
+  run; `hunt_plan` returns a `learned` list; MCP tools `brain_recall` /
+  `brain_learn`. Methods and outcomes only — never credentials or bodies.
+
+**Amended 2026-08-18 (second pass) — the brain senses and animates.** The
+first pass made the brain *learn*; this pass made it *sense* — connected to
+every script — and gave it a face. `2120 passed, 1 skipped`.
+
+- **Sensing**: `AuditLog.observe(fn)` — a tap on the single chokepoint every
+  tool call passes. `Engagement` registers `brain.sense`, so every phase/tool
+  in every script reaches the brain with zero per-tool changes. The brain keeps
+  a 256-event ring (live state) + a JSONL timeline (`memory.brain_activity`,
+  default `~/.easyhunt/brain-activity.jsonl`). `state()` = what's happening
+  now; `history()` = episodic memory, filterable by phase/tool/outcome — the
+  "what failed, what succeeded, what was FP, what was true" record.
+- **The animation**: `easyhunt brain watch` — a live ANSI neural pop-up (brain
+  node, electrical pulses traveling along pipelines to the active phase,
+  red ★ pulse on findings), pure stdlib, tails the same JSON activity stream
+  any front-end can consume. `easyhunt brain export [--open]` writes a
+  self-contained `brain.html` (no external deps) that replays the same JSON as
+  an animated neural net — shareable, attachable to a report.
+- **MCP**: `brain_state` (live pulse), `brain_history` (episodic memory).
+- **CLI**: `easyhunt brain watch|state|history|export`.
+- **Tests**: 8 new in `tests/test_neuron.py` (TestSensing), incl. the audit
+  observer wiring and observer-failure isolation (a crashing observer cannot
+  break the audit trail).
+
 ---
 
 ## 1. What this is

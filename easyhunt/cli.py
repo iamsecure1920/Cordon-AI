@@ -534,6 +534,89 @@ def cmd_rules(args: argparse.Namespace) -> int:
     return 1 if registry.report.rejected else 0
 
 
+def _brain_path(arg: str | None) -> Path:
+    if arg:
+        return Path(arg)
+    env = os.environ.get("EASYHUNT_BRAIN_ACTIVITY")
+    if env:
+        return Path(env)
+    return Path.home() / ".easyhunt" / "brain-activity.jsonl"
+
+
+def _brain_events(path: Path) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    if not path.exists():
+        return events
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("kind") == "activity":
+                events.append(record)
+    except OSError:
+        pass
+    return events
+
+
+def cmd_brain_watch(args: argparse.Namespace) -> int:
+    from easyhunt.tools.brain_watch import brain_watch as _watch
+
+    return _watch(args)
+
+
+def cmd_brain_state(args: argparse.Namespace) -> int:
+    path = _brain_path(getattr(args, "path", None))
+    events = _brain_events(path)
+    if not events:
+        print(f"brain: no activity recorded at {path}")
+        return 2
+    last = events[-1]
+    by_tool: dict[str, int] = {}
+    findings_total = 0
+    for event in events:
+        tool = str(event.get("tool") or "?")
+        by_tool[tool] = by_tool.get(tool, 0) + 1
+        findings_total += int(event.get("findings") or 0)
+    print(f"brain: sensing {len(events)} event(s) — {findings_total} finding(s) filed")
+    print(f"  last: phase={last.get('phase')} tool={last.get('tool')} "
+          f"outcome={last.get('outcome')}")
+    print(f"  tools: {', '.join(sorted(by_tool, key=by_tool.get, reverse=True)[:8])}")
+    return 0
+
+
+def cmd_brain_export(args: argparse.Namespace) -> int:
+    from easyhunt.tools.brain_export import brain_export as _export
+
+    return _export(args)
+
+
+def cmd_brain_history(args: argparse.Namespace) -> int:
+    path = _brain_path(getattr(args, "path", None))
+    events = _brain_events(path)
+    if getattr(args, "phase", None):
+        events = [e for e in events if e.get("phase") == args.phase]
+    if getattr(args, "tool", None):
+        events = [e for e in events if e.get("tool") == args.tool]
+    if getattr(args, "outcome", None):
+        events = [e for e in events if e.get("outcome") == args.outcome]
+    events = events[-max(1, int(getattr(args, "limit", 30))):]
+    if not events:
+        print(f"brain: no matching history at {path}")
+        return 2
+    for event in events:
+        findings = int(event.get("findings") or 0)
+        mark = "★" * min(findings, 3) if findings else "·"
+        ts = str(event.get("ts") or "")[11:19]
+        print(f"  {ts} {str(event.get('phase') or '?'):<10} "
+              f"{str(event.get('tool') or '?'):<26} {mark} {event.get('outcome')}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="easyhunt",
@@ -594,6 +677,45 @@ def build_parser() -> argparse.ArgumentParser:
     rules = sub.add_parser("rules", parents=[common], help="list and validate detection rules")
     rules.add_argument("--config")
     rules.set_defaults(func=cmd_rules)
+
+    brain = sub.add_parser(
+        "brain", parents=[common],
+        help="the neuron brain: live neural animation, sensing, and memory",
+    )
+    brain_sub = brain.add_subparsers(dest="brain_command", required=True)
+
+    watch = brain_sub.add_parser(
+        "watch", help="live neural pop-up: pulses travel from the brain to the active phase"
+    )
+    watch.add_argument("--path", help="activity feed path (default ~/.easyhunt/brain-activity.jsonl)")
+    watch.add_argument("--once", action="store_true", help="render one frame and exit")
+    watch.set_defaults(func=cmd_brain_watch)
+
+    state = brain_sub.add_parser(
+        "state", help="one-shot snapshot of what the brain senses right now"
+    )
+    state.add_argument("--path", help="activity feed path")
+    state.set_defaults(func=cmd_brain_state)
+
+    history = brain_sub.add_parser(
+        "history",
+        help="episodic memory: what happened before — failures, successes, findings",
+    )
+    history.add_argument("--path", help="activity feed path")
+    history.add_argument("--phase")
+    history.add_argument("--tool")
+    history.add_argument("--outcome")
+    history.add_argument("--limit", type=int, default=30)
+    history.set_defaults(func=cmd_brain_history)
+
+    export = brain_sub.add_parser(
+        "export",
+        help="self-contained HTML neural animation of the brain's sensed activity",
+    )
+    export.add_argument("--path", help="activity feed path")
+    export.add_argument("--out", help="output base name (default ./brain.html)")
+    export.add_argument("--open", action="store_true", help="open the page after writing")
+    export.set_defaults(func=cmd_brain_export)
 
     return parser
 

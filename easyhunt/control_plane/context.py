@@ -26,6 +26,7 @@ from easyhunt.errors import ConfigError
 from easyhunt.knowledge.findings import AssetStore, FindingStore
 from easyhunt.knowledge.graphmemory import GraphMemory
 from easyhunt.knowledge.memory import PoCMemory
+from easyhunt.knowledge.neuron import NeuronBrain
 from easyhunt.knowledge.taskgraph import TaskGraph
 
 __all__ = ["Engagement", "get_engagement", "set_engagement"]
@@ -107,6 +108,20 @@ class Engagement:
         # survives to the next target. Holds methods, never credentials or data.
         memory_path = config.path("memory.poc_store", "~/.easyhunt/poc-memory.jsonl")
         self.memory = PoCMemory(memory_path or Path.home() / ".easyhunt" / "poc-memory.jsonl")
+        # The neuron brain: associative experience memory that learns from every
+        # validator outcome and remembers false positives, so the next engagement
+        # starts from what this one proved — and what it disproved. Cross-
+        # engagement, like the PoC store; methods and outcomes only. It also
+        # SENSES the run: every tool call this engagement makes reaches the brain
+        # through the audit log's observer hook, feeding its live activity stream
+        # (the animation) and its episodic timeline (the history).
+        brain_path = config.path("memory.brain_store", "~/.easyhunt/neuron-brain.jsonl")
+        activity_path = config.path("memory.brain_activity", "~/.easyhunt/brain-activity.jsonl")
+        self.brain = NeuronBrain(
+            brain_path or Path.home() / ".easyhunt" / "neuron-brain.jsonl",
+            activity_path or Path.home() / ".easyhunt" / "brain-activity.jsonl",
+        )
+        self.audit.observe(self.brain.sense)
         # What this engagement knows and how it connects. Native by default;
         # mirrors into Neo4j when memory.graph_enabled is set.
         self.graph = GraphMemory(
@@ -233,6 +248,13 @@ class Engagement:
         indexed = ingest_engagement(self.graph, self)
         summary["graph_memory"] = {**self.graph.stats(), "indexed": indexed}
         self.graph.save()
+        # Persist the neuron brain's lessons compactly, so the next engagement
+        # starts from what this one taught.
+        try:
+            self.brain.save()
+        except OSError:
+            pass
+        summary["brain"] = self.brain.stats()
 
         self.findings.save()
         self.assets.save(self.workspace / "assets.json")

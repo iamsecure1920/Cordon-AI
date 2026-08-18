@@ -60,6 +60,8 @@ DEFAULTS: dict[str, Any] = {
     # Cross-engagement PoC memory lives outside the workspace on purpose.
     "memory": {
         "poc_store": "~/.easyhunt/poc-memory.jsonl",
+        "brain_store": "~/.easyhunt/neuron-brain.jsonl",
+        "brain_activity": "~/.easyhunt/brain-activity.jsonl",
         "graph_enabled": False,
         "graph_uri": "bolt://localhost:7687",
         "graph_user": "neo4j",

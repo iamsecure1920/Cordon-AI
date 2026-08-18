@@ -479,6 +479,7 @@ def _apply(decisions: dict[str, TriageResult], engagement: Any) -> dict[str, int
         if decision.verdict == "drop":
             finding.downgrade(f"Triage: {decision.reason}", status=Status.FALSE_POSITIVE)
             counts["dropped"] += 1
+            _brain_learn_fp(engagement, finding)
         elif decision.verdict == "downgrade":
             finding.downgrade(f"Triage: {decision.reason}", status=Status.NEEDS_MANUAL_REVIEW)
             counts["downgraded"] += 1
@@ -489,6 +490,34 @@ def _apply(decisions: dict[str, TriageResult], engagement: Any) -> dict[str, int
             finding.note(f"Triage kept: {decision.reason}")
             counts["kept"] += 1
     return counts
+
+
+def _brain_learn_fp(engagement: Any, finding: Any) -> None:
+    """Teach the neuron brain that this (tool, rule, context) was a false positive.
+
+    Triage is the tool's only honest ground truth for "the scanner fired and was
+    wrong": the candidate existed, the model examined it, and the verdict was
+    drop. Recording that as a lesson means the next engagement consults
+    ``suppress()`` before trusting the same tool on the same shape of target —
+    the testssl ``ipv4_in_header``-over-a-cookie class of noise stops being
+    re-filed engagement after engagement.
+
+    Never raises: a brain write failure must not abort triage.
+    """
+    brain = getattr(engagement, "brain", None)
+    if brain is None:
+        return
+    techs = list(engagement.assets.values("technology"))[:50]
+    try:
+        brain.learn(
+            vuln_class=str(getattr(finding, "rule_id", "") or "unknown").split(".")[0],
+            technique=f"{finding.source_tool}:{finding.rule_id}",
+            outcome="false_positive",
+            technologies=techs,
+            engagement=engagement.scope.name,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.debug("neuron brain: failed to record false positive: %s", exc)
 
 
 def _count_verdicts(results: list[TriageResult]) -> dict[str, int]:

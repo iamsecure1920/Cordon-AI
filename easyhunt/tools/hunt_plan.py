@@ -306,6 +306,39 @@ def _instructions(surface: dict[str, Any]) -> str:
     )
 
 
+def _brain_feedback(engagement: Any, surface: dict[str, Any]) -> list[dict[str, Any]]:
+    """What the neuron brain has learned about this shape of target.
+
+    The brain remembers validator outcomes across engagements: ``sqli_validate``
+    pays on this stack, ``nosqli_probe`` has only ever false-positived here.
+    That experience belongs in the plan — it is the difference between a plan
+    that fires every class in textbook order and one that starts where the last
+    engagement on a similar stack proved results. Empty (no prior experience)
+    is a valid answer and the plan proceeds from the static index instead.
+    """
+    brain = getattr(engagement, "brain", None)
+    if brain is None:
+        return []
+    techs = surface.get("technologies") or []
+    classes = [
+        "sql-injection",
+        "xss-injection",
+        "server-side-request-forgery",
+        "server-side-template-injection",
+        "command-injection",
+        "nosql-injection",
+        "open-redirect",
+        "request-smuggling",
+    ]
+    out: list[dict[str, Any]] = []
+    for klass in classes:
+        for hit in brain.recall(
+            vuln_class=klass, technologies=techs, limit=3, min_trials=1
+        ):
+            out.append({"class": klass, **hit})
+    return out
+
+
 def _enrich(proposals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Attach the matching technique (tool + payload + gf) to each proposal.
 
@@ -405,6 +438,7 @@ async def hunt_plan(focus: str | None = None, limit: int = 120) -> dict[str, Any
             "surface": surface,
             "proposals": [],
             "instructions": _instructions(surface),
+            "learned": _brain_feedback(engagement, surface),
             "gaps": _gaps(surface),
             # What this phase actually produced. In agent mode the SURFACE is
             # the output — there are no proposals because no internal model was
@@ -456,6 +490,7 @@ async def hunt_plan(focus: str | None = None, limit: int = 120) -> dict[str, Any
         "actionable": len(grounded),
         "authenticated_surface": bool(surface.get("authenticated")),
         "proposals": grounded,
+        "learned": _brain_feedback(engagement, surface),
         "dropped_ungrounded": len(proposals) - len(grounded),
         "gaps": parsed.get("gaps") or [],
         "surface_summary": surface["asset_counts"],

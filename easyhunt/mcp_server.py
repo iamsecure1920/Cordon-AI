@@ -545,6 +545,137 @@ async def graph_recall(subject: str, depth: int = 1, limit: int = 60) -> dict[st
     }
 
 
+@mcp.tool(
+    name="brain_recall",
+    description=(
+        "What the neuron brain has LEARNED about testing this kind of target: "
+        "which validators/techniques actually paid off on this vulnerability class "
+        "with this observed technology stack and WAF, ranked by cross-engagement "
+        "experience. Consult before choosing validators or designing a test plan — "
+        "the brain remembers outcomes the static index cannot. Empty results mean "
+        "no prior experience on this shape; proceed from the technique index."
+    ),
+    tags={"control", "memory"},
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+async def brain_recall(
+    vuln_class: str,
+    technologies: list[str] | None = None,
+    waf_vendors: list[str] | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    try:
+        engagement = get_engagement()
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    return {
+        "ok": True,
+        "vuln_class": vuln_class,
+        "techniques": engagement.brain.recall(
+            vuln_class=vuln_class,
+            technologies=technologies or [],
+            waf_vendors=waf_vendors or [],
+            limit=max(1, min(int(limit), 25)),
+        ),
+        "stats": engagement.brain.stats(),
+    }
+
+
+@mcp.tool(
+    name="brain_learn",
+    description=(
+        "Teach the neuron brain an observed outcome: a validator HIT, a CLEAN "
+        "pass, or a FALSE_POSITIVE (the scanner fired and was wrong). The brain "
+        "uses these to rank future plans and to suppress known-FP tools on "
+        "similar targets. Use after a validator run, or when triage drops a "
+        "finding — teaching it the false positive is what stops the same noise "
+        "being re-filed next engagement. Stores methods and outcomes only."
+    ),
+    tags={"control", "memory"},
+    annotations={"readOnlyHint": False, "openWorldHint": False},
+)
+async def brain_learn(
+    vuln_class: str,
+    technique: str,
+    outcome: str,
+    technologies: list[str] | None = None,
+    waf_vendors: list[str] | None = None,
+) -> dict[str, Any]:
+    try:
+        engagement = get_engagement()
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    if outcome not in ("hit", "clean", "false_positive"):
+        return {
+            "ok": False,
+            "error": "unknown_outcome",
+            "message": "outcome must be one of: hit, clean, false_positive",
+        }
+    result = engagement.brain.learn(
+        vuln_class=vuln_class,
+        technique=technique,
+        outcome=outcome,
+        technologies=technologies or [],
+        waf_vendors=waf_vendors or [],
+        engagement=engagement.scope.name,
+    )
+    return {**result, "ok": True, "stats": engagement.brain.stats()}
+
+
+@mcp.tool(
+    name="brain_state",
+    description=(
+        "What the neuron brain senses right now: the phase and tool currently "
+        "running, the most recent tool calls, and the memory store's stats. The "
+        "brain senses every tool call through the audit log, so this is a live "
+        "pulse of the whole engagement, not a report."
+    ),
+    tags={"control", "memory"},
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+async def brain_state() -> dict[str, Any]:
+    try:
+        engagement = get_engagement()
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    return {"ok": True, **engagement.brain.state()}
+
+
+@mcp.tool(
+    name="brain_history",
+    description=(
+        "The brain's episodic memory: what happened before, in order — every "
+        "sensed tool call across engagements, filterable by phase, tool, or "
+        "outcome. This is the 'what failed, what succeeded, what was a false "
+        "positive, what was a true finding' record the synapse weights cannot "
+        "express on their own."
+    ),
+    tags={"control", "memory"},
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+async def brain_history(
+    event: str | None = None,
+    phase: str | None = None,
+    tool: str | None = None,
+    outcome: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    try:
+        engagement = get_engagement()
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    return {
+        "ok": True,
+        "events": engagement.brain.history(
+            event=event,
+            phase=phase,
+            tool=tool,
+            outcome=outcome,
+            limit=max(1, min(int(limit), 200)),
+        ),
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Rules and plugins
 # --------------------------------------------------------------------------- #

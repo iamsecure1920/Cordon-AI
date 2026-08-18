@@ -85,7 +85,11 @@ def config(tmp_path: Path) -> Config:
             "approval": {"backend": "deny"},
             "sandbox": {"mode": "none"},
             # Keep cross-engagement memory out of the real home directory.
-            "memory": {"poc_store": str(tmp_path / "poc-memory.jsonl")},
+            "memory": {
+                "poc_store": str(tmp_path / "poc-memory.jsonl"),
+                "brain_store": str(tmp_path / "neuron-brain.jsonl"),
+                "brain_activity": str(tmp_path / "brain-activity.jsonl"),
+            },
         },
         source=str(tmp_path / "config.yaml"),
     )

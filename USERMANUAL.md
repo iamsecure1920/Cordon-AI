@@ -586,6 +586,7 @@ actually run, *before* the subprocess spawns.
 | `attackgraph.py` | reachability / attack paths + `CHAIN_PATTERNS` + `find_finding_chains` (cross-finding severity upgrades) |
 | `graphmemory.py` | optional Neo4j graph |
 | `memory.py` | cross-engagement PoC store |
+| `neuron.py` | **NeuronBrain** — the active memory: learns from validator outcomes (hit/clean/false-positive) per tech-stack context, remembers false positives, decays stale lessons, feeds learned technique weights into `hunt_plan` |
 
 ### The scripts (`scripts/`)
 
@@ -730,6 +731,27 @@ question:
 | `technique_lookup` | **how** + which bypass techniques | PAT index, 96 records (63 bug classes + 33 cheatsheets) |
 | `coverage_report` | **is it wired** — which classes are auto-proven vs manual | 27 bug classes → tier |
 | `hunt_plan` | **what matters here**, given the observed stack | enrichment via the above |
+| `brain_recall` | **what has actually worked before** on this shape of target | cross-engagement validator outcomes, ranked by learned weight |
+| `brain_learn` | **teach** the brain an outcome (hit/clean/false-positive) | methods + outcomes only, never data |
+| `brain_state` | **what is happening right now** — live phase/tool pulse | the brain's sensing ring, fed by the audit log |
+| `brain_history` | **what happened before** — failures, successes, findings | the episodic timeline (filter by phase/tool/outcome) |
+
+### The brain's face: live neural animation
+
+The brain senses every tool call in every script through the audit log (one
+hook, no per-tool wiring) and writes a JSON activity stream to
+`~/.easyhunt/brain-activity.jsonl`. Two ways to watch it:
+
+- `easyhunt brain watch` — a live terminal pop-up: the brain node fires
+  electrical pulses along pipelines to the phase currently being worked;
+  a red ★ marks pulses that filed findings. Pure stdlib ANSI, run it beside
+  `hunt.sh` or `easyhunt serve`.
+- `easyhunt brain export --open` — a self-contained `brain.html` (no external
+  dependencies) that replays the same JSON stream as an animated neural net in
+  any browser. Shareable, attachable to a report.
+
+CLI: `easyhunt brain state` (one-shot snapshot), `easyhunt brain history
+[--phase X --tool Y --outcome ok]` (episodic memory).
 
 ### The coverage matrix (27 bug classes, two tiers)
 

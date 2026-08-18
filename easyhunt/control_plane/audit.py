@@ -14,14 +14,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 __all__ = ["AuditLog", "redact"]
+
+log = logging.getLogger("easyhunt.audit")
+
+#: Observers get every record as it is written. Used by the neuron brain to
+#: "sense" what every script is doing without each tool having to know the
+#: brain exists — one hook in the single chokepoint every tool call passes.
+AuditObserver = Callable[[dict[str, Any]], None]
 
 _GENESIS = "0" * 64
 
@@ -102,6 +111,16 @@ class AuditLog:
         self.scope_fingerprint = scope_fingerprint
         self._lock = threading.Lock()
         self._seq, self._prev = self._resume()
+        self._observers: list[AuditObserver] = []
+
+    def observe(self, fn: AuditObserver) -> None:
+        """Subscribe a callable to every record.
+
+        Called after the record is safely on disk, outside the write lock, so a
+        slow or failing observer can never delay or corrupt the audit trail —
+        it is a tap on the stream, not part of it.
+        """
+        self._observers.append(fn)
 
     def _resume(self) -> tuple[int, str]:
         """Continue an existing chain so a resumed run does not fork the log."""
@@ -146,6 +165,16 @@ class AuditLog:
             self._seq += 1
             if self.hash_chain:
                 self._prev = entry["hash"]
+        # Tap observers outside the lock: the audit trail must never wait on
+        # a consumer. Each observer is isolated so one raising does not stop
+        # the others (or the caller).
+        for fn in self._observers:
+            try:
+                fn(dict(entry))
+            except Exception as exc:  # noqa: BLE001
+                # An observer is a tap, never part of the trail. Log and move on
+                # — the audit line is already on disk and fsynced by now.
+                log.warning("audit observer failed: %s", exc)
         return entry
 
     # -- convenience writers ----------------------------------------------- #
