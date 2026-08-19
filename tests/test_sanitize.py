@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from easyhunt.control_plane.sanitize import (
+from cordon.control_plane.sanitize import (
     ArgPolicy,
     register_policy,
     sanitize_argv,
     sanitize_path,
     sanitize_value,
 )
-from easyhunt.errors import SanitizeError
+from cordon.errors import SanitizeError
 
 
 @pytest.fixture(autouse=True)
@@ -138,7 +138,7 @@ class TestHeaderValues:
     """A header field-value is not a shell fragment.
 
     This class exists because the sanitizer once refused every conventional
-    user-agent. `EasyHunt-AI/2.0 (owner-authorized-testing; contact=handle)`
+    user-agent. `Cordon-AI/2.0 (owner-authorized-testing; contact=handle)`
     carries a semicolon, ";" is in HARD_DENY_CHARS, and so testssl, corscanner
     and every other tool that identifies itself refused to start — reporting
     UNTESTED and blaming a missing binary. The project tells the operator to
@@ -156,7 +156,7 @@ class TestHeaderValues:
         )
 
     def test_semicolon_permitted_in_a_user_agent(self) -> None:
-        ua = "EasyHunt-AI/2.0 (owner-authorized-testing; contact=your-handle)"
+        ua = "Cordon-AI/2.0 (owner-authorized-testing; contact=your-handle)"
         assert sanitize_argv("hdr", ["--user-agent", ua]) == ["--user-agent", ua]
 
     def test_browser_shaped_user_agent_permitted(self) -> None:
@@ -177,7 +177,7 @@ class TestHeaderValues:
     def test_non_ascii_refused(self) -> None:
         """Encoding surprises must not smuggle a newline past the check."""
         with pytest.raises(SanitizeError):
-            sanitize_argv("hdr", ["--user-agent", "EasyHunt AI"])
+            sanitize_argv("hdr", ["--user-agent", "Cordon AI"])
 
     def test_relaxation_does_not_leak_to_other_flags(self) -> None:
         """-u is not a header flag, so it keeps the shell rules."""
@@ -195,7 +195,7 @@ class TestHeaderValues:
         that registration were left to each policy by hand it would drift, and
         the drift is silent: the tool simply stops running.
         """
-        from easyhunt.tools.base import ToolSpec
+        from cordon.tools.base import ToolSpec
 
         spec = ToolSpec(
             name="uatool",

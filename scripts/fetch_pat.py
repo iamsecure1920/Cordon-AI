@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a queryable technique index from PayloadsAllTheThings.
 
-EasyHunt runs scanners well and is weak at knowing what to try next. The WSTG
+Cordon runs scanners well and is weak at knowing what to try next. The WSTG
 index covers *what to check*; this covers *how to check it* — the concrete
 techniques, bypass tables and payload shapes a human pentester reaches for when
 a scanner comes back clean. swisskyrepo/PayloadsAllTheThings is the de-facto
@@ -71,7 +71,7 @@ PHASE = {
     "post_exploitation": "post_exploitation",
 }
 
-#: Directory name -> technique record. ``tools`` names EasyHunt tools that test
+#: Directory name -> technique record. ``tools`` names Cordon tools that test
 #: the class; ``payloads`` names lists in the vetted store (tier A/B); ``gf``
 #: names pattern packs under rules/gf. Everything is a *reference*, not an
 #: instruction to fire anything — the technique index is retrieval.
@@ -362,9 +362,9 @@ CLASSES: dict[str, dict[str, Any]] = {
 #: as methodology so the planner knows the topic exists and where it moved; the
 #: ``moved_to`` URL is recorded rather than a fake summary.
 #:
-#: ``tools`` is populated only where EasyHunt actually drives something
+#: ``tools`` is populated only where Cordon actually drives something
 #: comparable. Post-exploitation topics (privilege escalation, persistence,
-#: pivoting, credential dumping) are deliberately left tool-less — EasyHunt is
+#: pivoting, credential dumping) are deliberately left tool-less — Cordon is
 #: an external/cloud VAPT orchestrator and has no C2 or host-agent tooling, so
 #: pretending otherwise would be a lie in the index.
 CHEATSHEET_DIR = "Methodology and Resources"
@@ -409,7 +409,7 @@ CHEATSHEETS: dict[str, dict[str, Any]] = {
 }
 
 #: Filenames in CHEATSHEET_DIR that are post-exploitation and therefore have no
-#: EasyHunt tool. Explicit so the "tool-less" default is a decision, not an
+#: Cordon tool. Explicit so the "tool-less" default is a decision, not an
 #: omission that reads as an index bug.
 _POST_EXPLOITATION = {
     "Active Directory Attack", "Bind Shell Cheatsheet", "Cobalt Strike - Cheatsheet",

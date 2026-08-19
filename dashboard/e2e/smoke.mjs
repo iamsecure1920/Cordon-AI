@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * EasyHunt dashboard — Playwright smoke test.
+ * Cordon dashboard — Playwright smoke test.
  *
- * Verifies the React dashboard actually renders: starts `easyhunt dashboard
+ * Verifies the React dashboard actually renders: starts `cordon dashboard
  * --serve`, opens every view, checks real data landed, exercises the findings
  * filters, and screenshots each view on failure. Uses the system Chrome
  * (executablePath) via playwright-core — no browser download.
@@ -29,14 +29,14 @@ const CHROME = process.env.CHROME_BIN
       .find((p) => existsSync(p));
 
 let failures = 0;
-const shots = mkdtempSync(join(tmpdir(), "easyhunt-e2e-"));
+const shots = mkdtempSync(join(tmpdir(), "cordon-e2e-"));
 const pass = (m) => console.log(`  ✓ ${m}`);
 const fail = (m) => { failures += 1; console.error(`  ✗ ${m}`); };
 const check = (cond, m) => (cond ? pass(m) : fail(m));
 
 function startServer() {
   const py = join(ROOT, ".venv", "bin", "python");
-  const args = ["-m", "easyhunt.cli", "dashboard", "--serve", "--port", String(PORT)];
+  const args = ["-m", "cordon.cli", "dashboard", "--serve", "--port", String(PORT)];
   const child = spawn(py, args, { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
   child.stderr.on("data", (d) => process.env.DEBUG && process.stderr.write(d));
   return child;

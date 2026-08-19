@@ -1,4 +1,4 @@
-# EasyHunt AI — runtime configuration (not the authorization boundary; see scope.yaml)
+# Cordon AI — runtime configuration (not the authorization boundary; see scope.yaml)
 version: 1
 
 workspace:
@@ -130,7 +130,7 @@ auth:
   # OAuth 2.1 + PKCE for the remote (streamable-HTTP) transport.
   #
   #   none        stdio only. Binding a non-loopback address is REFUSED.
-  #   jwt         you run an IdP; EasyHunt verifies its JWTs as a Resource Server.
+  #   jwt         you run an IdP; Cordon verifies its JWTs as a Resource Server.
   #   oauth_proxy your IdP has no Dynamic Client Registration (GitHub, Google);
   #               FastMCP fronts it and forwards PKCE upstream.
   #
@@ -141,35 +141,35 @@ auth:
   # The public URL clients reach this server on. Doubles as the RFC 8707 resource
   # indicator: tokens are audience-bound to it, so a token minted for another
   # service that trusts the same IdP cannot be replayed here.
-  base_url: https://easyhunt.internal.example.com
+  base_url: https://cordon.internal.example.com
 
   # --- mode: jwt ---
   # jwks_uri: https://idp.example.com/.well-known/jwks.json
   # issuer: https://idp.example.com/
-  # audience: https://easyhunt.internal.example.com   # defaults to base_url
+  # audience: https://cordon.internal.example.com   # defaults to base_url
   # authorization_servers:
   #   - https://idp.example.com
-  # required_scopes: [easyhunt:read]                  # floor for ANY call
+  # required_scopes: [cordon:read]                  # floor for ANY call
 
   # --- mode: oauth_proxy ---
   # upstream_authorization_endpoint: https://github.com/login/oauth/authorize
   # upstream_token_endpoint: https://github.com/login/oauth/access_token
   # Client credentials come from the environment, never this file:
-  # upstream_client_id_env: EASYHUNT_OAUTH_CLIENT_ID
-  # upstream_client_secret_env: EASYHUNT_OAUTH_CLIENT_SECRET
+  # upstream_client_id_env: CORDON_OAUTH_CLIENT_ID
+  # upstream_client_secret_env: CORDON_OAUTH_CLIENT_SECRET
   # allowed_client_redirect_uris: ["http://127.0.0.1:*"]
   # require_consent: true
 
-  # Map OAuth scopes onto EasyHunt's risk tiers. A token becomes a ceiling on
+  # Map OAuth scopes onto Cordon's risk tiers. A token becomes a ceiling on
   # what can be invoked, checked before the human approval gate:
-  #   easyhunt:read     status, findings, scope checks (no target contact)
-  #   easyhunt:recon    passive tools
-  #   easyhunt:scan     aggressive tools (ports, nuclei, brute force)
-  #   easyhunt:exploit  exploit tools (PoC validation, takeover confirmation)
-  #   easyhunt:approve  answering approval prompts — issue to an OPERATOR token
+  #   cordon:read     status, findings, scope checks (no target contact)
+  #   cordon:recon    passive tools
+  #   cordon:scan     aggressive tools (ports, nuclei, brute force)
+  #   cordon:exploit  exploit tools (PoC validation, takeover confirmation)
+  #   cordon:approve  answering approval prompts — issue to an OPERATOR token
   #                     only. If the agent's token holds this, the agent can
   #                     approve its own aggressive actions.
-  #   easyhunt:admin    loading a scope, reloading rules, closing an engagement
+  #   cordon:admin    loading a scope, reloading rules, closing an engagement
   #
   # Setting this false keeps authentication but drops the ladder: any
   # authenticated caller becomes fully privileged.
@@ -188,7 +188,7 @@ sandbox:
   # event, visible through the `audit_tail` MCP tool.
   fallback_to_host: true
 
-  # The multi-tool image this repo builds (`docker build -t easyhunt .`) — ~40
+  # The multi-tool image this repo builds (`docker build -t cordon .`) — ~40
   # working binaries in one 2.7 GB layer. Any tool without its own entry in
   # `images:` below runs here instead of on the host.
   #
@@ -196,10 +196,10 @@ sandbox:
   #   * Most of these tools publish no image at all (smuggler, sstimap, nosqli,
   #     jwt_tool, graphql-cop, websocat, netsanitizer …). A per-tool mapping for
   #     them would be a mapping to something that does not exist.
-  #   * The Dockerfile is already the single source of truth for what EasyHunt
+  #   * The Dockerfile is already the single source of truth for what Cordon
   #     considers a working install. A parallel 49-line list in config drifts
   #     from it the first time a build step fails.
-  #   * It is one pull instead of 49, and it is the image `easyhunt doctor`
+  #   * It is one pull instead of 49, and it is the image `cordon doctor`
   #     already knows how to verify.
   # What it costs, honestly: 2.7 GB resident, every tool updated together on a
   # rebuild rather than independently, and a wider blast radius inside any one
@@ -207,7 +207,7 @@ sandbox:
   # `images:` entry below still wins — that is the point of keeping both.
   #
   # Set to "" to disable and go back to mapped-tools-only.
-  default_image: easyhunt:latest
+  default_image: cordon:latest
 
   # Before using default_image for a tool, check the binary is actually
   # executable inside it (one cached `docker run … command -v` per tool, run as
@@ -326,7 +326,7 @@ sandbox:
 
   # Single-tool images: the ENTRYPOINT is the binary, so only arguments are
   # appended. These take priority over default_image — smaller, and updated
-  # upstream independently of an EasyHunt rebuild.
+  # upstream independently of an Cordon rebuild.
   images:
     nuclei: projectdiscovery/nuclei:latest
     subfinder: projectdiscovery/subfinder:latest
@@ -383,8 +383,8 @@ llm:
   # Read from $OPENROUTER_API_KEY; never commit a key here.
   api_key_env: OPENROUTER_API_KEY
   referer: https://github.com/sobila/EasyHunt-AI
-  title: EasyHunt AI
-  # Model slugs are config, never hardcoded. `easyhunt doctor` probes which of
+  title: Cordon AI
+  # Model slugs are config, never hardcoded. `cordon doctor` probes which of
   # these actually exist right now and warns on any that have been renamed.
   tiers:
     t0:
@@ -603,7 +603,7 @@ payloads:
 rules:
   # Every YAML file under these roots is discovered at startup. A subdirectory
   # named nuclei/ jaeles/ semgrep/ bbot/ osmedeus/ holds that engine's native
-  # rule format; easyhunt/ holds native rule-packs and Python plugin manifests.
+  # rule format; cordon/ holds native rule-packs and Python plugin manifests.
   dirs:
     - ./rules
   import_python_plugins: true
@@ -613,7 +613,7 @@ memory:
   # Techniques that worked, carried between engagements. Stores methods only —
   # never credentials, response bodies, or target hostnames (those are
   # generalized to {TARGET_HOST} on the way in).
-  poc_store: ~/.easyhunt/poc-memory.jsonl
+  poc_store: ~/.cordon/poc-memory.jsonl
   # Graph memory: entities and how they relate, for engagements too long to hold
   # in a context window. Works natively with no database; set graph_enabled to
   # persist into Neo4j instead (needs the [memory] extra).
@@ -655,7 +655,7 @@ audit:
 hardening:
   # Cryptographic pinning of tool definitions; any drift raises an alert.
   pin_tool_definitions: true
-  pin_file: .easyhunt-pins.json
+  pin_file: .cordon-pins.json
   # Strip prompt-injection markers from tool output before it enters the model.
   sanitize_tool_output: true
   max_output_lines_to_model: 400

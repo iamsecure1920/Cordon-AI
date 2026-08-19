@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from easyhunt.control_plane.scope import ScopeRules
-from easyhunt.tools.base import _config_mounts
+from cordon.control_plane.scope import ScopeRules
+from cordon.tools.base import _config_mounts
 
 
 class TestRequiredHeaders:
@@ -50,7 +50,7 @@ class TestUserAgentInjection:
     ) -> None:
         # whatweb takes --user-agent, which expects the agent string alone.
         # Prefixing 'User-Agent:' there would send a literally wrong agent.
-        engagement.scope.rules.user_agent = "EasyHunt/test"
+        engagement.scope.rules.user_agent = "Cordon/test"
         engagement.scope.rules.required_headers = ["X-Bug-Bounty: Bugcrowd-me"]
 
         captured: dict[str, list[str]] = {}
@@ -61,22 +61,22 @@ class TestUserAgentInjection:
 
         monkeypatch.setattr(engagement.sandbox, "plan", fake_plan)
 
-        from easyhunt.errors import ToolUnavailable
-        from easyhunt.tools.base import guarded_run
-        from easyhunt.tools.http_probe import WHATWEB
+        from cordon.errors import ToolUnavailable
+        from cordon.tools.base import guarded_run
+        from cordon.tools.http_probe import WHATWEB
 
         with pytest.raises((RuntimeError, ToolUnavailable)):
             await guarded_run(WHATWEB, ["https://example.com"], timeout=5)
 
         argv = captured.get("argv", [])
-        assert "EasyHunt/test" in argv
-        assert "User-Agent: EasyHunt/test" not in argv
+        assert "Cordon/test" in argv
+        assert "User-Agent: Cordon/test" not in argv
         # A tool with no generic header flag cannot carry the mandated header;
         # that gap must not be papered over by mangling the agent flag.
         assert "X-Bug-Bounty: Bugcrowd-me" not in argv
 
     async def test_agent_and_headers_reach_the_command(self, engagement, monkeypatch) -> None:
-        engagement.scope.rules.user_agent = "EasyHunt/test"
+        engagement.scope.rules.user_agent = "Cordon/test"
         engagement.scope.rules.required_headers = ["X-Bug-Bounty: Bugcrowd-me"]
 
         captured: dict[str, list[str]] = {}
@@ -87,16 +87,16 @@ class TestUserAgentInjection:
 
         monkeypatch.setattr(engagement.sandbox, "plan", fake_plan)
 
-        from easyhunt.errors import ToolUnavailable
-        from easyhunt.tools.base import guarded_run
-        from easyhunt.tools.http_probe import HTTPX
+        from cordon.errors import ToolUnavailable
+        from cordon.tools.base import guarded_run
+        from cordon.tools.http_probe import HTTPX
 
         with pytest.raises((RuntimeError, ToolUnavailable)):
             await guarded_run(HTTPX, ["-u", "https://example.com"], timeout=5)
 
         argv = captured.get("argv", [])
         # The agent must carry 'User-Agent:' because httpx's flag is -H.
-        assert "User-Agent: EasyHunt/test" in argv
+        assert "User-Agent: Cordon/test" in argv
         # And the program's mandated header must be there too.
         assert "X-Bug-Bounty: Bugcrowd-me" in argv
 

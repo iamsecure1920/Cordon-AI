@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a queryable index of the OWASP Web Security Testing Guide.
 
-EasyHunt is strong at running tools and weak at knowing what to test next. The
+Cordon is strong at running tools and weak at knowing what to test next. The
 WSTG is the profession's answer to that question — 100+ named tests organised by
 phase — and it is far more useful as *data the agent can query* than as a PDF
 nobody opens.

@@ -17,8 +17,8 @@ class TestRetireActuallyRuns:
     """
 
     def test_the_policy_does_not_allow_a_flag_retire_rejects(self) -> None:
-        import easyhunt.tools.js_analysis  # noqa: F401  registers the policy
-        from easyhunt.control_plane.sanitize import get_policy
+        import cordon.tools.js_analysis  # noqa: F401  registers the policy
+        from cordon.control_plane.sanitize import get_policy
 
         policy = get_policy("retire")
         assert "--js" not in policy.allowed_flags, "retire 5.x has no --js"
@@ -27,10 +27,10 @@ class TestRetireActuallyRuns:
     async def test_js_analyze_builds_an_argv_retire_accepts(
         self, engagement, monkeypatch
     ) -> None:
-        from easyhunt.control_plane.sanitize import sanitize_argv
-        from easyhunt.tools import js_analysis as js
-        from easyhunt.tools.base import REGISTRY
-        from easyhunt.tools.common import ToolRun
+        from cordon.control_plane.sanitize import sanitize_argv
+        from cordon.tools import js_analysis as js
+        from cordon.tools.base import REGISTRY
+        from cordon.tools.common import ToolRun
 
         seen: list[list[str]] = []
 
@@ -62,8 +62,8 @@ class TestLinkFinderActuallyRuns:
     """
 
     def test_the_policy_accepts_a_filesystem_path_for_minus_i(self) -> None:
-        import easyhunt.tools.js_analysis  # noqa: F401  registers the policy
-        from easyhunt.control_plane.sanitize import get_policy
+        import cordon.tools.js_analysis  # noqa: F401  registers the policy
+        from cordon.control_plane.sanitize import get_policy
 
         policy = get_policy("linkfinder")
         assert policy is not None
@@ -74,10 +74,10 @@ class TestLinkFinderActuallyRuns:
     async def test_js_analyze_invokes_linkfinder_over_saved_files(
         self, engagement, monkeypatch, tmp_path
     ) -> None:
-        from easyhunt.control_plane.sanitize import sanitize_argv
-        from easyhunt.tools import js_analysis as js
-        from easyhunt.tools.base import REGISTRY
-        from easyhunt.tools.common import ToolRun
+        from cordon.control_plane.sanitize import sanitize_argv
+        from cordon.tools import js_analysis as js
+        from cordon.tools.base import REGISTRY
+        from cordon.tools.common import ToolRun
 
         # Seed a saved bundle so js_analyze has a file to hand linkfinder.
         saved = engagement.raw_path("js", "js")
@@ -129,7 +129,7 @@ class TestBasicAuthUrlDetector:
     def _detector(self):
         import re
 
-        from easyhunt.tools.js_analysis import SECRET_PATTERNS
+        from cordon.tools.js_analysis import SECRET_PATTERNS
 
         for name, pattern, _sev in SECRET_PATTERNS:
             if name == "basic-auth-url":
@@ -167,7 +167,7 @@ class TestTemplateLiteralRoutes:
     """
 
     def test_extracts_template_literal_route_with_param(self) -> None:
-        from easyhunt.tools.js_analysis import _scan_text
+        from cordon.tools.js_analysis import _scan_text
 
         blob = (
             'search(e){return this.http.get(`${this.hostServer}/rest/products/search?q=${e}`)'
@@ -177,7 +177,7 @@ class TestTemplateLiteralRoutes:
         assert "/rest/products/search?q=" in endpoints
 
     def test_plain_quoted_route_still_matches(self) -> None:
-        from easyhunt.tools.js_analysis import _scan_text
+        from cordon.tools.js_analysis import _scan_text
 
         blob = 'findBy(e){return this.http.get(this.hostServer+"/rest/user/security-question?email="+e)}'
         _secrets, endpoints = _scan_text(blob, "http://x")
@@ -188,7 +188,7 @@ class TestScriptUrls:
     """An HTML shell's value is the bundles it names; js_analyze must follow them."""
 
     def test_relative_script_src_resolves_against_the_page(self) -> None:
-        from easyhunt.tools.js_analysis import _script_urls
+        from cordon.tools.js_analysis import _script_urls
 
         body = '<html><script src="main.js"></script><script src="/assets/app.js"></script></html>'
         urls = list(_script_urls(body, "http://127.0.0.1:3000/"))
@@ -196,7 +196,7 @@ class TestScriptUrls:
         assert "http://127.0.0.1:3000/assets/app.js" in urls
 
     def test_modulepreload_is_followed_too(self) -> None:
-        from easyhunt.tools.js_analysis import _script_urls
+        from cordon.tools.js_analysis import _script_urls
 
         body = '<link rel="modulepreload" href="chunk-x.js">'
         assert "http://127.0.0.1:3000/chunk-x.js" in list(
@@ -217,7 +217,7 @@ class TestFetchVerdictDistinguishesAbsenceFromRefusal:
     """
 
     def _verdict(self, status: int, body: str = "", content_type: str = "text/javascript"):
-        from easyhunt.tools.js_analysis import _fetch_verdict
+        from cordon.tools.js_analysis import _fetch_verdict
 
         return _fetch_verdict(status, body, content_type)
 
@@ -257,13 +257,13 @@ class TestFetchBudgetPrioritisation:
     """
 
     def test_https_wins_over_http_for_the_same_host(self) -> None:
-        from easyhunt.tools.js_analysis import _prioritise
+        from cordon.tools.js_analysis import _prioritise
 
         chosen = _prioritise(["http://a.example.com/", "https://a.example.com/"], 10)
         assert chosen == ["https://a.example.com/"], "plain HTTP is the worse read"
 
     def test_one_url_per_host(self) -> None:
-        from easyhunt.tools.js_analysis import _prioritise
+        from cordon.tools.js_analysis import _prioritise
 
         chosen = _prioritise(
             [f"https://a.example.com/page{i}" for i in range(5)]
@@ -275,14 +275,14 @@ class TestFetchBudgetPrioritisation:
         assert len(chosen) == 2, "five paths on one host cannot yield five bundle sets"
 
     def test_a_script_path_outranks_a_page(self) -> None:
-        from easyhunt.tools.js_analysis import _prioritise
+        from cordon.tools.js_analysis import _prioritise
 
         chosen = _prioritise(["https://a.example.com/", "https://b.example.com/app.js"], 1)
         assert chosen == ["https://b.example.com/app.js"], "a bundle is what we came for"
 
     def test_budget_reaches_distinct_hosts_not_one_hosts_paths(self) -> None:
         """The regression, in the shape it actually occurred."""
-        from easyhunt.tools.js_analysis import _prioritise
+        from cordon.tools.js_analysis import _prioritise
 
         wildcard = [f"http://phantom{i}.example.com/" for i in range(40)]
         real = ["https://app.example.com/main.js", "https://api.example.com/"]
@@ -292,6 +292,6 @@ class TestFetchBudgetPrioritisation:
         assert len({u.split("/")[2] for u in chosen}) == len(chosen), "no host twice"
 
     def test_non_http_input_is_dropped(self) -> None:
-        from easyhunt.tools.js_analysis import _prioritise
+        from cordon.tools.js_analysis import _prioritise
 
         assert _prioritise(["ftp://x.example.com/", "not-a-url", ""], 5) == []

@@ -1,0 +1,194 @@
+{
+  "_meta": {
+    "source": "https://github.com/EdOverflow/can-i-take-over-xyz",
+    "note": "Curated subset. Refresh with 'cordon refresh-fingerprints'. A fingerprint match alone is NEVER a takeover — the CNAME must also be dangling and the resource genuinely unclaimed.",
+    "updated": "2026-07-30"
+  },
+  "services": [
+    {
+      "service": "AWS S3",
+      "cname": ["s3.amazonaws.com", "s3-website", ".s3.", "s3.dualstack"],
+      "fingerprints": ["NoSuchBucket", "The specified bucket does not exist"],
+      "status": "vulnerable",
+      "claimable": true,
+      "note": "Bucket names are globally unique; claiming one is trivial and immediate."
+    },
+    {
+      "service": "GitHub Pages",
+      "cname": ["github.io", "githubusercontent.com"],
+      "fingerprints": ["There isn't a GitHub Pages site here", "For root URLs (like http://example.com/) you must provide an index.html file"],
+      "status": "vulnerable",
+      "claimable": true,
+      "note": "Requires the custom domain to be unclaimed by any other GitHub account."
+    },
+    {
+      "service": "Heroku",
+      "cname": ["herokuapp.com", "herokudns.com", "herokussl.com"],
+      "fingerprints": ["No such app", "herokucdn.com/error-pages/no-such-app.html"],
+      "status": "vulnerable",
+      "claimable": true,
+      "note": "App names are globally unique."
+    },
+    {
+      "service": "Shopify",
+      "cname": ["myshopify.com"],
+      "fingerprints": ["Sorry, this shop is currently unavailable", "Only one step left!"],
+      "status": "edge-case",
+      "claimable": false,
+      "note": "Shopify now requires domain verification in most cases. Verify carefully before claiming this is exploitable."
+    },
+    {
+      "service": "Fastly",
+      "cname": ["fastly.net", "fastlylb.net"],
+      "fingerprints": ["Fastly error: unknown domain"],
+      "status": "edge-case",
+      "claimable": false,
+      "note": "Requires an existing Fastly account with the service configured."
+    },
+    {
+      "service": "Azure",
+      "cname": ["azurewebsites.net", "cloudapp.azure.com", "trafficmanager.net", "blob.core.windows.net", "azureedge.net"],
+      "fingerprints": ["404 Web Site not found", "The resource you are looking for has been removed"],
+      "status": "vulnerable",
+      "claimable": true,
+      "note": "Azure resource names are globally unique within their service."
+    },
+    {
+      "service": "Bitbucket",
+      "cname": ["bitbucket.io"],
+      "fingerprints": ["Repository not found", "The page you have requested does not exist"],
+      "status": "vulnerable",
+      "claimable": true
+    },
+    {
+      "service": "Ghost",
+      "cname": ["ghost.io"],
+      "fingerprints": ["The thing you were looking for is no longer here", "Domain error"],
+      "status": "vulnerable",
+      "claimable": true
+    },
+    {
+      "service": "Pantheon",
+      "cname": ["pantheonsite.io"],
+      "fingerprints": ["The gods are wise", "404 error unknown site!"],
+      "status": "vulnerable",
+      "claimable": true
+    },
+    {
+      "service": "Tilda",
+      "cname": ["tilda.ws"],
+      "fingerprints": ["Please renew your subscription"],
+      "status": "edge-case",
+      "claimable": false
+    },
+    {
+      "service": "Surge.sh",
+      "cname": ["surge.sh"],
+      "fingerprints": ["project not found"],
+      "status": "vulnerable",
+      "claimable": true
+    },
+    {
+      "service": "Netlify",
+      "cname": ["netlify.app", "netlify.com"],
+      "fingerprints": ["Not Found - Request ID"],
+      "status": "edge-case",
+      "claimable": false,
+      "note": "Netlify verifies domain ownership; usually not exploitable."
+    },
+    {
+      "service": "Webflow",
+      "cname": ["proxy-ssl.webflow.com", "proxy.webflow.com"],
+      "fingerprints": ["The page you are looking for doesn't exist or has been moved"],
+      "status": "edge-case",
+      "claimable": false
+    },
+    {
+      "service": "Zendesk",
+      "cname": ["zendesk.com"],
+      "fingerprints": ["Help Center Closed", "this help center no longer exists"],
+      "status": "edge-case",
+      "claimable": false
+    },
+    {
+      "service": "Readthedocs",
+      "cname": ["readthedocs.io"],
+      "fingerprints": ["unknown to Read the Docs"],
+      "status": "vulnerable",
+      "claimable": true
+    },
+    {
+      "service": "Cargo Collective",
+      "cname": ["cargocollective.com"],
+      "fingerprints": ["404 Not Found", "If you're moving your domain away from Cargo"],
+      "status": "vulnerable",
+      "claimable": true
+    },
+    {
+      "service": "Wordpress.com",
+      "cname": ["wordpress.com"],
+      "fingerprints": ["Do you want to register"],
+      "status": "vulnerable",
+      "claimable": true
+    },
+    {
+      "service": "Vercel",
+      "cname": ["vercel-dns.com", "vercel.app", "now.sh"],
+      "fingerprints": ["The deployment could not be found", "DEPLOYMENT_NOT_FOUND"],
+      "status": "edge-case",
+      "claimable": false,
+      "note": "Vercel requires domain verification."
+    },
+    {
+      "service": "AWS Elastic Beanstalk",
+      "cname": ["elasticbeanstalk.com"],
+      "fingerprints": ["404 Not Found"],
+      "status": "vulnerable",
+      "claimable": true,
+      "note": "Requires the CNAME to point at a released environment name in the same region."
+    },
+    {
+      "service": "Digital Ocean Spaces",
+      "cname": ["digitaloceanspaces.com"],
+      "fingerprints": ["Domain uses DO name servers with no records in DO", "NoSuchBucket"],
+      "status": "vulnerable",
+      "claimable": true
+    },
+    {
+      "service": "Cloudfront",
+      "cname": ["cloudfront.net"],
+      "fingerprints": ["The request could not be satisfied", "ERROR: The request could not be satisfied"],
+      "status": "edge-case",
+      "claimable": false,
+      "note": "Usually NOT exploitable — CloudFront rejects duplicate alternate domain names. Confirm before reporting."
+    },
+    {
+      "service": "Statuspage",
+      "cname": ["statuspage.io"],
+      "fingerprints": ["You are being redirected", "Better Status Communication"],
+      "status": "edge-case",
+      "claimable": false
+    },
+    {
+      "service": "Help Scout",
+      "cname": ["helpscoutdocs.com"],
+      "fingerprints": ["No settings were found for this company"],
+      "status": "vulnerable",
+      "claimable": true
+    },
+    {
+      "service": "LaunchRock",
+      "cname": ["launchrock.com"],
+      "fingerprints": ["It looks like you may have taken a wrong turn somewhere"],
+      "status": "vulnerable",
+      "claimable": true
+    },
+    {
+      "service": "Uberflip",
+      "cname": ["uberflip.com", "hubs.ly"],
+      "fingerprints": ["Non-hub domain, The URL you've accessed does not provide a hub"],
+      "status": "vulnerable",
+      "claimable": true
+    }
+  ]
+}

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# EasyHunt AI installer.
+# Cordon AI installer.
 #
 # Installs the Python package, the security tool suite, Nuclei templates, the
 # Claude Skills, and registers the MCP server. Everything except the Python
-# package is optional — EasyHunt degrades to "that tool is absent" rather than
+# package is optional — Cordon degrades to "that tool is absent" rather than
 # failing, so a partial install still works.
 #
 # AUTHORIZED TESTING ONLY. Installing this does not authorize anything; the
@@ -12,9 +12,9 @@
 
 set -uo pipefail
 
-EASYHUNT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CORDON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="${HOME}/.claude/skills"
-VENV_DIR="${EASYHUNT_DIR}/.venv"
+VENV_DIR="${CORDON_DIR}/.venv"
 INSTALL_TOOLS="${INSTALL_TOOLS:-yes}"
 INSTALL_SKILLS="${INSTALL_SKILLS:-yes}"
 REGISTER_MCP="${REGISTER_MCP:-yes}"
@@ -52,7 +52,7 @@ for arg in "$@"; do
     esac
 done
 
-printf "${GREEN}EasyHunt AI installer${NC}\n"
+printf "${GREEN}Cordon AI installer${NC}\n"
 printf "${DIM}Authorized testing only: owned assets, in-scope bug bounty targets,\n"
 printf "or org assets with documented written approval.${NC}\n"
 
@@ -75,8 +75,8 @@ fi
 source "${VENV_DIR}/bin/activate"
 python -m pip install --quiet --upgrade pip >/dev/null 2>&1
 
-if python -m pip install --quiet -e "${EASYHUNT_DIR}[llm]"; then
-    ok "easyhunt-ai installed (editable) with LLM support"
+if python -m pip install --quiet -e "${CORDON_DIR}[llm]"; then
+    ok "cordon-ai installed (editable) with LLM support"
 else
     fail "pip install failed"; exit 1
 fi
@@ -91,16 +91,16 @@ fi
 if [ "${INSTALL_TOOLS}" = "yes" ]; then
 step "Security tools"
 
-# Delegated to `easyhunt install`, which is dependency-ordered, idempotent, and
+# Delegated to `cordon install`, which is dependency-ordered, idempotent, and
 # verifies each tool after installing it. A flat list of go-install lines cannot
 # tell you that a tool installed successfully and still does not work.
-if "${VENV_DIR}/bin/easyhunt" install --no-color; then
+if "${VENV_DIR}/bin/cordon" install --no-color; then
     ok "core tool pipeline installed and verified"
 else
     warn "some tools failed — see the report above; re-run to retry (installs are idempotent)"
 fi
 printf "\n  ${DIM}For everything (cloud, LLM red-team, extra scanners):${NC}\n"
-printf "    ${DIM}easyhunt install --all${NC}\n"
+printf "    ${DIM}cordon install --all${NC}\n"
 fi
 
 # --------------------------------------------------------------------------- #
@@ -112,7 +112,7 @@ if have nuclei; then
     else
         warn "template update failed — check network access"
     fi
-    if nuclei -validate -t "${EASYHUNT_DIR}/rules/nuclei" -duc -silent >/dev/null 2>&1; then
+    if nuclei -validate -t "${CORDON_DIR}/rules/nuclei" -duc -silent >/dev/null 2>&1; then
         ok "custom templates in rules/nuclei validate"
     else
         warn "custom templates failed validation — run: nuclei -validate -t rules/nuclei"
@@ -125,7 +125,7 @@ fi
 step "Configuration"
 
 # config.yaml only. It is a preference file and copying it is harmless.
-src="${EASYHUNT_DIR}/config.example.yaml"; dst="${EASYHUNT_DIR}/config.yaml"
+src="${CORDON_DIR}/config.example.yaml"; dst="${CORDON_DIR}/config.yaml"
 if [ -f "${dst}" ]; then
     ok "config.yaml already exists (not overwritten)"
 else
@@ -141,7 +141,7 @@ fi
 #     program_url: https://hackerone.com/example/policy
 #     fetched_at:  <whenever the template was written>
 #
-# and every check downstream then reported a green tick: `easyhunt doctor` says
+# and every check downstream then reported a green tick: `cordon doctor` says
 # "✓ scope: scope.yaml (example-bbp, bug-bounty)", and bootstrap.sh's closing
 # section says "✓ scope.yaml present" instead of the refusal it prints when the
 # file is absent.
@@ -156,14 +156,14 @@ fi
 # reconstruct a scope file. Do not copy scope.example.yaml and fill in a target."
 # The installer was doing it on the agent's behalf, silently, before anyone
 # looked. An absent scope.yaml is a correct state; a fabricated one is not.
-if [ -f "${EASYHUNT_DIR}/scope.yaml" ]; then
+if [ -f "${CORDON_DIR}/scope.yaml" ]; then
     ok "scope.yaml present"
 else
     warn "scope.yaml NOT created — that is deliberate.
     It is an authorization record, not a config file, and must be transcribed
     from the target program's published policy page. Start from the template:
       cp scope.example.yaml scope.yaml && \$EDITOR scope.yaml
-    Then: easyhunt scope validate"
+    Then: cordon scope validate"
 fi
 
 # --------------------------------------------------------------------------- #
@@ -172,7 +172,7 @@ step "Claude Skills"
 
 mkdir -p "${SKILLS_DIR}"
 count=0
-for skill in "${EASYHUNT_DIR}"/skills/*/; do
+for skill in "${CORDON_DIR}"/skills/*/; do
     [ -d "${skill}" ] || continue
     name="$(basename "${skill}")"
     rm -rf "${SKILLS_DIR:?}/${name}"
@@ -186,30 +186,30 @@ if [ "${REGISTER_MCP}" = "yes" ]; then
 step "MCP registration"
 
 if have claude; then
-    if claude mcp list 2>/dev/null | grep -q easyhunt; then
-        ok "easyhunt already registered"
-    elif claude mcp add easyhunt --transport stdio -- \
-            "${VENV_DIR}/bin/python" -m easyhunt.mcp_server \
-            --scope "${EASYHUNT_DIR}/scope.yaml" \
-            --config "${EASYHUNT_DIR}/config.yaml" >/dev/null 2>&1; then
+    if claude mcp list 2>/dev/null | grep -q cordon; then
+        ok "cordon already registered"
+    elif claude mcp add cordon --transport stdio -- \
+            "${VENV_DIR}/bin/python" -m cordon.mcp_server \
+            --scope "${CORDON_DIR}/scope.yaml" \
+            --config "${CORDON_DIR}/config.yaml" >/dev/null 2>&1; then
         ok "registered with the Claude CLI"
     else
         warn "registration failed. Run manually:"
-        printf "    ${DIM}claude mcp add easyhunt --transport stdio -- \\\\\n"
-        printf "      %s/bin/python -m easyhunt.mcp_server \\\\\n" "${VENV_DIR}"
-        printf "      --scope %s/scope.yaml${NC}\n" "${EASYHUNT_DIR}"
+        printf "    ${DIM}claude mcp add cordon --transport stdio -- \\\\\n"
+        printf "      %s/bin/python -m cordon.mcp_server \\\\\n" "${VENV_DIR}"
+        printf "      --scope %s/scope.yaml${NC}\n" "${CORDON_DIR}"
     fi
 else
     warn "claude CLI not found — install it, then run:"
-    printf "    ${DIM}claude mcp add easyhunt --transport stdio -- \\\\\n"
-    printf "      %s/bin/python -m easyhunt.mcp_server${NC}\n" "${VENV_DIR}"
+    printf "    ${DIM}claude mcp add cordon --transport stdio -- \\\\\n"
+    printf "      %s/bin/python -m cordon.mcp_server${NC}\n" "${VENV_DIR}"
 fi
 fi
 
 # --------------------------------------------------------------------------- #
 step "Verification"
 
-"${VENV_DIR}/bin/easyhunt" doctor || true
+"${VENV_DIR}/bin/cordon" doctor || true
 
 cat <<EOF
 
@@ -217,11 +217,11 @@ $(printf "${GREEN}Installation complete.${NC}")
 
 Next:
   1. Edit scope.yaml with the program's actual scope, and set fetched_at to
-     when you read the policy. EasyHunt refuses to run without it.
+     when you read the policy. Cordon refuses to run without it.
   2. Set OPENROUTER_API_KEY for AI triage and report synthesis (optional —
      recon, scanning, and rule-based detection work without it).
-  3. Verify:  easyhunt scope --scope scope.yaml <a-target-you-own>
-  4. In Claude Code, run: /easyhunt
+  3. Verify:  cordon scope --scope scope.yaml <a-target-you-own>
+  4. In Claude Code, run: /cordon
 
 $(printf "${YELLOW}Only test what you are authorized to test.${NC}")
 EOF

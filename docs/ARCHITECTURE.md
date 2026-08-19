@@ -1,4 +1,4 @@
-# EasyHunt AI — Architecture
+# Cordon AI — Architecture
 
 **Why the system is shaped this way.** The *what* — the layer diagram, the
 control-plane sequence, the engagement pipeline, the module-by-module map —
@@ -6,14 +6,14 @@ lives in [`USERMANUAL.md`](../USERMANUAL.md) sections 5 to 8, and this file
 used to carry a second copy that drifted. Read that first if you want the
 mechanics; read this before changing them.
 
-The one-paragraph version: EasyHunt is a **control plane wrapped around a
+The one-paragraph version: Cordon is a **control plane wrapped around a
 catalogue of open-source security tools**. The model decides *what* to test.
 The MCP server decides *whether that is allowed* and enforces it in code. The
 engines do the work inside a sandbox. Every call is audited. The security
 properties live in the server, never in the prompt — because a prompt can be
 talked out of its instructions and a function call cannot.
 
-![The five layers, and where the security boundary sits](easyhunt-layers.svg)
+![The five layers, and where the security boundary sits](cordon-layers.svg)
 
 ---
 

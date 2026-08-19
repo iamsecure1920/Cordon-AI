@@ -1,12 +1,12 @@
-# EasyHunt AI — Complete Tool Reference
+# Cordon AI — Complete Tool Reference
 
 > **Researched from 53 official GitHub repositories.**
 > Deep profiles for 54 of the 82 catalogued tools: what each does, how to install
 > it, how to use it, and what it depends on.
 > Last updated: 2026-07-30
 >
-> Not the authoritative catalogue — `easyhunt/tools/common.py` is, and
-> `easyhunt doctor` reports what is actually installed and working. The 28 tools
+> Not the authoritative catalogue — `cordon/tools/common.py` is, and
+> `cordon doctor` reports what is actually installed and working. The 28 tools
 > without a profile here are catalogued and governed like the rest; they just
 > have no long-form writeup yet.
 
@@ -69,12 +69,12 @@ sudo apt install -y libpcap-dev dnsutils whois nmap masscan git curl wget unzip 
 
 ## Installing
 
-`./bootstrap.sh` installs everything below; `easyhunt install` adds what is
-missing and `easyhunt install --core` limits it to the minimum viable
+`./bootstrap.sh` installs everything below; `cordon install` adds what is
+missing and `cordon install --core` limits it to the minimum viable
 pipeline. The per-tool commands used to be copied into this section by hand,
 which is how the matrix below ended up missing 32 tools — the recipes in
-`easyhunt/install/recipes.py` are the source of truth and are what actually
-runs. Read them there, or run `easyhunt doctor` to see what is working on
+`cordon/install/recipes.py` are the source of truth and are what actually
+runs. Read them there, or run `cordon doctor` to see what is working on
 this machine.
 
 
@@ -82,9 +82,9 @@ this machine.
 
 <!-- BEGIN GENERATED TOOL MATRIX -->
 
-**85 installable tools**, generated from `easyhunt/install/recipes.py` by `scripts/gen_tool_matrix.py`.
+**85 installable tools**, generated from `cordon/install/recipes.py` by `scripts/gen_tool_matrix.py`.
 Do not edit this table by hand — run the script.
-`easyhunt doctor` reports which of these are actually working on *this* machine.
+`cordon doctor` reports which of these are actually working on *this* machine.
 
 | Tool | Category | Install | License | Core |
 |------|----------|---------|---------|------|
@@ -174,7 +174,7 @@ Do not edit this table by hand — run the script.
 | `subjack` | takeover | go install | MIT |  |
 | `subzy` | takeover | go install | GPL-2.0 | ✅ |
 
-**Core** marks the minimum viable pipeline (`easyhunt install --core`).
+**Core** marks the minimum viable pipeline (`cordon install --core`).
 
 <!-- END GENERATED TOOL MATRIX -->
 
@@ -666,7 +666,7 @@ nmap -oA output_base example.com                   # all output formats
 nmap -iL hosts.txt                                 # from file
 ```
 
-**EasyHunt blocks NSE categories**: exploit, dos, brute, malware
+**Cordon blocks NSE categories**: exploit, dos, brute, malware
 
 ---
 
@@ -918,8 +918,8 @@ dalfox url "http://target/?id=1" --silence  # quiet mode
 
 ### sqlmap
 **GitHub**: https://github.com/sqlmapproject/sqlmap  
-**Purpose**: SQL injection detection. In EasyHunt: detection ONLY — extraction flags hard-blocked  
-**⚠️ EasyHunt hard-blocks**: --dump, --dbs, --tables, --os-shell, --file-read, --tamper, --proxy  
+**Purpose**: SQL injection detection. In Cordon: detection ONLY — extraction flags hard-blocked  
+**⚠️ Cordon hard-blocks**: --dump, --dbs, --tables, --os-shell, --file-read, --tamper, --proxy  
 
 ```bash
 pip install sqlmap
@@ -1023,7 +1023,7 @@ bbot -t evilcorp.com -rf passive         # passive only
 ### nuclei
 **GitHub**: https://github.com/projectdiscovery/nuclei  
 **Purpose**: Template-based vulnerability scanner — YAML templates for HTTP/DNS/TCP/WHOIS/SSL/Code/JS  
-**⚠️ EasyHunt blocks tags**: dos, fuzz, intrusive, bruteforce  
+**⚠️ Cordon blocks tags**: dos, fuzz, intrusive, bruteforce  
 
 ```bash
 go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest

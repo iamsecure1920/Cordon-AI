@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from easyhunt.control_plane.approval import (
+from cordon.control_plane.approval import (
     ApprovalGate,
     ApprovalRequest,
     Decision,
@@ -18,11 +18,11 @@ from easyhunt.control_plane.approval import (
     PolicyBackend,
     build_backend,
 )
-from easyhunt.control_plane.audit import AuditLog, redact
-from easyhunt.control_plane.budget import Budget, BudgetLimits
-from easyhunt.control_plane.ratelimit import RateLimiter, TokenBucket
-from easyhunt.control_plane.scope import Scope
-from easyhunt.errors import ApprovalDenied, ApprovalRequired, BudgetExceeded
+from cordon.control_plane.audit import AuditLog, redact
+from cordon.control_plane.budget import Budget, BudgetLimits
+from cordon.control_plane.ratelimit import RateLimiter, TokenBucket
+from cordon.control_plane.scope import Scope
+from cordon.errors import ApprovalDenied, ApprovalRequired, BudgetExceeded
 
 from .conftest import scope_dict
 
@@ -194,7 +194,7 @@ class TestApproval:
             async def ask(self, req, ctx):  # noqa: ANN001, ARG002
                 nonlocal calls
                 calls += 1
-                from easyhunt.control_plane.approval import ApprovalDecision
+                from cordon.control_plane.approval import ApprovalDecision
 
                 return ApprovalDecision(Decision.ACCEPT, approver="human", remember=True)
 
@@ -381,7 +381,7 @@ class TestAssetStorePersistsAcrossProcesses:
     """
 
     def test_load_repopulates_what_save_wrote(self, tmp_path) -> None:
-        from easyhunt.knowledge.findings import Asset, AssetStore
+        from cordon.knowledge.findings import Asset, AssetStore
 
         first = AssetStore()
         first.add(Asset(value="a.example.com", kind="subdomain", source="subfinder"))
@@ -394,7 +394,7 @@ class TestAssetStorePersistsAcrossProcesses:
 
     def test_load_merges_rather_than_replaces(self, tmp_path) -> None:
         """A resumed run keeps what it already knew."""
-        from easyhunt.knowledge.findings import Asset, AssetStore
+        from cordon.knowledge.findings import Asset, AssetStore
 
         saved = AssetStore()
         saved.add(Asset(value="a.example.com", kind="subdomain", source="subfinder"))
@@ -407,7 +407,7 @@ class TestAssetStorePersistsAcrossProcesses:
 
     def test_the_same_host_from_two_tools_is_stored_once(self, tmp_path) -> None:
         """Dedupe is the whole reason several enumerators can run together."""
-        from easyhunt.knowledge.findings import Asset, AssetStore
+        from cordon.knowledge.findings import Asset, AssetStore
 
         store = AssetStore()
         store.add(Asset(value="a.example.com", kind="subdomain", source="subfinder"))
@@ -415,15 +415,15 @@ class TestAssetStorePersistsAcrossProcesses:
         assert len(store.values("subdomain")) == 1
 
     def test_a_missing_file_is_not_an_error(self, tmp_path) -> None:
-        from easyhunt.knowledge.findings import AssetStore
+        from cordon.knowledge.findings import AssetStore
 
         assert AssetStore().load(tmp_path / "nope.json") == 0
 
     def test_an_engagement_resuming_a_workspace_inherits_its_assets(
         self, scope, config, tmp_path
     ) -> None:
-        from easyhunt.control_plane.context import Engagement
-        from easyhunt.knowledge.findings import Asset
+        from cordon.control_plane.context import Engagement
+        from cordon.knowledge.findings import Asset
 
         first = Engagement(scope, config, workspace=tmp_path / "ws")
         first.assets.add(Asset(value="a.example.com", kind="subdomain", source="recon"))
@@ -445,12 +445,12 @@ class TestEmptyIsNotTheSameAsFiltered:
     """
 
     def _runs(self, found: int):
-        from easyhunt.tools.common import ToolRun
+        from cordon.tools.common import ToolRun
 
         return [ToolRun(tool="subfinder", ran=True, values=[f"h{i}.example.com" for i in range(found)])]
 
     def test_everything_filtered_says_so(self) -> None:
-        from easyhunt.tools.common import grouped_result
+        from cordon.tools.common import grouped_result
 
         r = grouped_result(kind="subdomains", runs=self._runs(3), values=[], dropped=3)
         assert r["complete"] is False
@@ -458,14 +458,14 @@ class TestEmptyIsNotTheSameAsFiltered:
         assert "scope mismatch" in r["message"]
 
     def test_genuinely_empty_says_something_different(self) -> None:
-        from easyhunt.tools.common import grouped_result
+        from cordon.tools.common import grouped_result
 
         r = grouped_result(kind="subdomains", runs=self._runs(0), values=[], dropped=0)
         assert "No results from any source" in r["message"]
         assert r.get("complete") is not False
 
     def test_a_normal_result_carries_no_alarm(self) -> None:
-        from easyhunt.tools.common import grouped_result
+        from cordon.tools.common import grouped_result
 
         r = grouped_result(
             kind="subdomains", runs=self._runs(2), values=["a.example.com"], dropped=1
@@ -487,7 +487,7 @@ class TestLiveAndArchivedUrlsAreNotTheSameInput:
     """
 
     def _store(self):
-        from easyhunt.knowledge.findings import Asset, AssetStore
+        from cordon.knowledge.findings import Asset, AssetStore
 
         s = AssetStore()
         s.add(Asset(value="https://live.example.com/", kind="url",
@@ -519,7 +519,7 @@ class TestHuntPlanSurfaceGrouping:
     """
 
     def _group(self, urls):
-        from easyhunt.tools.hunt_plan import _interesting
+        from cordon.tools.hunt_plan import _interesting
 
         return _interesting(urls)
 
@@ -566,7 +566,7 @@ class TestApprovalPolicyContradiction:
     """
 
     def test_a_tool_in_both_lists_is_denied(self) -> None:
-        from easyhunt.control_plane.approval import PolicyBackend
+        from cordon.control_plane.approval import PolicyBackend
 
         backend = PolicyBackend(auto_approve=["ssrf_probe", "nuclei_scan"],
                                 auto_deny=["ssrf_probe"])
@@ -578,9 +578,9 @@ class TestApprovalPolicyContradiction:
     def test_the_contradiction_is_logged(self, caplog) -> None:
         import logging
 
-        from easyhunt.control_plane.approval import PolicyBackend
+        from cordon.control_plane.approval import PolicyBackend
 
-        with caplog.at_level(logging.WARNING, logger="easyhunt.approval"):
+        with caplog.at_level(logging.WARNING, logger="cordon.approval"):
             PolicyBackend(auto_approve=["port_scan"], auto_deny=["port_scan"])
         # Silently picking one is how a config stops describing what runs.
         assert "port_scan" in caplog.text

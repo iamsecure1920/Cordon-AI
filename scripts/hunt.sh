@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# EasyHunt — run a full engagement flow unattended.
+# Cordon — run a full engagement flow unattended.
 #
 #   ./scripts/hunt.sh <target> [--from PHASE] [--only PHASE,PHASE] [--exploit]
 #
@@ -34,11 +34,11 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${ROOT}/.venv/bin/python"
 [ -x "$PY" ] || PY="$(command -v python3)"
-# The console script, not `python -m easyhunt` — the package has no __main__,
+# The console script, not `python -m cordon` — the package has no __main__,
 # so that form fails silently and every target then reads as out of scope.
-EH="${ROOT}/.venv/bin/easyhunt"
-[ -x "$EH" ] || EH="$(command -v easyhunt)"
-[ -x "$EH" ] || die "easyhunt CLI not found — run ./install.sh"
+EH="${ROOT}/.venv/bin/cordon"
+[ -x "$EH" ] || EH="$(command -v cordon)"
+[ -x "$EH" ] || die "cordon CLI not found — run ./install.sh"
 
 G='\033[0;32m'; Y='\033[0;33m'; R='\033[0;31m'; D='\033[2m'; N='\033[0m'
 ok()   { printf "${G}✓${N} %s\n" "$1"; }
@@ -90,18 +90,18 @@ ok "$(echo $TARGETS | wc -w) target(s) in scope"
 
 SCOPE_NAME=$("$PY" -c "
 import sys;sys.path.insert(0,'${ROOT}')
-from easyhunt.control_plane.scope import Scope
+from cordon.control_plane.scope import Scope
 s=Scope.load('${ROOT}/scope.yaml');print(s.name)" 2>/dev/null)
 RPS=$("$PY" -c "
 import sys;sys.path.insert(0,'${ROOT}')
-from easyhunt.control_plane.scope import Scope
+from cordon.control_plane.scope import Scope
 s=Scope.load('${ROOT}/scope.yaml');print(s.rules.max_rps)" 2>/dev/null)
 ok "engagement ${SCOPE_NAME}, ceiling ${RPS} rps"
 
 if [ "$EXPLOIT" = "yes" ]; then
     ALLOWED=$("$PY" -c "
 import sys;sys.path.insert(0,'${ROOT}')
-from easyhunt.control_plane.scope import Scope
+from cordon.control_plane.scope import Scope
 s=Scope.load('${ROOT}/scope.yaml');print('yes' if s.rules.allow_exploitation else 'no')" 2>/dev/null)
     [ "$ALLOWED" = "yes" ] || die "--exploit given but scope.yaml sets allow_exploitation: false.
     Change the scope only if the program's policy actually permits it."
@@ -175,7 +175,7 @@ for phase in $GLOBAL_PHASES_LIST; do
 done
 
 # ── Summary ──────────────────────────────────────────────────────────────────
-WS=$(cat "${ROOT}/.easyhunt-run" 2>/dev/null || echo "?")
+WS=$(cat "${ROOT}/.cordon-run" 2>/dev/null || echo "?")
 printf "\n${D}── Done ──${N}\n"
 ok "workspace: ${WS}"
 [ -n "$EMPTY" ]  && warn "produced nothing:${EMPTY}"

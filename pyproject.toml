@@ -3,13 +3,13 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "easyhunt-ai"
+name = "cordon"
 version = "2.0.0"
 description = "Agentic VAPT orchestrator: MCP control plane over open-source security engines"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "EasyHunt AI" }]
+authors = [{ name = "Cordon AI" }]
 keywords = ["security", "vapt", "bugbounty", "mcp", "recon"]
 classifiers = [
   "Intended Audience :: Information Technology",
@@ -38,17 +38,17 @@ all = [
 ]
 
 [project.scripts]
-easyhunt = "easyhunt.cli:main"
-easyhunt-mcp = "easyhunt.mcp_server:main"
+cordon = "cordon.cli:main"
+cordon-mcp = "cordon.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/sobila/EasyHunt-AI"
 
 [tool.setuptools.packages.find]
-include = ["easyhunt*"]
+include = ["cordon*"]
 
 [tool.setuptools.package-data]
-easyhunt = ["py.typed", "data/*.json"]
+cordon = ["py.typed", "data/*.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -78,8 +78,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "S105", "S106", "S108", "S311", "B017", "ASYNC240"]
 # The sandbox writes a container-internal tmpfs spec, not a host temp path.
-"easyhunt/control_plane/sandbox.py" = ["S108"]
+"cordon/control_plane/sandbox.py" = ["S108"]
 # Canary placement and retry jitter are not security-relevant randomness.
-"easyhunt/llm/*" = ["S311"]
+"cordon/llm/*" = ["S311"]
 # Path existence checks in async setup paths are startup-time and negligible.
-"easyhunt/**" = ["ASYNC240"]
+"cordon/**" = ["ASYNC240"]

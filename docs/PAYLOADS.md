@@ -14,7 +14,7 @@ python3 scripts/vet_payloads.py --verify   # re-check hashes, detect drift
 python3 scripts/vet_payloads.py --report   # classification only, writes nothing
 ```
 
-The store is **not redistributed** with EasyHunt (see §5). The script and
+The store is **not redistributed** with Cordon (see §5). The script and
 manifest ship; the payloads are re-fetched locally.
 
 ---
@@ -155,7 +155,7 @@ even deliberately.
 
 The upstream repo ships **no LICENSE file**, which means all rights reserved by
 default. Using it locally is fine. Bundling it into a distributed copy of
-EasyHunt is not.
+Cordon is not.
 
 So `payloads/*` is gitignored except the manifest. On a new machine, one command
 rebuilds the store from the pinned commit. Nothing is lost and nothing is
@@ -167,7 +167,7 @@ redistributed.
 
 A container image is a *distributed copy*: it gets tagged, pushed and pulled. The
 licence argument applies to it exactly as it applies to a git clone, so
-**`easyhunt:latest` does not contain the payload store.**
+**`cordon:latest` does not contain the payload store.**
 
 What it does contain is a loud, actionable absence. The earlier `.dockerignore`
 excluded `payloads/` and said nothing anywhere else, so a container reached
@@ -176,10 +176,10 @@ against. Now:
 
 | | |
 |---|---|
-| **On every container start** | the entrypoint prints a notice to **stderr** naming what is missing and the two commands that fix it. Nothing is printed when the store is present. Suppress with `EASYHUNT_QUIET=1`. Never printed to stdout — `easyhunt serve` speaks MCP there. |
+| **On every container start** | the entrypoint prints a notice to **stderr** naming what is missing and the two commands that fix it. Nothing is printed when the store is present. Suppress with `CORDON_QUIET=1`. Never printed to stdout — `cordon serve` speaks MCP there. |
 | **`payload_catalog`** | `{"ok": false, "error": "store_not_built"}` with the rebuild command. |
 | **`content_discovery`** | refuses list *names*; wordlist *paths* inside the engagement workspace still work, so the tool is degraded, not dead. |
-| **`/opt/easyhunt/payloads.manifest.json`** | ships — names, tiers, line counts, SHA-256s and the upstream pin, so the store can be inspected and verified without its contents. |
+| **`/opt/cordon/payloads.manifest.json`** | ships — names, tiers, line counts, SHA-256s and the upstream pin, so the store can be inspected and verified without its contents. |
 | **Build-time assertion** | the build fails if the store is half-built, if tier C is present, or if the store root does not resolve to the directory the operator mounts. |
 
 ### Three ways to give a container the store
@@ -188,19 +188,19 @@ against. Now:
 # 1. Build once on the host, mount read-only. Survives container replacement.
 python3 scripts/vet_payloads.py --fetch
 docker run --rm -it -v "$PWD:/work" -w /work \
-           -v "$PWD/payloads:/opt/easyhunt/payloads:ro" easyhunt easyhunt doctor
+           -v "$PWD/payloads:/opt/cordon/payloads:ro" cordon cordon doctor
 
 # 2. Build inside a running container. Needs network; lost with the container.
-docker run --rm -it easyhunt python3 /opt/easyhunt/scripts/vet_payloads.py --fetch
+docker run --rm -it cordon python3 /opt/cordon/scripts/vet_payloads.py --fetch
 
 # 3. Bake it into a PRIVATE image you will not distribute.
-docker build --build-arg FETCH_PAYLOADS=1 -t easyhunt:payloads .
+docker build --build-arg FETCH_PAYLOADS=1 -t cordon:payloads .
 ```
 
 Option 3 fetches from the pinned commit and deletes `_quarantine` **in the same
 layer**, so tier C never exists in the image — deleting it in a later step would
 leave every byte of it in the layer underneath, still pullable. The image is
-stamped `com.easyhunt.payloads.bundled=1`, so whether an image is safe to push is
+stamped `com.cordon.payloads.bundled=1`, so whether an image is safe to push is
 answerable with `docker inspect` instead of from memory.
 
 ### Why the manifest is not copied into the store root
@@ -223,7 +223,7 @@ knowledge/payloads.py:  Path(__file__).parent.parent.parent / "payloads"
 On a checkout that is the repo root. In the image the wheel is installed into
 `site-packages`, so the image symlinks `site-packages/payloads` (and
 `site-packages/knowledge`, which `wstg.py` resolves the same way) at
-`/opt/easyhunt/`. That is why the mount target above is `/opt/easyhunt/payloads`
+`/opt/cordon/`. That is why the mount target above is `/opt/cordon/payloads`
 and why `scripts/vet_payloads.py --fetch` run inside the container lands
 somewhere the tools actually read.
 

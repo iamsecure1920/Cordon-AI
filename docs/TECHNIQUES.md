@@ -2,7 +2,7 @@
 
 ## 1. What this is
 
-EasyHunt answers two different "what now" questions with two different sources:
+Cordon answers two different "what now" questions with two different sources:
 
 | Question | Source | Answers |
 |---|---|---|
@@ -12,7 +12,7 @@ EasyHunt answers two different "what now" questions with two different sources:
 The technique index is built from
 [`swisskyrepo/PayloadsAllTheThings`](https://github.com/swisskyrepo/PayloadsAllTheThings),
 pinned at a specific commit. Each bug-class directory becomes one record that
-names the **EasyHunt tools** that test the class, the **vetted payload lists**
+names the **Cordon tools** that test the class, the **vetted payload lists**
 that belong to it, and the **gf pattern packs** (`rules/gf/*.json`) that match
 its sinks.
 
@@ -72,7 +72,7 @@ left untouched.
 
 ## 5. Stack hints
 
-`easyhunt/knowledge/techniques.py` carries a `STACK_HINTS` table mapping observed
+`cordon/knowledge/techniques.py` carries a `STACK_HINTS` table mapping observed
 technology to technique classes — the same shape as the WSTG index's stack
 hints, so `http_probe`'s fingerprint can seed "what to try next" without walking
 all 63 records.

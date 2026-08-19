@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vet a third-party payload collection before EasyHunt is allowed to use it.
+"""Vet a third-party payload collection before Cordon is allowed to use it.
 
 Third-party payload lists are untrusted input. This script fetches one at a
 pinned commit, classifies every file into a safety tier, quarantines what must

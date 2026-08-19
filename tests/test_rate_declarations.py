@@ -38,8 +38,8 @@ from __future__ import annotations
 
 import pytest
 
-import easyhunt.mcp_server as mcp_server
-from easyhunt.tools.base import REGISTRY, RegisteredTool
+import cordon.mcp_server as mcp_server
+from cordon.tools.base import REGISTRY, RegisteredTool
 
 # The registry is populated by import side effects, so every capability module
 # has to be loaded before anything here can claim to have seen "every tool".
@@ -48,9 +48,9 @@ mcp_server.load_capabilities()
 
 
 def _is_product_tool(tool: RegisteredTool) -> bool:
-    """Is this a capability EasyHunt ships, or a fixture the test suite built?
+    """Is this a capability Cordon ships, or a fixture the test suite built?
 
-    `REGISTRY` is process-global and `easyhunt_tool` registers into it at import
+    `REGISTRY` is process-global and `cordon_tool` registers into it at import
     time, so `tests/test_decorator.py` — which declares throwaway tools named
     `t_passive`, `t_aggressive`, `t_exploit` and friends to exercise the
     decorator's control sequence — puts them in the same dict this file reads.
@@ -66,7 +66,7 @@ def _is_product_tool(tool: RegisteredTool) -> bool:
       named `t_something` silently stopped being checked. A product tool cannot
       be defined inside the `tests` package, so this cannot mis-fire that way.
     * Everything outside `tests.` stays in scope, including tools registered by
-      a plugin or a rule pack rather than by `easyhunt.*`. An unvetted
+      a plugin or a rule pack rather than by `cordon.*`. An unvetted
       third-party tool that declares nothing is exactly what this file must
       catch, so it must not be excluded for living in an unfamiliar module.
     """
@@ -171,14 +171,14 @@ class TestEveryToolStatesItsPrice:
     def test_the_tool_declares_estimated_requests_explicitly(self, name: str) -> None:
         """A new tool with no `estimated_requests=` fails here, by construction.
 
-        `easyhunt_tool` defaults the parameter to None and the registry stores
+        `cordon_tool` defaults the parameter to None and the registry stores
         it verbatim, so None means *nobody typed a number* — as distinct from 0,
         which is somebody stating the tool is offline.
         """
         assert _declared(name) is not None, (
             f"{name} declares no estimated_requests, so the limiter charges it the "
             f"floor of 1 whatever it actually sends. Add estimated_requests= to its "
-            f"@easyhunt_tool decorator, or list it in _SENDS_NOTHING with a reason."
+            f"@cordon_tool decorator, or list it in _SENDS_NOTHING with a reason."
         )
 
     @pytest.mark.parametrize("name", _PRODUCT_TOOL_NAMES)

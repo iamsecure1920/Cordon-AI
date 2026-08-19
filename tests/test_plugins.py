@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from easyhunt.errors import PluginError
-from easyhunt.plugins.loader import PluginRegistry, load_all
-from easyhunt.plugins.matchers import MatchInput, evaluate_rule
-from easyhunt.plugins.schema import validate_manifest
+from cordon.errors import PluginError
+from cordon.plugins.loader import PluginRegistry, load_all
+from cordon.plugins.matchers import MatchInput, evaluate_rule
+from cordon.plugins.schema import validate_manifest
 
 REPO_RULES = Path(__file__).resolve().parents[1] / "rules"
 
@@ -203,7 +203,7 @@ class TestMatcherEngine:
 
 class TestDiscovery:
     def test_dropping_a_yaml_file_adds_a_detection(self, tmp_path: Path) -> None:
-        rules = tmp_path / "rules" / "easyhunt"
+        rules = tmp_path / "rules" / "cordon"
         rules.mkdir(parents=True)
         (rules / "new-rule.yaml").write_text(yaml.safe_dump(rule_pack(id="brand-new")))
         registry = load_all([tmp_path / "rules"], import_python=False)
@@ -211,7 +211,7 @@ class TestDiscovery:
         assert registry.evaluate({"body": "MARKER"})[0].rule_id == "brand-new"
 
     def test_a_broken_rule_is_rejected_without_disabling_the_good_ones(self, tmp_path: Path) -> None:
-        rules = tmp_path / "rules" / "easyhunt"
+        rules = tmp_path / "rules" / "cordon"
         rules.mkdir(parents=True)
         (rules / "good.yaml").write_text(yaml.safe_dump(rule_pack(id="good-rule")))
         (rules / "bad.yaml").write_text(yaml.safe_dump(rule_pack(id="bad-rule", severity="nope")))
@@ -221,7 +221,7 @@ class TestDiscovery:
         assert "severity must be" in registry.report.rejected[0]["error"]
 
     def test_duplicate_ids_are_rejected(self, tmp_path: Path) -> None:
-        rules = tmp_path / "rules" / "easyhunt"
+        rules = tmp_path / "rules" / "cordon"
         rules.mkdir(parents=True)
         (rules / "a.yaml").write_text(yaml.safe_dump(rule_pack(id="dupe")))
         (rules / "b.yaml").write_text(yaml.safe_dump(rule_pack(id="dupe")))
@@ -229,7 +229,7 @@ class TestDiscovery:
         assert any("duplicate id" in r["error"] for r in registry.report.rejected)
 
     def test_unparseable_yaml_is_reported_not_raised(self, tmp_path: Path) -> None:
-        rules = tmp_path / "rules" / "easyhunt"
+        rules = tmp_path / "rules" / "cordon"
         rules.mkdir(parents=True)
         (rules / "broken.yaml").write_text("id: x\n  bad indent: [")
         registry = load_all([tmp_path / "rules"], import_python=False)
@@ -246,7 +246,7 @@ class TestDiscovery:
 
 
 class TestShippedRules:
-    """The rules that ship with EasyHunt must themselves be valid."""
+    """The rules that ship with Cordon must themselves be valid."""
 
     def test_repo_rules_all_load(self) -> None:
         registry = PluginRegistry()

@@ -1,4 +1,4 @@
-# EasyHunt AI — engagement scope: OWASP Juice Shop, local
+# Cordon AI — engagement scope: OWASP Juice Shop, local
 #
 # A deliberately vulnerable application running in Docker on this machine.
 # Owned by definition: it is a container the operator started, on loopback and
@@ -36,7 +36,7 @@ engagement:
   fetched_at: "2026-08-04T00:00:00Z"
   max_age_days: 3650
   refuse_when_stale: false
-  researcher_handle: easyhunt-selftest
+  researcher_handle: cordon-selftest
   vdp_note: >-
     Local container on the operator's own machine. Nothing here leaves the host
     and there is no third party to disclose to.
@@ -80,7 +80,7 @@ rules:
   allow_exploitation: true
   no_dos: true
 
-  user_agent: "EasyHunt-AI/2.0 (local-selftest; contact=easyhunt-selftest)"
+  user_agent: "Cordon-AI/2.0 (local-selftest; contact=cordon-selftest)"
   required_headers: []
   forbidden_paths: []
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from easyhunt.tools.fuzz_diff import (
+from cordon.tools.fuzz_diff import (
     Case,
     body_hash,
     cluster_baseline_matches,

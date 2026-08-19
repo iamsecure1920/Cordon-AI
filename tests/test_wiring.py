@@ -35,14 +35,14 @@ from typing import Any
 
 import pytest
 
-from easyhunt.control_plane.sanitize import sanitize_argv
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools.base import REGISTRY
-from easyhunt.tools.common import CATALOG, ToolRun
+from cordon.control_plane.sanitize import sanitize_argv
+from cordon.mcp_server import load_capabilities
+from cordon.tools.base import REGISTRY
+from cordon.tools.common import CATALOG, ToolRun
 
 load_capabilities()
 
-_SOURCE_ROOT = pathlib.Path(__file__).resolve().parent.parent / "easyhunt"
+_SOURCE_ROOT = pathlib.Path(__file__).resolve().parent.parent / "cordon"
 
 
 # --------------------------------------------------------------------------- #
@@ -167,7 +167,7 @@ def call_sites() -> dict[str, set[str]]:
 #: it" is not a reason — that is the defect this file exists to surface.
 #:
 #: Every reason below was checked against the code, not against the comment that
-#: claimed it. One did not survive: ``easyhunt/tools/extra_specs.py`` states that
+#: claimed it. One did not survive: ``cordon/tools/extra_specs.py`` states that
 #: gobuster and dirsearch are unwired because "ffuf and feroxbuster are faster and
 #: already have rate ceilings wired in", but feroxbuster has no call site either.
 #: ffuf alone carries content discovery.
@@ -305,7 +305,7 @@ def _spy(monkeypatch: pytest.MonkeyPatch, module: str) -> list[dict[str, Any]]:
     """Capture every argv a module builds, and sanitize it exactly as runtime does."""
     import importlib
 
-    target = importlib.import_module(f"easyhunt.tools.{module}")
+    target = importlib.import_module(f"cordon.tools.{module}")
     calls: list[dict[str, Any]] = []
 
     async def fake_run_one(name: str, argv: list[str], **kwargs: Any) -> ToolRun:
@@ -391,7 +391,7 @@ class TestArgvSurvivesItsOwnSanitizer:
 def _absent(monkeypatch: pytest.MonkeyPatch, module: str) -> None:
     import importlib
 
-    target = importlib.import_module(f"easyhunt.tools.{module}")
+    target = importlib.import_module(f"cordon.tools.{module}")
 
     async def missing(name: str, argv: list[str], **kwargs: Any) -> ToolRun:
         return ToolRun(tool=name, ran=False, error="not installed")
@@ -423,7 +423,7 @@ class TestAbsenceIsNotACleanResult:
     async def test_a_missing_binary_reports_untested(
         self, engagement, monkeypatch, tool: str, kwargs: dict[str, Any]
     ) -> None:
-        from easyhunt.control_plane.approval import PolicyBackend
+        from cordon.control_plane.approval import PolicyBackend
 
         engagement.approval.backend = PolicyBackend(auto_approve={tool})
         # dns_permute declares 20,000 requests; at the fixture's 5 rps the limiter
@@ -455,7 +455,7 @@ class TestAbsenceIsNotACleanResult:
         self, engagement, monkeypatch, tool: str, kwargs: dict[str, Any]
     ) -> None:
         """No count, no empty list, no "next step" telling the agent to proceed."""
-        from easyhunt.control_plane.approval import PolicyBackend
+        from cordon.control_plane.approval import PolicyBackend
 
         engagement.approval.backend = PolicyBackend(auto_approve={tool})
         # dns_permute declares 20,000 requests; at the fixture's 5 rps the limiter

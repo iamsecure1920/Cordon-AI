@@ -12,7 +12,7 @@ tests/_lab_root/
 !scope.example.yaml
 
 # setuptools writes these into the source tree during `uv pip install .`, and a
-# stale copy from a host build would be layered straight into /opt/easyhunt.
+# stale copy from a host build would be layered straight into /opt/cordon.
 build/
 dist/
 *.egg-info/
@@ -25,7 +25,7 @@ dist/
 # not carry it. See docs/PAYLOADS.md §5 and the payload stanza in the Dockerfile.
 #
 # manifest.json is ours — names, tiers, SHA-256s and the upstream pin. It ships
-# as a *reference* copy at /opt/easyhunt/payloads.manifest.json, deliberately
+# as a *reference* copy at /opt/cordon/payloads.manifest.json, deliberately
 # NOT inside the store root: PayloadStore treats a manifest in the store root as
 # proof the store exists, so putting one there without the files it describes
 # would make payload_catalog list 34 wordlists that cannot be opened.

@@ -23,9 +23,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from easyhunt.knowledge import prompts
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools import burp, code_audit
+from cordon.knowledge import prompts
+from cordon.mcp_server import load_capabilities
+from cordon.tools import burp, code_audit
 
 load_capabilities()
 

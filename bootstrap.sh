@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# EasyHunt AI — bare-metal bootstrap.
+# Cordon AI — bare-metal bootstrap.
 #
 # For a machine with NOTHING on it. Installs system prerequisites, language
-# runtimes, Docker (enabled at boot), the EasyHunt package, the tool suite, and
+# runtimes, Docker (enabled at boot), the Cordon package, the tool suite, and
 # the sandbox images. Then verifies.
 #
 # install.sh handles the application. This handles everything underneath it.
@@ -84,7 +84,7 @@ if have apt-get; then
         build-essential libpcap-dev git curl wget jq unzip \
         python3 python3-venv python3-pip pipx golang-go \
         >/dev/null 2>&1 && ok "system packages installed" \
-        || warn "some system packages failed — easyhunt doctor will show what is missing"
+        || warn "some system packages failed — cordon doctor will show what is missing"
 else
     warn "no apt-get; install manually: build-essential libpcap-dev git curl python3-venv pipx golang"
 fi
@@ -196,8 +196,8 @@ if [ "$SKIP_DOCKER" = "no" ] && have docker && have systemctl; then
     fi
 fi
 
-# ── 3. EasyHunt package + tool suite ─────────────────────────────────────────
-step "EasyHunt"
+# ── 3. Cordon package + tool suite ─────────────────────────────────────────
+step "Cordon"
 if [ "$SKIP_TOOLS" = "yes" ]; then
     INSTALL_TOOLS=no bash "$ROOT/install.sh" --no-tools
 else
@@ -205,8 +205,8 @@ else
 fi
 
 VENV="$ROOT/.venv"
-if [ ! -x "$VENV/bin/easyhunt" ]; then
-    fail "easyhunt did not install — stopping"
+if [ ! -x "$VENV/bin/cordon" ]; then
+    fail "cordon did not install — stopping"
     exit 1
 fi
 
@@ -233,7 +233,7 @@ elif ! have docker || ! docker info >/dev/null 2>&1; then
     warn "docker unavailable — skipping image pulls"
 else
     IMAGES=$("$VENV/bin/python" - <<'PY' 2>/dev/null
-from easyhunt.config import Config
+from cordon.config import Config
 for image in dict(Config.load().get("sandbox.images") or {}).values():
     print(image)
 PY
@@ -242,7 +242,7 @@ PY
     # Dockerfile and holds 46 of the tools. `docker pull` cannot find it, so a
     # fresh machine that only pulls ends up with every one of those tools
     # falling back to the host, unsandboxed and mostly missing entirely.
-    DEFAULT_IMAGE=$("$VENV/bin/python" -c "from easyhunt.config import Config; print(Config.load().get('sandbox.default_image') or '')" 2>/dev/null)
+    DEFAULT_IMAGE=$("$VENV/bin/python" -c "from cordon.config import Config; print(Config.load().get('sandbox.default_image') or '')" 2>/dev/null)
     if [ -n "$DEFAULT_IMAGE" ]; then
         if docker image inspect "$DEFAULT_IMAGE" >/dev/null 2>&1; then
             ok "$DEFAULT_IMAGE (already built)"
@@ -279,25 +279,25 @@ fi
 
 # ── 6. Verify ────────────────────────────────────────────────────────────────
 step "Verify"
-"$VENV/bin/easyhunt" doctor 2>&1 | tail -30
+"$VENV/bin/cordon" doctor 2>&1 | tail -30
 
 # ── 7. What is still required ────────────────────────────────────────────────
 step "Before you can run anything"
 if [ ! -f "$ROOT/scope.yaml" ]; then
     cat <<'SCOPE'
 
-  ! scope.yaml does not exist. EasyHunt refuses to run without it.
+  ! scope.yaml does not exist. Cordon refuses to run without it.
 
     It must be transcribed from the target program's PUBLISHED POLICY PAGE.
     That text is the legal authorization for the engagement. It cannot be
     generated, guessed, or reconstructed from memory — and it drifts, so
     re-pull it before each engagement.
 
-    Start from scope.example.yaml, then: easyhunt scope validate
+    Start from scope.example.yaml, then: cordon scope validate
 
 SCOPE
 else
-    ok "scope.yaml present — run 'easyhunt scope validate'"
+    ok "scope.yaml present — run 'cordon scope validate'"
 fi
 
 [ -n "${OPENROUTER_API_KEY:-}" ] \
@@ -305,4 +305,4 @@ fi
     || warn "OPENROUTER_API_KEY unset — AI triage and report synthesis disabled
     (passive recon, scanning, and rule-based detection still work)"
 
-printf "\n${GREEN}Bootstrap complete.${NC} Read CLAUDE.md, then run: easyhunt doctor\n\n"
+printf "\n${GREEN}Bootstrap complete.${NC} Read CLAUDE.md, then run: cordon doctor\n\n"

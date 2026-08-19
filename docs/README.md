@@ -1,4 +1,4 @@
-# EasyHunt AI — documentation index
+# Cordon AI — documentation index
 
 Start with **`../CLAUDE.md`** (project root). Claude CLI loads it automatically
 at session start; a human should read it first too. It carries the hard

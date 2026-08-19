@@ -1,5 +1,5 @@
 // Types mirroring the /api/state JSON contract produced by
-// easyhunt/tools/dashboard.py::collect_state()
+// cordon/tools/dashboard.py::collect_state()
 
 export interface PhaseInfo {
   phase: string;

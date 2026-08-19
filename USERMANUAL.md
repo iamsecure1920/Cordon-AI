@@ -1,6 +1,6 @@
-# EasyHunt AI — Complete User Manual
+# Cordon AI — Complete User Manual
 
-> **EasyHunt AI** is an agentic VAPT (Vulnerability Assessment and Penetration
+> **Cordon AI** is an agentic VAPT (Vulnerability Assessment and Penetration
 > Testing) orchestrator. It drives **80 MCP tools over 82 catalogued open-source
 > security binaries** behind a mandatory, server-side control plane. The AI model
 > supplies *strategy*; the MCP server decides *what is permitted* and enforces it
@@ -39,7 +39,7 @@ the full flow in pictures, configuration, operation, safety, and troubleshooting
 ## 1. What this tool is
 
 Most "AI security tools" hand a model a shell and a system prompt telling it to
-behave. EasyHunt gives the model **no shell at all**. Every capability is an MCP
+behave. Cordon gives the model **no shell at all**. Every capability is an MCP
 tool that passes through a fixed, non-bypassable sequence:
 
 ```
@@ -67,7 +67,7 @@ What it does, concretely:
 
 The whole point, in one sentence: **absence of a finding is never silently
 reported as a clean result.** A killed scan, a tool that could not write its
-config, and a genuinely secure target all produce zero findings — EasyHunt
+config, and a genuinely secure target all produce zero findings — Cordon
 distinguishes "tested and clean" from "not tested", in words, every time.
 
 ---
@@ -103,7 +103,7 @@ installed manually.
 | Python | ≥ 3.11 | the control plane and ~14 tools |
 | Go | ≥ 1.21 (1.25 for httpx) | ~28 tools |
 | Rust + cargo | latest | findomain, feroxbuster, noseyparker, kingfisher |
-| Node.js | ≥ 20.20.0 | retire, promptfoo, React dashboard build (`easyhunt dashboard --build`) |
+| Node.js | ≥ 20.20.0 | retire, promptfoo, React dashboard build (`cordon dashboard --build`) |
 | Ruby | ≥ 2.7 | whatweb |
 
 ### Privileges
@@ -129,7 +129,7 @@ else lives in the respective tool's own config (`~/.config/subfinder/…`,
 ### One command
 
 ```bash
-git clone https://github.com/iamsecure1920/EasyHunt-AI.git && cd EasyHunt-AI
+git clone https://github.com/iamsecure1920/EasyHunt-AI.git && cd Cordon-AI
 ./bootstrap.sh
 ```
 
@@ -151,7 +151,7 @@ minutes for a first run.
    version if a transitive `fastmcp-slim` displaced it.
 7. **Config** — copies `config.example.yaml` → `config.yaml` if absent.
 8. **Sandbox images** — pulls the 9 configured images.
-9. **`easyhunt doctor`** — full verification.
+9. **`cordon doctor`** — full verification.
 10. **Tells you what is still missing** — `scope.yaml`, `$OPENROUTER_API_KEY`.
 
 ### Bootstrap flags
@@ -169,8 +169,8 @@ minutes for a first run.
 ```bash
 cp scope.example.yaml scope.yaml
 $EDITOR scope.yaml            # transcribe the program's published policy
-easyhunt scope validate       # parses and checks authorization
-easyhunt doctor               # expect 0 broken tools
+cordon scope validate       # parses and checks authorization
+cordon doctor               # expect 0 broken tools
 ```
 
 **`scope.yaml` is not created for you, deliberately.** It is the record of an
@@ -214,7 +214,7 @@ rules:
   allow_aggressive: true
   allow_exploitation: false        # gate for sqlmap/dalfox/etc.
   no_dos: true
-  user_agent: "EasyHunt-AI/2.0 (contact=you)"
+  user_agent: "Cordon-AI/2.0 (contact=you)"
 ```
 
 Key behaviors:
@@ -315,7 +315,7 @@ datasources:
     creds: {apikey: YOUR_VT_KEY}
 ```
 
-**Cloud** — needed only for the `easyhunt-cloud` tools:
+**Cloud** — needed only for the `cordon-cloud` tools:
 
 ```bash
 aws configure                              # or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_DEFAULT_REGION
@@ -323,7 +323,7 @@ gcloud auth application-default login      # GCP
 az login                                   # Azure
 ```
 
-**LLM** — only for triage and report synthesis. `easyhunt doctor` reports when
+**LLM** — only for triage and report synthesis. `cordon doctor` reports when
 it is missing, and everything else runs without it:
 
 ```bash
@@ -340,12 +340,12 @@ proxy will animate — a CSS `@keyframes` version renders as a still frame.
 
 | File | Shows |
 |---|---|
-| `docs/easyhunt-hero.svg` | The wordmark and the seven control-plane gates firing in turn. |
-| `docs/easyhunt-layers.svg` | The five layers, L5 down to L1, and where the security boundary sits. |
-| `docs/easyhunt-flow.svg` | One tool call: model → MCP → scope → sanitize → budget → rate-limit → approval → sandbox → audit → tool, and back. |
-| `docs/easyhunt-pipeline.svg` | The engagement phases chained through the asset store. |
+| `docs/cordon-hero.svg` | The wordmark and the seven control-plane gates firing in turn. |
+| `docs/cordon-layers.svg` | The five layers, L5 down to L1, and where the security boundary sits. |
+| `docs/cordon-flow.svg` | One tool call: model → MCP → scope → sanitize → budget → rate-limit → approval → sandbox → audit → tool, and back. |
+| `docs/cordon-pipeline.svg` | The engagement phases chained through the asset store. |
 
-![The five layers, and where the security boundary sits](docs/easyhunt-layers.svg)
+![The five layers, and where the security boundary sits](docs/cordon-layers.svg)
 
 The layer picture is the one to read first. Every call descends from L5 to L2
 and crosses **L3**; there is no code path that routes around it — not a
@@ -417,7 +417,7 @@ the previous one found from the asset store, not the argument you typed.
 
 ```mermaid
 flowchart LR
-    S[/scope.yaml<br/>transcribed by hand/] --> D{{easyhunt doctor}}
+    S[/scope.yaml<br/>transcribed by hand/] --> D{{cordon doctor}}
     D --> R[recon<br/>passive subdomain enum]
     R --> RV[resolve<br/>dns_resolve]
     RV --> P[http_probe<br/>what is alive]
@@ -524,21 +524,21 @@ a 403 block page counted as coverage).
 ### The entry points
 
 ```
-bootstrap.sh ──▶ install.sh ──▶ easyhunt (console script)
+bootstrap.sh ──▶ install.sh ──▶ cordon (console script)
                                    │
-                                   └──▶ easyhunt/mcp_server.py  (the only door)
+                                   └──▶ cordon/mcp_server.py  (the only door)
 ```
 
-- `easyhunt/mcp_server.py` imports `CAPABILITY_MODULES` (6 engines + ~24 tool
+- `cordon/mcp_server.py` imports `CAPABILITY_MODULES` (6 engines + ~24 tool
   modules) **for their registration side effects**. Each module's tools
-  self-register via the `@easyhunt_tool` decorator into `REGISTRY`.
+  self-register via the `@cordon_tool` decorator into `REGISTRY`.
 - The server then walks `REGISTRY` and exposes each tool to FastMCP. **There is
   no second registration path** — a tool cannot reach the agent without passing
   through the decorator, and the decorator is the control-plane chokepoint.
 
 ### The control-plane chokepoint (`tools/base.py`)
 
-`@easyhunt_tool` is the single wrapper every tool passes through. It is where
+`@cordon_tool` is the single wrapper every tool passes through. It is where
 scope → sanitize → budget → rate-limit → approval → sandbox → parse → audit
 actually run, *before* the subprocess spawns.
 
@@ -678,14 +678,14 @@ the live registry, not just against each other.
 ## 10. Every tool it drives
 
 **80 MCP tools** over **84 catalogued binaries**. The authoritative list is
-generated from `easyhunt/install/recipes.py` into the
+generated from `cordon/install/recipes.py` into the
 [Master Tool Matrix in `tools.md`](tools.md#master-tool-matrix), with
 per-tool purpose and usage in the profiles below it. It is generated because
 the hand-maintained version drifted to 53 of 85 tools without anything
 failing.
 
 For what is working on *this* machine — executed inside the container it will
-actually run in, not merely found on `PATH` — run `easyhunt doctor`.
+actually run in, not merely found on `PATH` — run `cordon doctor`.
 
 `·` passive · `!` aggressive · `!!` exploit — the mode decides whether a
 human is consulted before the call runs.
@@ -740,17 +740,17 @@ question:
 
 The brain senses every tool call in every script through the audit log (one
 hook, no per-tool wiring) and writes a JSON activity stream to
-`~/.easyhunt/brain-activity.jsonl`. Two ways to watch it:
+`~/.cordon/brain-activity.jsonl`. Two ways to watch it:
 
-- `easyhunt brain watch` — a live terminal pop-up: the brain node fires
+- `cordon brain watch` — a live terminal pop-up: the brain node fires
   electrical pulses along pipelines to the phase currently being worked;
   a red ★ marks pulses that filed findings. Pure stdlib ANSI, run it beside
-  `hunt.sh` or `easyhunt serve`.
-- `easyhunt brain export --open` — a self-contained `brain.html` (no external
+  `hunt.sh` or `cordon serve`.
+- `cordon brain export --open` — a self-contained `brain.html` (no external
   dependencies) that replays the same JSON stream as an animated neural net in
   any browser. Shareable, attachable to a report.
 
-CLI: `easyhunt brain state` (one-shot snapshot), `easyhunt brain history
+CLI: `cordon brain state` (one-shot snapshot), `cordon brain history
 [--phase X --tool Y --outcome ok]` (episodic memory).
 
 ### The live dashboard
@@ -760,9 +760,9 @@ which subdomains/endpoints were discovered, what the brain senses — from a
 **React + Vite + TypeScript** single-page app (`dashboard/`):
 
 ```bash
-easyhunt dashboard --build      # first time: npm install + vite build -> dashboard/dist
- easyhunt dashboard --serve      # live: http://127.0.0.1:8765, polls /api/state every 2s
-easyhunt dashboard              # static snapshot -> dashboard.html (legacy self-contained page)
+cordon dashboard --build      # first time: npm install + vite build -> dashboard/dist
+ cordon dashboard --serve      # live: http://127.0.0.1:8765, polls /api/state every 2s
+cordon dashboard              # static snapshot -> dashboard.html (legacy self-contained page)
 ```
 
 Views (sidebar; deep-linkable as `/#overview`, `/#findings`, `/#assets`, …):
@@ -834,7 +834,7 @@ depends on what the path protects), MEDIUM base → HIGH when the technique is
 authz-relevant and the path is admin-flavoured. The brain learns from every
 outcome. `forbidden_candidates(urls=[...])` pre-checks which URLs actually
 return 403 (one HEAD each) so you never feed it a false start. Install via the
-`unkover` recipe (`easyhunt install`).
+`unkover` recipe (`cordon install`).
 
 **Auto-chained in `hunt.sh`:** the global `forbidden` phase (after `wapiti`,
 before `exploit`) runs `forbidden_chain(urls=[...])` over the live estate —
@@ -902,7 +902,7 @@ browser_verify(url="https://target/search", param="q", payload='<svg onload=aler
 * **evidence** — screenshot + DOM excerpt saved into the workspace
   `evidence/` dir and attached to the finding.
 
-Install: `.venv/bin/pip install 'playwright>=1.40'` (or `easyhunt install`
+Install: `.venv/bin/pip install 'playwright>=1.40'` (or `cordon install`
 with the `browser` extra). Payloads are passed **unescaped** — the tool
 builds the URL itself and never hands them to a subprocess.
 
@@ -945,7 +945,7 @@ Each phase appends to `status.jsonl`:
 
 ### Interactive (Claude CLI)
 
-Load the `easyhunt` skill, then drive individual MCP tools. The working rhythm:
+Load the `cordon` skill, then drive individual MCP tools. The working rhythm:
 
 1. **Recon passively first** — costs the target nothing.
 2. **Probe before scanning** — scanning dead hosts burns budget for nothing.
@@ -956,12 +956,12 @@ Load the `easyhunt` skill, then drive individual MCP tools. The working rhythm:
 ### Useful commands
 
 ```bash
-easyhunt doctor              # health check — run first, always
-easyhunt doctor --fix        # repair what is present but broken
-easyhunt install             # add missing tools
-easyhunt install --core      # minimum viable pipeline only
-easyhunt serve               # MCP server, stdio
-easyhunt scope validate      # check the authorization file
+cordon doctor              # health check — run first, always
+cordon doctor --fix        # repair what is present but broken
+cordon install             # add missing tools
+cordon install --core      # minimum viable pipeline only
+cordon serve               # MCP server, stdio
+cordon scope validate      # check the authorization file
 ./bootstrap.sh               # fresh machine
 python3 scripts/vet_payloads.py --fetch    # build the vetted payload store
 python3 scripts/vet_payloads.py --verify   # re-check store for drift
@@ -1045,23 +1045,23 @@ non-loopback address without auth is refused outright**, not warned about.
 ```yaml
 auth:
   mode: jwt                      # or oauth_proxy
-  base_url: https://easyhunt.internal.example.com
+  base_url: https://cordon.internal.example.com
   jwks_uri: https://idp.example.com/.well-known/jwks.json
   issuer: https://idp.example.com/
 ```
 
-Scopes map onto EasyHunt's risk tiers:
+Scopes map onto Cordon's risk tiers:
 
 | Scope | Unlocks |
 |---|---|
-| `easyhunt:read` | status, findings, scope checks — no target contact |
-| `easyhunt:recon` | passive tools |
-| `easyhunt:scan` | aggressive tools (ports, nuclei, brute force) |
-| `easyhunt:exploit` | exploit tools (PoC validation, takeover confirmation) |
-| `easyhunt:approve` | answering approval prompts — **operator tokens only** |
-| `easyhunt:admin` | loading a scope, reloading rules |
+| `cordon:read` | status, findings, scope checks — no target contact |
+| `cordon:recon` | passive tools |
+| `cordon:scan` | aggressive tools (ports, nuclei, brute force) |
+| `cordon:exploit` | exploit tools (PoC validation, takeover confirmation) |
+| `cordon:approve` | answering approval prompts — **operator tokens only** |
+| `cordon:admin` | loading a scope, reloading rules |
 
-A token is a **ceiling**, checked before the human approval gate. `easyhunt:approve`
+A token is a **ceiling**, checked before the human approval gate. `cordon:approve`
 is deliberately separate from every operational scope — if the agent's token held
 it, the agent could answer its own approval prompts and human-in-the-loop would
 be decorative.
@@ -1094,15 +1094,15 @@ be decorative.
 |---|---|---|
 | `docker.service is masked` | Kali ships it masked | `systemctl unmask docker.service docker.socket` |
 | `failed to start daemon … PID N is still running` | stale pidfile | `rm -f /var/run/docker.pid; systemctl reset-failed docker.service; systemctl start docker` |
-| Tool installed but `doctor` says missing | PATH ordering, or a stale wrapper | `source ~/.profile`, then `easyhunt doctor --fix` |
+| Tool installed but `doctor` says missing | PATH ordering, or a stale wrapper | `source ~/.profile`, then `cordon doctor --fix` |
 | `externally-managed-environment` from pip | Debian PEP 668 | expected — installer uses per-tool venvs. Do **not** `--break-system-packages` |
 | FastMCP client import errors | `fastmcp-slim` displaced it | `.venv/bin/pip install --force-reinstall fastmcp==3.4.5` |
 | `httpx` resolves to the wrong binary | Python `httpx` CLI shadows ProjectDiscovery's | already handled by `resolve_binary()`. Do **not** uninstall the user's Python httpx |
-| `nuclei` exits 0 but finds nothing | could not write its config dir | check `sandbox.tmpfs` for the tool; `easyhunt doctor` probes inside the image |
+| `nuclei` exits 0 but finds nothing | could not write its config dir | check `sandbox.tmpfs` for the tool; `cordon doctor` probes inside the image |
 | `BudgetExceeded` / `RateLimitError` | ceiling reached | `report_generate` still works — produce a partial report, don't stop silently |
 | `scope_denied` | target out of scope | **that is the system working correctly.** Do not find another route; tell the user and stop |
 | `llm_usd: 0` | LLM **disabled**, not exhausted | check `config.llm` + `$OPENROUTER_API_KEY`; rule-based detection still works |
-| A tool reports "UNTESTED" | binary missing | `easyhunt install`; the wrapper reports UNTESTED, never "clean" |
+| A tool reports "UNTESTED" | binary missing | `cordon install`; the wrapper reports UNTESTED, never "clean" |
 
 ### Common misunderstandings (the traps)
 
@@ -1111,7 +1111,7 @@ be decorative.
   share a name; `resolve_binary()` executes candidates to identify the right one.
 - **A scanner heuristic is not a finding** — validate pattern hits before filing.
 - **Tool absence ≠ negative result** — UNTESTED, never disproven.
-- **Never `pip install` into EasyHunt's own venv** — it broke FastMCP client
+- **Never `pip install` into Cordon's own venv** — it broke FastMCP client
   support once. Use pipx for external tools.
 
 ---
@@ -1120,8 +1120,8 @@ be decorative.
 
 ```bash
 .venv/bin/python -m pytest tests/ -q    # 1,958 tests across 49 files
-.venv/bin/ruff check easyhunt/ tests/   # lint
-easyhunt doctor                         # executed, not just found on PATH
+.venv/bin/ruff check cordon/ tests/   # lint
+cordon doctor                         # executed, not just found on PATH
 ```
 
 Nearly every test exists because something broke against a live target. The
@@ -1145,7 +1145,7 @@ Drop a YAML file into `rules/` and you have a new detection — no code change:
 | Directory | Format | Run by |
 |---|---|---|
 | `rules/nuclei/` | Nuclei templates + workflows | Nuclei engine |
-| `rules/easyhunt/` | native matcher/extractor packs | built-in matcher |
+| `rules/cordon/` | native matcher/extractor packs | built-in matcher |
 | `rules/jaeles/`, `rules/semgrep/`, `rules/bbot/` | those tools' native formats | their engines |
 
 A Python plugin gets the same treatment as a built-in tool: wrapped by the same
@@ -1156,7 +1156,7 @@ decorator, through the same eight steps. There is no privileged path.
 ## 19. File and directory layout
 
 ```
-EasyHunt-AI/
+Cordon-AI/
 ├── bootstrap.sh            # machine setup (system pkgs, Docker, images) — idempotent
 ├── install.sh              # application setup (package, tools, skills, MCP registration)
 ├── README.md               # overview + quick start
@@ -1173,7 +1173,7 @@ EasyHunt-AI/
 │   ├── BOOTSTRAP.md        # fresh-machine setup
 │   ├── PAYLOADS.md         # payload store + safety tiers
 │   └── TECHNIQUES.md       # PAT technique index
-├── easyhunt/
+├── cordon/
 │   ├── mcp_server.py       # the only door — registers all capabilities
 │   ├── control_plane/      # scope, sanitize, budget, ratelimit, approval, sandbox, audit, auth, pins, jobs, context
 │   ├── tools/              # ~28 capability modules, one decorator, no privileged path
@@ -1192,6 +1192,6 @@ EasyHunt-AI/
 
 ---
 
-*EasyHunt AI — Complete User Manual. Last updated 2026-08-14.*
+*Cordon AI — Complete User Manual. Last updated 2026-08-14.*
 *Figures current as of this revision: 80 MCP tools, 82 catalogued binaries,*
 *79 working / 3 optional not installed, 1,958 tests, 85 install recipes.*

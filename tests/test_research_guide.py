@@ -8,11 +8,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from easyhunt.config import Config
-from easyhunt.control_plane.context import Engagement, set_engagement
-from easyhunt.control_plane.scope import Scope
-from easyhunt.knowledge.coverage import COVERAGE
-from easyhunt.tools.research_guide import _normalize_class, _validator_names
+from cordon.config import Config
+from cordon.control_plane.context import Engagement, set_engagement
+from cordon.control_plane.scope import Scope
+from cordon.knowledge.coverage import COVERAGE
+from cordon.tools.research_guide import _normalize_class, _validator_names
 
 
 class _PlainLab(BaseHTTPRequestHandler):
@@ -42,7 +42,7 @@ def lab_url() -> str:
 @pytest.fixture(scope="module")
 def dispatch_engagement(lab_url: str, tmp_path_factory: pytest.TempPathFactory):
     """Engagement whose scope covers the lab and approves the dispatched validator."""
-    from easyhunt.control_plane.approval import PolicyBackend
+    from cordon.control_plane.approval import PolicyBackend
     from tests.conftest import scope_dict
 
     root = tmp_path_factory.mktemp("guided-validate")
@@ -92,8 +92,8 @@ class TestNormalizeClass:
 
 class TestGuidance:
     def test_knowledge_playbook(self, engagement) -> None:
-        import easyhunt.tools.research_guide  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.research_guide  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         r = asyncio.run(
             REGISTRY["research_guidance"].fn(
@@ -113,11 +113,11 @@ class TestGuidance:
         assert isinstance(r["learned"], list)
 
     def test_technique_index_and_waf_payloads(self, engagement) -> None:
-        import easyhunt.tools.research_guide  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.research_guide  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         # Seed a WAF tech asset so the advisor pulls vendor payloads.
-        from easyhunt.tools.common import store_assets
+        from cordon.tools.common import store_assets
 
         store_assets(["Cloudflare"], kind="technology", source="httpx")
 
@@ -127,8 +127,8 @@ class TestGuidance:
         assert r["technique_index"] is None or isinstance(r["technique_index"], dict)
 
     def test_unknown_class(self, engagement) -> None:
-        import easyhunt.tools.research_guide  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.research_guide  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         r = asyncio.run(REGISTRY["research_guidance"].fn(vuln_class="time travel"))
         assert r["ok"] is False
@@ -136,8 +136,8 @@ class TestGuidance:
         assert len(r["known"]) >= len(COVERAGE)
 
     def test_out_of_scope_asset_refused(self, engagement) -> None:
-        import easyhunt.tools.research_guide  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.research_guide  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         r = asyncio.run(
             REGISTRY["research_guidance"].fn(
@@ -149,8 +149,8 @@ class TestGuidance:
         assert r["error"] == "out_of_scope"
 
     def test_evidence_checklists_are_class_specific(self, engagement) -> None:
-        import easyhunt.tools.research_guide  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.research_guide  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         sqli = asyncio.run(REGISTRY["research_guidance"].fn(vuln_class="sqli"))
         ssrf = asyncio.run(REGISTRY["research_guidance"].fn(vuln_class="ssrf"))
@@ -189,8 +189,8 @@ class TestGuidedValidate:
         self, dispatch_engagement, lab_url: str
     ) -> None:
         """Classes with no auto-validator get the evidence checklist, not a fake dispatch."""
-        import easyhunt.tools.research_guide  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.research_guide  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         r = asyncio.run(REGISTRY["guided_validate"].fn(
             vuln_class="file-upload",
@@ -202,8 +202,8 @@ class TestGuidedValidate:
         assert r["evidence_checklist"]
 
     def test_unknown_class(self, dispatch_engagement, lab_url: str) -> None:
-        import easyhunt.tools.research_guide  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.research_guide  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         r = asyncio.run(REGISTRY["guided_validate"].fn(
             vuln_class="time travel", asset=f"{lab_url}/x",
@@ -213,9 +213,9 @@ class TestGuidedValidate:
 
     def test_out_of_scope_refused(self, dispatch_engagement) -> None:
         """targets_arg=asset puts the scope gate first — out-of-scope assets raise."""
-        import easyhunt.tools.research_guide  # noqa: F401
-        from easyhunt.errors import OutOfScopeError
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.research_guide  # noqa: F401
+        from cordon.errors import OutOfScopeError
+        from cordon.tools.base import REGISTRY
 
         with pytest.raises(OutOfScopeError):
             asyncio.run(REGISTRY["guided_validate"].fn(
@@ -224,11 +224,11 @@ class TestGuidedValidate:
 
     def test_dispatch_runs_the_named_validator(self, dispatch_engagement, lab_url: str) -> None:
         """open-redirect wires to web_injection_probe — the chain dispatches it."""
-        import easyhunt.mcp_server
-        import easyhunt.tools.research_guide  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.mcp_server
+        import cordon.tools.research_guide  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
-        easyhunt.mcp_server.load_capabilities()
+        cordon.mcp_server.load_capabilities()
 
         r = asyncio.run(
             REGISTRY["guided_validate"].fn(

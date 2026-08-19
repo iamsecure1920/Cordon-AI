@@ -27,7 +27,7 @@ def test_tool_matrix_matches_recipes() -> None:
         cwd=ROOT,
     )
     assert result.returncode == 0, (
-        "tools.md tool matrix is out of date with easyhunt/install/recipes.py.\n"
+        "tools.md tool matrix is out of date with cordon/install/recipes.py.\n"
         "Run: python3 scripts/gen_tool_matrix.py\n"
         f"{result.stdout}{result.stderr}"
     )
@@ -40,7 +40,7 @@ def test_every_installable_recipe_appears_in_the_matrix() -> None:
     still round-trip cleanly through --check, because both sides would be
     wrong in the same way.
     """
-    from easyhunt.install.recipes import RECIPES
+    from cordon.install.recipes import RECIPES
 
     recipes = list(RECIPES.values()) if isinstance(RECIPES, dict) else list(RECIPES)
     expected = {r.tool for r in recipes if not r.library}

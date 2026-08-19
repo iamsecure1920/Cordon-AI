@@ -11,8 +11,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from easyhunt.control_plane.scope import Scope, StaleScopeError
-from easyhunt.util.parse import sanitize_for_model
+from cordon.control_plane.scope import Scope, StaleScopeError
+from cordon.util.parse import sanitize_for_model
 
 
 class TestUnicodeInjectionEvasion:
@@ -110,7 +110,7 @@ class TestPinGuard:
         import ast
         import inspect
 
-        from easyhunt import mcp_server
+        from cordon import mcp_server
 
         tree = ast.parse(inspect.getsource(mcp_server))
         for node in ast.walk(tree):
@@ -158,7 +158,7 @@ class TestWildcardDns:
         ],
     )
     def test_repeated_labels_are_flagged(self, host: str) -> None:
-        from easyhunt.tools.recon import _looks_like_wildcard_noise
+        from cordon.tools.recon import _looks_like_wildcard_noise
 
         assert _looks_like_wildcard_noise(host, "example.com")
 
@@ -176,7 +176,7 @@ class TestWildcardDns:
     def test_plausible_hosts_are_kept(self, host: str) -> None:
         # Flagging an unfamiliar name as noise would hide a real asset, which is
         # a worse failure than carrying a few extra candidates forward.
-        from easyhunt.tools.recon import _looks_like_wildcard_noise
+        from cordon.tools.recon import _looks_like_wildcard_noise
 
         assert not _looks_like_wildcard_noise(host, "example.com")
 
@@ -190,8 +190,8 @@ class TestWildcardDns:
         # query; it used to call `asyncio.create_subprocess_exec` directly, which
         # meant three DNS queries the rate limiter never saw. The stub moved with
         # it — the assertion below is unchanged.
-        import easyhunt.tools.recon as recon
-        from easyhunt.tools.common import ToolRun
+        import cordon.tools.recon as recon
+        from cordon.tools.common import ToolRun
 
         calls = {"n": 0}
 
@@ -240,7 +240,7 @@ class TestScanCompleteness:
         # The strings that stop a partial scan being read as a clean one.
         import inspect
 
-        from easyhunt.engines import nuclei_engine
+        from cordon.engines import nuclei_engine
 
         source = inspect.getsource(nuclei_engine)
         assert "UNTESTED, not clean" in source
@@ -258,14 +258,14 @@ class TestScanSizing:
     """
 
     def test_constants_come_from_measurement(self) -> None:
-        from easyhunt.engines import nuclei_engine
+        from cordon.engines import nuclei_engine
 
         # 5,148 templates produced 10,922 requests after nuclei's clustering.
         assert 1.5 <= nuclei_engine._REQUESTS_PER_TEMPLATE <= 3.0
         assert 5.0 <= nuclei_engine._OBSERVED_RPS <= 50.0
 
     async def test_oversized_scan_is_refused_before_it_starts(self, engagement, monkeypatch) -> None:
-        from easyhunt.engines import nuclei_engine
+        from cordon.engines import nuclei_engine
 
         async def many(*a, **k):
             return 5000
@@ -280,7 +280,7 @@ class TestScanSizing:
         assert "clean estate" in estimate["message"]
 
     async def test_feasible_scan_is_allowed(self, engagement, monkeypatch) -> None:
-        from easyhunt.engines import nuclei_engine
+        from cordon.engines import nuclei_engine
 
         async def few(*a, **k):
             return 200
@@ -296,7 +296,7 @@ class TestScanSizing:
     async def test_unknown_template_count_does_not_block(self, engagement, monkeypatch) -> None:
         # An estimate that cannot be produced must not become a refusal — that
         # would let a broken `-tl` disable scanning entirely.
-        from easyhunt.engines import nuclei_engine
+        from cordon.engines import nuclei_engine
 
         async def unknown(*a, **k):
             return None
@@ -312,8 +312,8 @@ class TestScanSizing:
     def test_template_listing_flag_is_allowed(self) -> None:
         # -tl lists templates locally and sends nothing to a target; without it
         # on the allowlist the sanitizer blocks the sizing pass.
-        from easyhunt.control_plane.sanitize import sanitize_argv
-        from easyhunt.engines.nuclei_engine import SPEC
+        from cordon.control_plane.sanitize import sanitize_argv
+        from cordon.engines.nuclei_engine import SPEC
 
         sanitize_argv("nuclei", ["-tl", "-silent"], policy=SPEC.arg_policy)
 
@@ -327,7 +327,7 @@ class TestScanSizing:
         whole estate in the ceiling, narrow severity and prioritize targets
         instead of refusing.
         """
-        from easyhunt.engines import nuclei_engine
+        from cordon.engines import nuclei_engine
 
         # The fixture scope has max_rps 5 and the estimator caps observed
         # throughput at 15, so reachable = 15 * 3600 = 54,000 requests. With
@@ -352,7 +352,7 @@ class TestScanSizing:
 
     async def test_unattended_scan_prioritizes_when_nothing_fits(self, engagement, monkeypatch) -> None:
         """When even critical cannot fit everything, keep focus URLs first."""
-        from easyhunt.engines import nuclei_engine
+        from cordon.engines import nuclei_engine
 
         async def huge(*a, **k):
             # Fixture max_rps is 5, so reachable = 5*3600 = 18,000 requests.
@@ -371,7 +371,7 @@ class TestScanSizing:
         assert kept == ["https://app.example.org/v2/"]
 
     async def test_unattended_scan_refuses_only_when_nothing_can_fit(self, engagement, monkeypatch) -> None:
-        from easyhunt.engines import nuclei_engine
+        from cordon.engines import nuclei_engine
 
         async def absurd(*a, **k):
             return 1_000_000  # 2.1M req per target > 54k ceiling
@@ -383,8 +383,8 @@ class TestScanSizing:
         assert sized is None
 
     def test_stack_tags_derive_from_observed_technologies(self, engagement) -> None:
-        from easyhunt.engines import nuclei_engine
-        from easyhunt.knowledge.findings import Asset
+        from cordon.engines import nuclei_engine
+        from cordon.knowledge.findings import Asset
 
         engagement.assets.add_many(
             [
@@ -416,7 +416,7 @@ class TestAmpersandInUrls:
         ],
     )
     def test_query_separators_are_permitted(self, url: str) -> None:
-        from easyhunt.control_plane.sanitize import sanitize_value
+        from cordon.control_plane.sanitize import sanitize_value
 
         sanitize_value(url, name="t", tool="t")
 
@@ -432,8 +432,8 @@ class TestAmpersandInUrls:
         ],
     )
     def test_ampersand_denied_everywhere_else(self, label: str, value: str) -> None:
-        from easyhunt.control_plane.sanitize import sanitize_value
-        from easyhunt.errors import SanitizeError
+        from cordon.control_plane.sanitize import sanitize_value
+        from cordon.errors import SanitizeError
 
         with pytest.raises(SanitizeError):
             sanitize_value(value, name="t", tool="t")
@@ -445,8 +445,8 @@ class TestAmpersandInUrls:
         "https://x.com/p?a=$(id)",    # command substitution
     ])
     def test_other_shell_metacharacters_unaffected(self, value: str) -> None:
-        from easyhunt.control_plane.sanitize import sanitize_value
-        from easyhunt.errors import SanitizeError
+        from cordon.control_plane.sanitize import sanitize_value
+        from cordon.errors import SanitizeError
 
         with pytest.raises(SanitizeError):
             sanitize_value(value, name="t", tool="t")
@@ -454,13 +454,13 @@ class TestAmpersandInUrls:
     def test_real_tools_accept_multi_param_targets(self) -> None:
         # The regression that mattered: sqlmap could not be pointed at a URL
         # with two parameters, which is most of the URLs worth testing.
-        from easyhunt.control_plane.sanitize import sanitize_argv
-        from easyhunt.mcp_server import load_capabilities
+        from cordon.control_plane.sanitize import sanitize_argv
+        from cordon.mcp_server import load_capabilities
 
         # CATALOG is populated by importing the capability modules; without this
         # the specs simply are not there and the test passes on an empty dict.
         load_capabilities()
-        from easyhunt.tools.common import CATALOG
+        from cordon.tools.common import CATALOG
 
         url = "https://x.com/p?id=1&token=abc"
         sanitize_argv("sqlmap", ["-u", url], policy=CATALOG["sqlmap"].arg_policy)
@@ -483,25 +483,25 @@ class TestFreshCloneDefaults:
     def test_example_config_is_used_when_no_config_yaml_exists(
         self, tmp_path, monkeypatch
     ) -> None:
-        from easyhunt import config as config_module
+        from cordon import config as config_module
 
         example = tmp_path / "config.example.yaml"
-        example.write_text("sandbox:\n  mode: docker\n  default_image: easyhunt:latest\n")
+        example.write_text("sandbox:\n  mode: docker\n  default_image: cordon:latest\n")
         monkeypatch.setattr(config_module, "_SEARCH_DIRS", [tmp_path])
-        monkeypatch.delenv("EASYHUNT_CONFIG", raising=False)
+        monkeypatch.delenv("CORDON_CONFIG", raising=False)
 
         loaded = config_module.Config.load(None)
         assert loaded.source == str(example)
         assert loaded.get("sandbox.mode") == "docker"
 
     def test_a_real_config_yaml_still_wins(self, tmp_path, monkeypatch) -> None:
-        from easyhunt import config as config_module
+        from cordon import config as config_module
 
         (tmp_path / "config.example.yaml").write_text("sandbox:\n  mode: docker\n")
         real = tmp_path / "config.yaml"
         real.write_text("sandbox:\n  mode: none\n")
         monkeypatch.setattr(config_module, "_SEARCH_DIRS", [tmp_path])
-        monkeypatch.delenv("EASYHUNT_CONFIG", raising=False)
+        monkeypatch.delenv("CORDON_CONFIG", raising=False)
 
         loaded = config_module.Config.load(None)
         assert loaded.source == str(real)
@@ -513,7 +513,7 @@ class TestFreshCloneDefaults:
 
         import yaml
 
-        from easyhunt.control_plane.sandbox import SandboxConfig
+        from cordon.control_plane.sandbox import SandboxConfig
 
         raw = yaml.safe_load(Path("config.example.yaml").read_text(encoding="utf-8"))
         sandbox = SandboxConfig.from_dict(raw.get("sandbox"))

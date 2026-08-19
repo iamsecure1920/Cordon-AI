@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from easyhunt.config import Config
-from easyhunt.knowledge.payloads import PayloadError, PayloadStore, store_from_config
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools.base import REGISTRY
+from cordon.config import Config
+from cordon.knowledge.payloads import PayloadError, PayloadStore, store_from_config
+from cordon.mcp_server import load_capabilities
+from cordon.tools.base import REGISTRY
 
 load_capabilities()
 
@@ -206,8 +206,8 @@ class TestTierBReachability:
     @pytest.fixture
     def captured_dalfox(self, monkeypatch):
         """Stand in for dalfox and record the argv it would have been given."""
-        from easyhunt.tools import exploitation as ex
-        from easyhunt.tools.common import ToolRun
+        from cordon.tools import exploitation as ex
+        from cordon.tools.common import ToolRun
 
         calls: list[list[str]] = []
 
@@ -219,7 +219,7 @@ class TestTierBReachability:
         return calls
 
     def _approve(self, engagement) -> None:
-        from easyhunt.control_plane.approval import PolicyBackend
+        from cordon.control_plane.approval import PolicyBackend
 
         engagement.approval.backend = PolicyBackend(auto_approve=["xss_validate"])
 
@@ -237,8 +237,8 @@ class TestTierBReachability:
         assert "--custom-payload" in argv
         # The real run_one sanitizes this argv before executing it, so a flag on
         # the allowlist that a policy rejects in practice would still be dead.
-        from easyhunt.control_plane.sanitize import sanitize_argv
-        from easyhunt.tools import exploitation as ex
+        from cordon.control_plane.sanitize import sanitize_argv
+        from cordon.tools import exploitation as ex
 
         sanitize_argv("dalfox", argv, policy=ex.DALFOX.arg_policy)
         staged = Path(argv[argv.index("--custom-payload") + 1])
@@ -257,7 +257,7 @@ class TestTierBReachability:
     async def test_every_shipped_name_resolves(
         self, engagement, tier_b_store, captured_dalfox
     ) -> None:
-        from easyhunt.tools import exploitation as ex
+        from cordon.tools import exploitation as ex
 
         self._approve(engagement)
         for name in ex.XSS_PAYLOAD_LISTS:
@@ -282,7 +282,7 @@ class TestTierBReachability:
         # The manifest's own tool_map names xss.txt for xss_validate, and xss.txt
         # is quarantined for a GH0ST.xss.ht callback. Even an alias table that
         # asks for it by name is refused at resolution, and nothing is run.
-        from easyhunt.tools import exploitation as ex
+        from cordon.tools import exploitation as ex
 
         monkeypatch.setitem(
             ex.XSS_PAYLOAD_LISTS, "xss-quarantined", {"file": "xss.txt", "tools": ["dalfox"]}
@@ -299,7 +299,7 @@ class TestTierBReachability:
     async def test_unknown_list_reports_the_names_that_exist(
         self, engagement, tier_b_store, captured_dalfox
     ) -> None:
-        from easyhunt.tools import exploitation as ex
+        from cordon.tools import exploitation as ex
 
         self._approve(engagement)
         result = await REGISTRY["xss_validate"].fn(
@@ -314,7 +314,7 @@ class TestTierBReachability:
     async def test_oversized_list_is_refused_not_truncated(
         self, engagement, tier_b_store, captured_dalfox
     ) -> None:
-        from easyhunt.tools import exploitation as ex
+        from cordon.tools import exploitation as ex
 
         (tier_b_store / "B" / "vulJs.txt").write_text(
             "\n".join(f"<img src=x onerror=alert({i})>" for i in range(ex.MAX_CUSTOM_PAYLOADS + 1))
@@ -328,7 +328,7 @@ class TestTierBReachability:
         assert captured_dalfox == []
 
     async def test_the_tool_still_needs_approval(self, engagement, tier_b_store) -> None:
-        from easyhunt.errors import ApprovalDenied
+        from cordon.errors import ApprovalDenied
 
         # Tier B rides the existing gate on an exploit-mode tool; it does not add
         # a second one, and it must not have opened a path around the first.
@@ -342,7 +342,7 @@ class TestTierBReachability:
         # Two independent reasons, both worth pinning: the tier B names are not
         # in config.yaml's alias namespace at all, and even a store that knows
         # the name refuses it without the caller opt-in.
-        from easyhunt.tools import exploitation as ex
+        from cordon.tools import exploitation as ex
 
         configured = store_from_config(Config.load())
         for name in ex.XSS_PAYLOAD_LISTS:
@@ -354,7 +354,7 @@ class TestTierBReachability:
         # The alias table lives in code; the tier lives in the manifest. If a
         # file is ever reclassified, or renamed upstream, this fails here rather
         # than at the moment someone tries to validate a finding with it.
-        from easyhunt.tools import exploitation as ex
+        from cordon.tools import exploitation as ex
 
         configured = store_from_config(Config.load())
         if not configured.available:
@@ -387,9 +387,9 @@ class TestJobStatus:
         assert isinstance(result["jobs"], list)
 
     async def test_unknown_job_is_an_error_not_a_silent_empty(self, engagement) -> None:
-        from easyhunt.errors import EasyHuntError
+        from cordon.errors import CordonError
 
-        with pytest.raises(EasyHuntError):
+        with pytest.raises(CordonError):
             await REGISTRY["job_status"].fn(job_id="nuclei_scan-9999")
 
     async def test_finished_job_returns_its_result(self, engagement) -> None:
@@ -410,7 +410,7 @@ class TestWstgIndex:
     """
 
     def test_index_is_built_and_attributed(self) -> None:
-        from easyhunt.knowledge.wstg import load_index
+        from cordon.knowledge.wstg import load_index
 
         index = load_index()
         if not index.available:
@@ -421,7 +421,7 @@ class TestWstgIndex:
         assert len(index.source["commit"]) == 40, "source must be pinned"
 
     def test_known_tests_resolve(self) -> None:
-        from easyhunt.knowledge.wstg import load_index
+        from cordon.knowledge.wstg import load_index
 
         index = load_index()
         if not index.available:
@@ -432,7 +432,7 @@ class TestWstgIndex:
             assert test["title"] and test["objectives"]
 
     def test_search_ranks_the_obvious_answer_first(self) -> None:
-        from easyhunt.knowledge.wstg import load_index
+        from cordon.knowledge.wstg import load_index
 
         index = load_index()
         if not index.available:
@@ -441,7 +441,7 @@ class TestWstgIndex:
         assert index.search("insecure direct object reference")[0]["id"] == "WSTG-ATHZ-04"
 
     def test_stack_hints_map_to_categories(self) -> None:
-        from easyhunt.knowledge.wstg import load_index
+        from cordon.knowledge.wstg import load_index
 
         index = load_index()
         if not index.available:
@@ -452,7 +452,7 @@ class TestWstgIndex:
         assert {"ATHZ", "ATHN"} & categories, "auth tests should surface for SAML/OAuth"
 
     def test_unknown_stack_returns_nothing_rather_than_everything(self) -> None:
-        from easyhunt.knowledge.wstg import load_index
+        from cordon.knowledge.wstg import load_index
 
         index = load_index()
         if not index.available:
@@ -462,7 +462,7 @@ class TestWstgIndex:
         assert index.for_stack(["CompletelyUnknownTech"]) == []
 
     async def test_tool_reports_a_missing_index(self, engagement, monkeypatch) -> None:
-        from easyhunt.knowledge import wstg
+        from cordon.knowledge import wstg
 
         monkeypatch.setattr(wstg, "load_index", lambda *a, **k: wstg.WstgIndex({}))
         result = await REGISTRY["wstg_lookup"].fn(query="xss")

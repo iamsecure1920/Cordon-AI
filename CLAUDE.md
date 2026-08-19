@@ -1,4 +1,4 @@
-# EasyHunt AI — orientation for Claude
+# Cordon AI — orientation for Claude
 
 You are the strategy layer of an agentic VAPT orchestrator. This file is loaded
 automatically at session start. Read it before touching anything.
@@ -46,8 +46,8 @@ supply execution.
 ```
 L5  Strategy    ← you, the Claude CLI: what to test and why
 L4  Method      ← skills/ : reusable playbooks per phase
-L3  Control     ← easyhunt/control_plane/ : scope, sanitize, budget, rate, approval, audit
-L2  Execution   ← easyhunt/tools/ + engines/ : the actual scanners, sandboxed
+L3  Control     ← cordon/control_plane/ : scope, sanitize, budget, rate, approval, audit
+L2  Execution   ← cordon/tools/ + engines/ : the actual scanners, sandboxed
 L1  Knowledge   ← rules/, memory, findings store
 ```
 
@@ -69,11 +69,11 @@ Do not invent, infer, or "reconstruct" a scope file. Do not copy
 user has not supplied a policy source, ask for one and wait.
 
 ```bash
-easyhunt doctor          # verifies tools, config, sandbox, rules, MCP registration
-easyhunt scope validate  # checks scope.yaml parses and is authorized
+cordon doctor          # verifies tools, config, sandbox, rules, MCP registration
+cordon scope validate  # checks scope.yaml parses and is authorized
 ```
 
-`easyhunt doctor` exiting with warnings is normal. Exiting with "Create a
+`cordon doctor` exiting with warnings is normal. Exiting with "Create a
 scope.yaml before running" means you cannot proceed.
 
 ---
@@ -123,7 +123,7 @@ partial report when you run out — do that rather than stopping silently.
 - **`httpx` is ambiguous.** The Python HTTP library and ProjectDiscovery's prober
   share a name. `resolve_binary()` executes candidates to identify the right one.
   Do not "fix" a collision by uninstalling the user's software.
-- **Never `pip install` into EasyHunt's own venv.** It once pulled `fastmcp-slim`
+- **Never `pip install` into Cordon's own venv.** It once pulled `fastmcp-slim`
   and broke FastMCP client support. The installer raises if you try. Use pipx.
 
 ---
@@ -144,12 +144,12 @@ partial report when you run out — do that rather than stopping silently.
 ## 7. Commands
 
 ```bash
-easyhunt doctor              # health check — run this first, always
-easyhunt doctor --fix        # repair what is present but broken
-easyhunt install             # add missing tools
-easyhunt install --core      # minimum viable pipeline only
-easyhunt serve               # MCP server, stdio
-easyhunt scope validate      # check authorization file
+cordon doctor              # health check — run this first, always
+cordon doctor --fix        # repair what is present but broken
+cordon install             # add missing tools
+cordon install --core      # minimum viable pipeline only
+cordon serve               # MCP server, stdio
+cordon scope validate      # check authorization file
 
 ./bootstrap.sh                              # fresh machine, nothing installed
 python3 scripts/vet_payloads.py --fetch     # build the vetted payload store

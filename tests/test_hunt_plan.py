@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import pytest
 
-from easyhunt.knowledge.findings import Asset
-from easyhunt.knowledge.sessions import Session
-from easyhunt.tools.hunt_plan import hunt_plan
+from cordon.knowledge.findings import Asset
+from cordon.knowledge.sessions import Session
+from cordon.tools.hunt_plan import hunt_plan
 
 pytestmark = pytest.mark.asyncio
 

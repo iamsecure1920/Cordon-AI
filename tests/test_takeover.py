@@ -11,11 +11,11 @@ from typing import Any
 import httpx
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.errors import EasyHuntError
-from easyhunt.knowledge.findings import Severity, Status
-from easyhunt.tools import takeover as tk
-from easyhunt.tools.base import REGISTRY
+from cordon.control_plane.approval import PolicyBackend
+from cordon.errors import CordonError
+from cordon.knowledge.findings import Severity, Status
+from cordon.tools import takeover as tk
+from cordon.tools.base import REGISTRY
 
 S3_BODY = "<Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message></Error>"
 
@@ -122,7 +122,7 @@ class TestVerification:
         assert any("edge case" in note for note in finding.triage_notes)
 
     async def test_out_of_scope_host_is_refused(self, engagement) -> None:
-        from easyhunt.errors import OutOfScopeError
+        from cordon.errors import OutOfScopeError
 
         with pytest.raises(OutOfScopeError):
             await REGISTRY["takeover_verify"].fn(target="blog.example.com")
@@ -172,7 +172,7 @@ class TestConfirmation:
         assert verified.status is Status.NEEDS_MANUAL_REVIEW
 
     async def test_confirm_attaches_a_reproducible_poc(self, verified, monkeypatch) -> None:
-        fake_http(200, "EasyHunt subdomain takeover proof of concept\nhost: cdn.example.com\n", monkeypatch)
+        fake_http(200, "Cordon subdomain takeover proof of concept\nhost: cdn.example.com\n", monkeypatch)
         result = await REGISTRY["takeover_confirm"].fn(
             target="cdn.example.com", proof_url="https://cdn.example.com/.well-known/x.txt"
         )
@@ -183,13 +183,13 @@ class TestConfirmation:
 
     async def test_confirm_requires_a_prior_verification(self, engagement) -> None:
         engagement.approval.backend = PolicyBackend(auto_approve=["takeover_confirm"])
-        with pytest.raises(EasyHuntError, match="run takeover_verify first"):
+        with pytest.raises(CordonError, match="run takeover_verify first"):
             await REGISTRY["takeover_confirm"].fn(
                 target="never.example.com", proof_url="https://never.example.com/x"
             )
 
     async def test_confirm_is_gated(self, engagement, monkeypatch) -> None:
-        from easyhunt.errors import ApprovalDenied
+        from cordon.errors import ApprovalDenied
 
         fake_dns({"cdn.example.com": {"CNAME": ["old.s3.amazonaws.com"], "A": []}}, monkeypatch)
         fake_http(404, S3_BODY, monkeypatch)
@@ -208,7 +208,7 @@ class TestDetectorArgvMatchesTheRealBinaries:
     """Every takeover detector was passing a flag its binary does not have.
 
     All three found by running them against the loopback lab, not by reading
-    code. `easyhunt doctor` was green for all three: it proves a binary answers
+    code. `cordon doctor` was green for all three: it proves a binary answers
     --version inside the image, which says nothing about whether the argv a
     wrapper builds is one that binary accepts.
 
@@ -223,8 +223,8 @@ class TestDetectorArgvMatchesTheRealBinaries:
     """
 
     def test_dnsreaper_uses_the_flag_its_file_provider_actually_has(self) -> None:
-        import easyhunt.tools.takeover  # noqa: F401  registers the policy
-        from easyhunt.control_plane.sanitize import get_policy
+        import cordon.tools.takeover  # noqa: F401  registers the policy
+        from cordon.control_plane.sanitize import get_policy
 
         policy = get_policy("dnsreaper")
         assert "--filename" in policy.allowed_flags, "dnsReaper's file provider takes --filename"
@@ -233,8 +233,8 @@ class TestDetectorArgvMatchesTheRealBinaries:
         )
 
     def test_subdominator_uses_domain_list_and_no_validate(self) -> None:
-        import easyhunt.tools.extra_specs  # noqa: F401  registers the policy
-        from easyhunt.control_plane.sanitize import get_policy
+        import cordon.tools.extra_specs  # noqa: F401  registers the policy
+        from cordon.control_plane.sanitize import get_policy
 
         policy = get_policy("subdominator")
         assert "--domain-list" in policy.allowed_flags
@@ -249,14 +249,14 @@ class TestDetectorArgvMatchesTheRealBinaries:
         A policy that rejects the command line its wrapper builds is the same
         failure as a wrong flag: the tool never runs and the surface reads clean.
         """
-        from easyhunt.control_plane.sanitize import sanitize_argv
-        from easyhunt.tools import takeover as tk
+        from cordon.control_plane.sanitize import sanitize_argv
+        from cordon.tools import takeover as tk
 
         seen: list[tuple[str, list[str]]] = []
 
         async def spy(name: str, argv: list[str], **kwargs):
             seen.append((name, list(argv)))
-            from easyhunt.tools.common import ToolRun
+            from cordon.tools.common import ToolRun
 
             return ToolRun(tool=name, ran=True, values=[], exit_code=0)
 

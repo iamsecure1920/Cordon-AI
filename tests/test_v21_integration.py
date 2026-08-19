@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.knowledge.attackgraph import find_finding_chains
-from easyhunt.knowledge.coverage import CoverageLedger
-from easyhunt.knowledge.findings import Finding
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools import exploit_chain as ec
-from easyhunt.tools.base import REGISTRY
-from easyhunt.tools.common import verify_output
-from easyhunt.tools.exploitation import _sqli_boundary
+from cordon.control_plane.approval import PolicyBackend
+from cordon.knowledge.attackgraph import find_finding_chains
+from cordon.knowledge.coverage import CoverageLedger
+from cordon.knowledge.findings import Finding
+from cordon.mcp_server import load_capabilities
+from cordon.tools import exploit_chain as ec
+from cordon.tools.base import REGISTRY
+from cordon.tools.common import verify_output
+from cordon.tools.exploitation import _sqli_boundary
 
 load_capabilities()
 
@@ -259,14 +259,14 @@ class TestJsEscapeNormalization:
     """P2-10: minified-bundle escapes must not hide real endpoints."""
 
     def test_escaped_slashes_reveal_endpoints(self) -> None:
-        from easyhunt.tools.js_analysis import _scan_text
+        from cordon.tools.js_analysis import _scan_text
 
         text = 'const api = "https:\\/\\/app.example.com\\/api\\/users\\?q=";'
         secrets, endpoints = _scan_text(text, "https://cdn.example.com/bundle.js")
         assert any("https://app.example.com/api/users" in e for e in endpoints)
 
     def test_unicode_slash_normalizes(self) -> None:
-        from easyhunt.tools.js_analysis import _normalize_escapes
+        from cordon.tools.js_analysis import _normalize_escapes
 
         assert _normalize_escapes("\\u002Fapi") == "/api"
         assert _normalize_escapes("https:\\/\\/h") == "https://h"

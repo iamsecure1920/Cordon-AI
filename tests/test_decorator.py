@@ -10,47 +10,47 @@ import asyncio
 
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.errors import ApprovalDenied, BudgetExceeded, OutOfScopeError, SanitizeError
-from easyhunt.tools.base import REGISTRY, easyhunt_tool, registered_tools
+from cordon.control_plane.approval import PolicyBackend
+from cordon.errors import ApprovalDenied, BudgetExceeded, OutOfScopeError, SanitizeError
+from cordon.tools.base import REGISTRY, cordon_tool, registered_tools
 
 TOUCHED: list[str] = []
 
 
-@easyhunt_tool(phase="recon", mode="passive", targets_arg="target", name="t_passive")
+@cordon_tool(phase="recon", mode="passive", targets_arg="target", name="t_passive")
 async def _passive(target: str, note: str = "") -> dict:
     """A passive probe."""
     TOUCHED.append(target)
     return {"ok": True, "hosts": [target], "note": note}
 
 
-@easyhunt_tool(phase="vuln_scan", mode="aggressive", targets_arg="target", name="t_aggressive")
+@cordon_tool(phase="vuln_scan", mode="aggressive", targets_arg="target", name="t_aggressive")
 async def _aggressive(target: str) -> dict:
     """An aggressive scan."""
     TOUCHED.append(target)
     return {"ok": True}
 
 
-@easyhunt_tool(phase="exploit", mode="exploit", targets_arg="target", name="t_exploit")
+@cordon_tool(phase="exploit", mode="exploit", targets_arg="target", name="t_exploit")
 async def _exploit(target: str) -> dict:
     """An exploitation attempt."""
     TOUCHED.append(target)
     return {"ok": True}
 
 
-@easyhunt_tool(phase="recon", mode="passive", targets_arg="target", name="t_big")
+@cordon_tool(phase="recon", mode="passive", targets_arg="target", name="t_big")
 async def _big(target: str) -> dict:
     """Returns far more than an MCP response should carry."""
     return {"ok": True, "findings": [{"host": f"h{i}.example.com", "blob": "x" * 500} for i in range(5000)]}
 
 
-@easyhunt_tool(phase="recon", mode="passive", targets_arg=None, name="t_untargeted")
+@cordon_tool(phase="recon", mode="passive", targets_arg=None, name="t_untargeted")
 async def _untargeted() -> dict:
     """A tool that touches no specific target."""
     return {"ok": True}
 
 
-@easyhunt_tool(phase="recon", mode="passive", targets_arg="target", name="t_raises")
+@cordon_tool(phase="recon", mode="passive", targets_arg="target", name="t_raises")
 async def _raises(target: str) -> dict:
     """A tool whose body fails."""
     raise RuntimeError("upstream tool exploded")

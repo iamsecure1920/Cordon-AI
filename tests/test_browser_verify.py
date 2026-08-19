@@ -10,11 +10,11 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from easyhunt.config import Config
-from easyhunt.control_plane.context import Engagement, set_engagement
-from easyhunt.control_plane.scope import Scope
-from easyhunt.knowledge.findings import Severity
-from easyhunt.tools.browser_verify import (
+from cordon.config import Config
+from cordon.control_plane.context import Engagement, set_engagement
+from cordon.control_plane.scope import Scope
+from cordon.knowledge.findings import Severity
+from cordon.tools.browser_verify import (
     Reflection,
     build_target_url,
     classify_reflection,
@@ -69,7 +69,7 @@ def lab_url() -> str:
 
 @pytest.fixture(scope="module")
 def engagement(lab_url: str, tmp_path_factory: pytest.TempPathFactory):
-    from easyhunt.control_plane.approval import PolicyBackend
+    from cordon.control_plane.approval import PolicyBackend
     from tests.conftest import scope_dict
 
     root = tmp_path_factory.mktemp("browser-verify")
@@ -153,8 +153,8 @@ class TestSnippet:
 class TestLiveBrowser:
     def test_execution_files_high_finding(self, engagement, lab_url: str) -> None:
         """An executed payload is the PoC — HIGH finding with screenshot evidence."""
-        import easyhunt.tools.browser_verify  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.browser_verify  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         result = asyncio.run(
             REGISTRY["browser_verify"].fn(
@@ -172,8 +172,8 @@ class TestLiveBrowser:
 
     def test_plain_echo_files_nothing(self, engagement, lab_url: str) -> None:
         """A plain token echoed back is NOT a finding (false-positive guard)."""
-        import easyhunt.tools.browser_verify  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.browser_verify  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         before = len(engagement.findings.all())
         result = asyncio.run(

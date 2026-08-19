@@ -28,11 +28,11 @@ from typing import Any
 
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.control_plane.sanitize import sanitize_argv
-from easyhunt.tools import smuggling_framework as sf
-from easyhunt.tools.base import REGISTRY
-from easyhunt.tools.common import ToolRun
+from cordon.control_plane.approval import PolicyBackend
+from cordon.control_plane.sanitize import sanitize_argv
+from cordon.tools import smuggling_framework as sf
+from cordon.tools.base import REGISTRY
+from cordon.tools.common import ToolRun
 
 pytestmark = pytest.mark.asyncio
 
@@ -82,13 +82,13 @@ def drive(monkeypatch, engagement, report: dict[str, Any] | None, *, ran: bool =
 
 class TestRegistration:
     async def test_the_tool_is_registered(self) -> None:
-        import easyhunt.mcp_server as mcp
+        import cordon.mcp_server as mcp
 
         mcp.load_capabilities()
         assert "smuggling_canary_probe" in REGISTRY
 
     async def test_it_is_aggressive_not_passive(self) -> None:
-        import easyhunt.mcp_server as mcp
+        import cordon.mcp_server as mcp
 
         mcp.load_capabilities()
         entry = REGISTRY["smuggling_canary_probe"]

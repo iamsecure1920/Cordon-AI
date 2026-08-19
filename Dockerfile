@@ -1,10 +1,10 @@
-# EasyHunt AI — reproducible toolchain in one image.
+# Cordon AI — reproducible toolchain in one image.
 #
-# Host installs leave EasyHunt at the mercy of whatever else is on PATH: Kali
+# Host installs leave Cordon at the mercy of whatever else is on PATH: Kali
 # ships an `httpx` that is the Python HTTP library's CLI and a `medusa` that is a
 # password brute-forcer, both shadowing the security tools of the same name.
 #
-# A purpose-built image removes the *host's* collisions but not our own. EasyHunt
+# A purpose-built image removes the *host's* collisions but not our own. Cordon
 # depends on the Python httpx library, whose console script installs to
 # /usr/local/bin/httpx and overwrote ProjectDiscovery's binary outright — the Go
 # tool was not shadowed, it was replaced by a 292-byte shim. Verified in a built
@@ -14,8 +14,8 @@
 # copied last, and the build asserts the right httpx survived. resolve_binary()
 # remains the runtime backstop.
 #
-#   docker build -t easyhunt .
-#   docker run --rm -it -v "$PWD:/work" -w /work easyhunt easyhunt doctor
+#   docker build -t cordon .
+#   docker run --rm -it -v "$PWD:/work" -w /work cordon cordon doctor
 #
 # Multi-stage: compilers stay in the builders, only binaries reach the runtime.
 #
@@ -123,7 +123,7 @@ RUN CGO_ENABLED=1 go install -v github.com/BishopFox/jsluice/cmd/jsluice@latest 
 # upstream failure was wrong, and being written down is why nobody re-tried it.
 #
 # Each is still attempted rather than required; failures are printed and
-# `easyhunt doctor` reports which are absent, so a missing tool is a known gap
+# `cordon doctor` reports which are absent, so a missing tool is a known gap
 # and not a quiet one.
 #
 # amass: the v5 module path is tried first and the v4 path is the fallback. As
@@ -190,7 +190,7 @@ RUN cargo install --locked feroxbuster
 # --------------------------------------------------------------------------- #
 FROM python:3.12-slim-bookworm
 
-LABEL org.opencontainers.image.title="EasyHunt AI"
+LABEL org.opencontainers.image.title="Cordon AI"
 LABEL org.opencontainers.image.description="Agentic VAPT orchestrator — authorized testing only"
 LABEL org.opencontainers.image.licenses="MIT"
 
@@ -225,7 +225,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 
 # Python security tools, each isolated. The one rule that must not be broken:
-# never install these into EasyHunt's own environment — `pip install semgrep`
+# never install these into Cordon's own environment — `pip install semgrep`
 # once pulled in fastmcp-slim and removed FastMCP's client support, breaking the
 # application that was doing the installing.
 RUN uv tool install --python 3.12 semgrep && \
@@ -237,7 +237,7 @@ RUN uv tool install --python 3.12 arjun && \
 ENV PATH="/root/.local/bin:${PATH}"
 
 # --------------------------------------------------------------------------- #
-# Attack-class tools EasyHunt lacked
+# Attack-class tools Cordon lacked
 # --------------------------------------------------------------------------- #
 #
 # Added after auditing bhavsec/autopentest-ai's container, which carried 13 tools
@@ -266,7 +266,7 @@ ENV PATH="/root/.local/bin:${PATH}"
 #                       it stops on "You need to install ps". slim has no ps.
 #
 # These two tools are the reason the assertion block at the end of this stage
-# exists: neither is in the tool CATALOG, so `easyhunt doctor` never looked at
+# exists: neither is in the tool CATALOG, so `cordon doctor` never looked at
 # them, and both shipped present-but-100%-non-functional for as long as they had
 # been in the image. Nothing in the system would ever have reported it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -334,7 +334,7 @@ RUN uv tool install --python 3.12 waymore || echo "!!! FAILED: waymore"
 # garak is NOT installed here on purpose. It pulls PyTorch and the transformers
 # stack: **5.53 GB**, a third of the image, for an LLM red-team tool that most
 # engagements never invoke. It runs on the host, where it already worked, and
-# `easyhunt doctor` reports it as host-resident rather than pretending otherwise.
+# `cordon doctor` reports it as host-resident rather than pretending otherwise.
 #
 # This is the one place the sandbox-everything rule loses on cost. Recorded here
 # rather than left as an unexplained absence, because an unexplained absence is
@@ -352,7 +352,7 @@ RUN uv tool install --python 3.12 wapiti3 || echo "!!! FAILED: wapiti3"
 RUN uv tool install --python 3.12 corscanner || echo "!!! FAILED: corscanner"
 
 # Python tools that do not publish usable wheels: cloned, with their own venv so
-# nothing lands in EasyHunt's interpreter.
+# nothing lands in Cordon's interpreter.
 #
 # Every venv gets setuptools<81 pinned into it. dnsreaper pulls google-cloud-dns,
 # which imports pkg_resources at module scope; setuptools 81 dropped it. The pin
@@ -410,7 +410,7 @@ RUN apt-get update -qq && \
 # silently skips the DOM entirely — it scans, finds nothing, and `xss_validate`
 # reports "not vulnerable" for the most common modern XSS class. The Python
 # `_headless_available()` in exploitation.py probes for chromium/chrome inside
-# the image dalfox *actually* runs in (easyhunt:latest, after the dalfox image
+# the image dalfox *actually* runs in (cordon:latest, after the dalfox image
 # mapping was removed), so installing it here is what flips that check from
 # "DOM XSS untested" to "tested".
 #
@@ -474,9 +474,9 @@ RUN ARCH=$(dpkg --print-architecture) && \
 RUN chmod a+rx /root 2>/dev/null || true; \
     find /root/.local -type d -exec chmod a+rx {} + 2>/dev/null || true
 
-WORKDIR /opt/easyhunt
+WORKDIR /opt/cordon
 COPY pyproject.toml README.md ./
-COPY easyhunt/ ./easyhunt/
+COPY cordon/ ./cordon/
 
 # Application data, not engagement data. These belong in the image: the
 # engagement workspace is what gets mounted at /work.
@@ -502,12 +502,12 @@ COPY payloads/manifest.json ./payloads.manifest.json
 # than an isolated tool install — a pipx-style install would give a working CLI
 # and an ImportError.
 #
-# setuptools writes build/ and easyhunt_ai.egg-info/ into the source tree while
+# setuptools writes build/ and cordon_ai.egg-info/ into the source tree while
 # building the wheel. They are removed in this same layer — a later `rm` would
 # leave them in this one and shrink nothing.
 RUN uv pip install --system --no-cache . && \
     uv pip install --system --no-cache "bbot>=3.0" "fastmcp==3.4.5" && \
-    rm -rf /opt/easyhunt/build /opt/easyhunt/easyhunt_ai.egg-info /opt/easyhunt/*.egg-info
+    rm -rf /opt/cordon/build /opt/cordon/cordon_ai.egg-info /opt/cordon/*.egg-info
 
 # Security binaries land LAST, after every Python install, so that a package's
 # console script cannot replace a scanner of the same name.
@@ -524,7 +524,7 @@ RUN httpx -version 2>&1 | grep -qi projectdiscovery \
 
 # nikto and testssl are asserted by *running* them. Both shipped installed and
 # completely non-functional — nikto could not load XML::Writer, testssl could not
-# find hexdump — and because neither appears in the tool CATALOG, `easyhunt
+# find hexdump — and because neither appears in the tool CATALOG, `cordon
 # doctor` had no opinion about either. A `test -x` would have passed the whole
 # time. Content is matched rather than exit status, since a version banner is not
 # obliged to exit 0.
@@ -548,7 +548,7 @@ EOF
 # --------------------------------------------------------------------------- #
 #
 # Two of the data loaders resolve their directory relative to *the package*, not
-# to /opt/easyhunt:
+# to /opt/cordon:
 #
 #   knowledge/wstg.py   INDEX_PATH = <pkg>/../.. / knowledge/wstg/index.json
 #   knowledge/payloads.py  a relative `store:` resolves to <pkg>/../.. / payloads
@@ -556,35 +556,35 @@ EOF
 # On a developer checkout <pkg>/../.. is the repo root and everything lines up.
 # In this image the wheel is installed into site-packages, so those loaders look
 # in /usr/local/lib/python3.12/site-packages — which is why the old build-time
-# `test -s /opt/easyhunt/knowledge/wstg/index.json` passed on an image where
+# `test -s /opt/cordon/knowledge/wstg/index.json` passed on an image where
 # `wstg_lookup` still answered "index not built". The file was there; it was not
 # where the code reads from. That is the same defect as the payload one, one
 # directory over, and asserting on the wrong path is what hid it.
 #
-# The image keeps one copy of the data, under /opt/easyhunt where the docs say it
+# The image keeps one copy of the data, under /opt/cordon where the docs say it
 # is and where a volume mount can reach it, and points the package-relative
 # lookup at it. Assertions below go through the loaders themselves so this
 # cannot silently come apart again.
 #
-# `cd /` is load-bearing. WORKDIR here is /opt/easyhunt, which holds the source
-# tree, so python puts it on sys.path first and `import easyhunt` returns the
+# `cd /` is load-bearing. WORKDIR here is /opt/cordon, which holds the source
+# tree, so python puts it on sys.path first and `import cordon` returns the
 # *checkout* — whose parent already contains knowledge/ and payloads/. The first
 # version of this stanza did exactly that: it printed a data root of
-# /opt/easyhunt, linked the directories onto themselves, and every assertion
+# /opt/cordon, linked the directories onto themselves, and every assertion
 # below passed against a package the runtime never loads. Console scripts run
 # from /work and import site-packages. Assert which one you have.
 RUN <<'EOF'
 set -eu
 cd /
-PKG_ROOT="$(python3 -c 'import easyhunt, pathlib; print(pathlib.Path(easyhunt.__file__).resolve().parent.parent)')"
+PKG_ROOT="$(python3 -c 'import cordon, pathlib; print(pathlib.Path(cordon.__file__).resolve().parent.parent)')"
 echo "package data root: $PKG_ROOT"
 case "$PKG_ROOT" in
   */site-packages) ;;
-  *) echo "FATAL: easyhunt imported from $PKG_ROOT, not the installed wheel"; exit 1 ;;
+  *) echo "FATAL: cordon imported from $PKG_ROOT, not the installed wheel"; exit 1 ;;
 esac
-mkdir -p /opt/easyhunt/payloads
-ln -sfn /opt/easyhunt/knowledge "$PKG_ROOT/knowledge"
-ln -sfn /opt/easyhunt/payloads  "$PKG_ROOT/payloads"
+mkdir -p /opt/cordon/payloads
+ln -sfn /opt/cordon/knowledge "$PKG_ROOT/knowledge"
+ln -sfn /opt/cordon/payloads  "$PKG_ROOT/payloads"
 ls -ld "$PKG_ROOT/knowledge" "$PKG_ROOT/payloads"
 EOF
 
@@ -605,7 +605,7 @@ EOF
 # nothing useful. Here, absence is:
 #
 #   * announced on every container start, by the entrypoint, with the two
-#     commands that fix it (unless EASYHUNT_QUIET is set);
+#     commands that fix it (unless CORDON_QUIET is set);
 #   * reported honestly by the tools — payload_catalog answers
 #     {"error": "store_not_built"} with the fix command, and content_discovery
 #     refuses list names while still accepting workspace wordlist paths;
@@ -620,7 +620,7 @@ EOF
 #
 # For a private image you are not going to distribute:
 #
-#   docker build --build-arg FETCH_PAYLOADS=1 -t easyhunt .
+#   docker build --build-arg FETCH_PAYLOADS=1 -t cordon .
 #
 # which fetches from the pinned commit at build time (reproducible for as long as
 # upstream keeps that SHA reachable), and deletes tier C in the same layer so the
@@ -631,7 +631,7 @@ ARG FETCH_PAYLOADS=0
 # `docker inspect` rather than by remembering how it was built.
 #   0 = no third-party payload data; distributable under the project's MIT terms
 #   1 = contains all-rights-reserved upstream wordlists; DO NOT distribute
-LABEL com.easyhunt.payloads.bundled="${FETCH_PAYLOADS}"
+LABEL com.cordon.payloads.bundled="${FETCH_PAYLOADS}"
 
 RUN <<'EOF'
 set -eu
@@ -641,11 +641,11 @@ if [ "${FETCH_PAYLOADS:-0}" != "1" ]; then
   exit 0
 fi
 echo "payload store: FETCH_PAYLOADS=1 — building from the pinned commit"
-python3 /opt/easyhunt/scripts/vet_payloads.py --fetch
+python3 /opt/cordon/scripts/vet_payloads.py --fetch
 # Same layer as the fetch. A later RUN would delete the quarantine from the
 # filesystem and leave every byte of it in the layer underneath, still pullable.
-rm -rf /opt/easyhunt/payloads/_quarantine /opt/easyhunt/payloads/_src
-python3 /opt/easyhunt/scripts/vet_payloads.py --verify || true
+rm -rf /opt/cordon/payloads/_quarantine /opt/cordon/payloads/_src
+python3 /opt/cordon/scripts/vet_payloads.py --verify || true
 EOF
 
 # Assert the application data is present *through the code that reads it*. A
@@ -654,7 +654,7 @@ EOF
 # design against.
 RUN <<'EOF'
 set -eu
-test -d /opt/easyhunt/rules || { echo "FATAL: rules/ missing"; exit 1; }
+test -d /opt/cordon/rules || { echo "FATAL: rules/ missing"; exit 1; }
 # From /, so this exercises the installed wheel — the package a console script
 # loads — and not the source tree sitting in WORKDIR. See the stanza above.
 cd /
@@ -663,10 +663,10 @@ import json
 import pathlib
 import sys
 
-import easyhunt
-from easyhunt.config import Config
-from easyhunt.knowledge.payloads import store_from_config
-from easyhunt.knowledge.wstg import INDEX_PATH, load_index
+import cordon
+from cordon.config import Config
+from cordon.knowledge.payloads import store_from_config
+from cordon.knowledge.wstg import INDEX_PATH, load_index
 
 
 def fatal(msg: str) -> None:
@@ -674,8 +674,8 @@ def fatal(msg: str) -> None:
     sys.exit(1)
 
 
-print(f"asserting against: {easyhunt.__file__}")
-if "site-packages" not in easyhunt.__file__:
+print(f"asserting against: {cordon.__file__}")
+if "site-packages" not in cordon.__file__:
     fatal("assertions ran against a source tree, not the installed package")
 
 # ── WSTG ────────────────────────────────────────────────────────────────────
@@ -687,11 +687,11 @@ if tests <= 100:
     fatal("WSTG index parsed but holds fewer than 100 tests")
 
 # ── Payload store ───────────────────────────────────────────────────────────
-store = store_from_config(Config.load("/opt/easyhunt/config.example.yaml"))
+store = store_from_config(Config.load("/opt/cordon/config.example.yaml"))
 print(f"payload store root: {store.root}")
-if store.root != pathlib.Path("/opt/easyhunt/payloads"):
+if store.root != pathlib.Path("/opt/cordon/payloads"):
     fatal(
-        f"payload store resolves to {store.root}, not /opt/easyhunt/payloads — "
+        f"payload store resolves to {store.root}, not /opt/cordon/payloads — "
         "vet_payloads.py --fetch and any volume mount would write somewhere the "
         "tools do not read"
     )
@@ -701,7 +701,7 @@ if store.root != pathlib.Path("/opt/easyhunt/payloads"):
 if (store.root / "_quarantine").exists():
     fatal("tier C quarantine is present in the image")
 
-reference = pathlib.Path("/opt/easyhunt/payloads.manifest.json")
+reference = pathlib.Path("/opt/cordon/payloads.manifest.json")
 if not reference.is_file():
     fatal("payloads.manifest.json missing — the store's provenance must ship")
 manifest = json.loads(reference.read_text(encoding="utf-8"))
@@ -739,19 +739,19 @@ EOF
 #
 # The one thing a fresh container must not do is answer "no payloads" with no
 # explanation. This prints nothing at all when the store is present, and an
-# actionable notice when it is not. It goes to stderr: `easyhunt serve` speaks
+# actionable notice when it is not. It goes to stderr: `cordon serve` speaks
 # MCP over stdout and a banner there would corrupt the protocol stream.
 RUN <<'EOF'
 set -eu
-cat > /usr/local/bin/easyhunt-entrypoint <<'SH'
+cat > /usr/local/bin/cordon-entrypoint <<'SH'
 #!/bin/sh
 # Reports absent capabilities, then execs the requested command unchanged.
-[ "$#" -eq 0 ] && set -- easyhunt doctor
+[ "$#" -eq 0 ] && set -- cordon doctor
 
-if [ -z "${EASYHUNT_QUIET:-}" ] && [ ! -d /opt/easyhunt/payloads/A ]; then
+if [ -z "${CORDON_QUIET:-}" ] && [ ! -d /opt/cordon/payloads/A ]; then
   cat >&2 <<'BANNER'
 ──────────────────────────────────────────────────────────────────────────────
-EasyHunt: the vetted payload store is NOT in this image.
+Cordon: the vetted payload store is NOT in this image.
 
   payload_catalog    -> {"ok": false, "error": "store_not_built"}
   content_discovery  -> refuses wordlist NAMES ("juicy-paths", "admin", ...)
@@ -760,29 +760,29 @@ EasyHunt: the vetted payload store is NOT in this image.
 
 Why: the upstream lists (coffinxp/payloads, pinned) declare no licence, so they
 are all-rights-reserved and are not redistributed inside a built image. Their
-names, tiers and SHA-256s are in /opt/easyhunt/payloads.manifest.json.
+names, tiers and SHA-256s are in /opt/cordon/payloads.manifest.json.
 
 Fix it, either way:
 
   1. Build it on the host once, mount it read-only (survives container restarts):
        python3 scripts/vet_payloads.py --fetch
-       docker run -v "$PWD/payloads:/opt/easyhunt/payloads:ro" ... easyhunt
+       docker run -v "$PWD/payloads:/opt/cordon/payloads:ro" ... cordon
 
   2. Build it inside this container (needs network; lost when the container is
-     removed unless /opt/easyhunt/payloads is a volume):
-       python3 /opt/easyhunt/scripts/vet_payloads.py --fetch
+     removed unless /opt/cordon/payloads is a volume):
+       python3 /opt/cordon/scripts/vet_payloads.py --fetch
 
   Or bake it into a private image you will not distribute:
-       docker build --build-arg FETCH_PAYLOADS=1 -t easyhunt .
+       docker build --build-arg FETCH_PAYLOADS=1 -t cordon .
 
-Silence this notice with EASYHUNT_QUIET=1.
+Silence this notice with CORDON_QUIET=1.
 ──────────────────────────────────────────────────────────────────────────────
 BANNER
 fi
 
 exec "$@"
 SH
-chmod +x /usr/local/bin/easyhunt-entrypoint
+chmod +x /usr/local/bin/cordon-entrypoint
 EOF
 
 
@@ -809,7 +809,7 @@ WORKDIR /work
 # image authorizes anything, and no scope file is baked in.
 #
 # The entrypoint is a reporter, not a wrapper: it prints what is missing and then
-# `exec "$@"`, so `docker run easyhunt <anything>` behaves exactly as it did when
+# `exec "$@"`, so `docker run cordon <anything>` behaves exactly as it did when
 # ENTRYPOINT was empty.
-ENTRYPOINT ["/usr/local/bin/easyhunt-entrypoint"]
-CMD ["easyhunt", "doctor"]
+ENTRYPOINT ["/usr/local/bin/cordon-entrypoint"]
+CMD ["cordon", "doctor"]

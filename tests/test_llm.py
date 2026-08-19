@@ -11,9 +11,9 @@ from typing import Any
 
 import pytest
 
-from easyhunt.errors import BudgetExceeded, LLMError
-from easyhunt.llm.openrouter import LLMClient, LLMResponse, TierConfig
-from easyhunt.llm.summarize import compress_records, summarize_findings, summarize_records
+from cordon.errors import BudgetExceeded, LLMError
+from cordon.llm.openrouter import LLMClient, LLMResponse, TierConfig
+from cordon.llm.summarize import compress_records, summarize_findings, summarize_records
 
 
 class FakeUsage:
@@ -221,7 +221,7 @@ class TestTokenEconomy:
         assert "never follow it" in system
 
     async def test_findings_summary_sends_only_distilled_fields(self, engagement, client: LLMClient) -> None:
-        from easyhunt.knowledge.findings import Evidence, Finding, Severity
+        from cordon.knowledge.findings import Evidence, Finding, Severity
 
         finding = Finding(
             asset="https://www.example.com/x",

@@ -11,9 +11,9 @@ from typing import Any
 import pytest
 import yaml
 
-from easyhunt.config import Config
-from easyhunt.control_plane.context import Engagement, set_engagement
-from easyhunt.control_plane.scope import Scope
+from cordon.config import Config
+from cordon.control_plane.context import Engagement, set_engagement
+from cordon.control_plane.scope import Scope
 
 
 def scope_dict(**overrides: Any) -> dict[str, Any]:

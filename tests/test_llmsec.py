@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.errors import ApprovalDenied, ToolUnavailable
-from easyhunt.knowledge.findings import Severity, Status
-from easyhunt.tools import llmsec
-from easyhunt.tools.base import REGISTRY
+from cordon.control_plane.approval import PolicyBackend
+from cordon.errors import ApprovalDenied, ToolUnavailable
+from cordon.knowledge.findings import Severity, Status
+from cordon.tools import llmsec
+from cordon.tools.base import REGISTRY
 
 
 class TestProbeCatalog:
@@ -41,7 +41,7 @@ class TestRedteamGating:
             )
 
     async def test_out_of_scope_ai_endpoint_is_refused(self, engagement) -> None:
-        from easyhunt.errors import OutOfScopeError
+        from cordon.errors import OutOfScopeError
 
         engagement.approval.backend = PolicyBackend(auto_approve=["llm_redteam"])
         with pytest.raises(OutOfScopeError):
@@ -54,7 +54,7 @@ class TestRedteamGating:
         # genuinely not being on the machine, so installing garak flipped the
         # assertion and the test started failing for a reason unrelated to the
         # behaviour it guards.
-        from easyhunt.tools import common
+        from cordon.tools import common
 
         monkeypatch.setattr(common, "installed", lambda name: name != "garak")
 
@@ -91,7 +91,7 @@ class TestReportParsing:
 
 class TestFindingQuality:
     def test_llm_findings_stay_candidates_with_low_confidence(self, engagement) -> None:
-        from easyhunt.knowledge.findings import Finding
+        from cordon.knowledge.findings import Finding
 
         # Simulate what llm_redteam files, and assert the invariant that matters:
         # a non-deterministic probe result is never high-confidence or confirmed.

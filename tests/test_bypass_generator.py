@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from easyhunt.knowledge.bypass import BypassError, generate_regex_bypass
+from cordon.knowledge.bypass import BypassError, generate_regex_bypass
 
 
 class TestGenerator:

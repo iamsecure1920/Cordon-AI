@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from easyhunt.control_plane.scope import Scope, normalize_target
-from easyhunt.errors import ConfigError, OutOfScopeError, StaleScopeError
+from cordon.control_plane.scope import Scope, normalize_target
+from cordon.errors import ConfigError, OutOfScopeError, StaleScopeError
 
 from .conftest import scope_dict
 
@@ -252,7 +252,7 @@ class TestUneditedTemplateIsLoud:
         raw["engagement"]["name"] = "acme-bbp"
         raw["engagement"]["program_url"] = "https://hackerone.com/acme/policy"
         raw["engagement"]["researcher_handle"] = "a-real-handle"
-        raw["rules"]["user_agent"] = "EasyHunt-AI/2.0 (authorized; contact=a-real-handle)"
+        raw["rules"]["user_agent"] = "Cordon-AI/2.0 (authorized; contact=a-real-handle)"
         raw["in_scope"]["domains"] = ["acme.test"]
         raw["in_scope"]["wildcards"] = ["*.acme.test"]
         raw["in_scope"]["regex"] = []
@@ -276,7 +276,7 @@ class TestUneditedTemplateIsLoud:
         raw = yaml.safe_load(Path("scope.example.yaml").read_text(encoding="utf-8"))
         raw["engagement"]["name"] = "looks-real"
         raw["engagement"]["researcher_handle"] = "someone"
-        raw["rules"]["user_agent"] = "EasyHunt-AI/2.0 (authorized; contact=someone)"
+        raw["rules"]["user_agent"] = "Cordon-AI/2.0 (authorized; contact=someone)"
         path = tmp_path / "scope.yaml"
         path.write_text(yaml.safe_dump(raw), encoding="utf-8")
 
@@ -296,7 +296,7 @@ class TestTemplatePlaceholdersAreCaught:
     def _scope(self, tmp_path, **engagement):
         import yaml
 
-        from easyhunt.control_plane.scope import Scope
+        from cordon.control_plane.scope import Scope
 
         doc = scope_dict()
         doc["engagement"].update(engagement)
@@ -326,12 +326,12 @@ class TestScanCeilingRule:
     estates (a coverage decision no operator ever made)."""
 
     def test_default_is_3600(self) -> None:
-        from easyhunt.control_plane.scope import ScopeRules
+        from cordon.control_plane.scope import ScopeRules
 
         assert ScopeRules.from_dict({}).scan_ceiling_seconds == 3600.0
 
     def test_parses_explicit_value(self) -> None:
-        from easyhunt.control_plane.scope import ScopeRules
+        from cordon.control_plane.scope import ScopeRules
 
         rules = ScopeRules.from_dict({"scan_ceiling_seconds": 21600})
         assert rules.scan_ceiling_seconds == 21600.0

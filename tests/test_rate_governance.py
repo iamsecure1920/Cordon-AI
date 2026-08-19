@@ -33,11 +33,11 @@ from typing import Any
 
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.control_plane.sanitize import sanitize_argv
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools.base import REGISTRY
-from easyhunt.tools.common import CATALOG, ToolRun
+from cordon.control_plane.approval import PolicyBackend
+from cordon.control_plane.sanitize import sanitize_argv
+from cordon.mcp_server import load_capabilities
+from cordon.tools.base import REGISTRY
+from cordon.tools.common import CATALOG, ToolRun
 
 load_capabilities()
 
@@ -85,7 +85,7 @@ def _spy(monkeypatch: pytest.MonkeyPatch, module: str) -> list[dict[str, Any]]:
     """
     import importlib
 
-    target = importlib.import_module(f"easyhunt.tools.{module}")
+    target = importlib.import_module(f"cordon.tools.{module}")
     calls: list[dict[str, Any]] = []
 
     async def fake_run_one(name: str, argv: list[str], **kwargs: Any) -> ToolRun:
@@ -129,7 +129,7 @@ class TestRpsFlagsEqualMaxRps:
         engagement.scope.rules.max_rps = rps
         calls = _spy(monkeypatch, "recon")
         monkeypatch.setattr(
-            "easyhunt.tools.recon._detect_wildcard",
+            "cordon.tools.recon._detect_wildcard",
             _no_wildcard,
         )
         await REGISTRY["subdomain_enum"].fn(target="example.com")
@@ -322,7 +322,7 @@ class TestRateIsNotCallerControlled:
         argv built from parsed tool output, and that is the path where a rate could
         be reintroduced without anyone editing a wrapper.
         """
-        from easyhunt.errors import SanitizeError
+        from cordon.errors import SanitizeError
 
         _, flag = spec_flag
         policy = CATALOG[tool].arg_policy
@@ -357,7 +357,7 @@ class TestEveryWrapperArgvSurvivesItsOwnPolicy:
 
     def test_dig_still_refuses_an_unlisted_plus_option(self) -> None:
         """Widening the pattern must not turn it into 'anything starting with +'."""
-        from easyhunt.errors import SanitizeError
+        from cordon.errors import SanitizeError
 
         with pytest.raises(SanitizeError):
             sanitize_argv("dig", ["+trace"], policy=CATALOG["dig"].arg_policy)
@@ -366,7 +366,7 @@ class TestEveryWrapperArgvSurvivesItsOwnPolicy:
         self, engagement, monkeypatch
     ) -> None:
         """The end-to-end consequence: a CNAME lookup that returns something."""
-        import easyhunt.tools.takeover as tk
+        import cordon.tools.takeover as tk
 
         async def fake_run_one(name: str, argv: list[str], **kwargs: Any) -> ToolRun:
             sanitize_argv(name, list(argv), policy=CATALOG[name].arg_policy)
@@ -511,7 +511,7 @@ class TestInProcessRequestsAreCharged:
         Three queries is not a lot, but "the limiter never saw it" is the whole
         class of bug this file exists for, and it was in the codebase.
         """
-        from easyhunt.tools.recon import _detect_wildcard
+        from cordon.tools.recon import _detect_wildcard
 
         calls = _spy(monkeypatch, "recon")
         granted_before = engagement.limiter.stats()["calls_granted"]
@@ -526,7 +526,7 @@ class TestInProcessRequestsAreCharged:
         self, engagement, monkeypatch
     ) -> None:
         """A missing dig must not read as 'this domain has no wildcard'."""
-        import easyhunt.tools.recon as recon
+        import cordon.tools.recon as recon
 
         async def absent(name: str, argv: list[str], **kwargs: Any) -> ToolRun:
             return ToolRun(tool=name, ran=False, error="not installed")
@@ -656,7 +656,7 @@ class TestCostIsChargedPerRequest:
     async def test_the_charge_tracks_the_declared_request_count(
         self, engagement, monkeypatch
     ) -> None:
-        from easyhunt.control_plane.ratelimit import RateLimiter
+        from cordon.control_plane.ratelimit import RateLimiter
 
         limiter = RateLimiter(rps=1000, concurrency=5)
         engagement.limiter = limiter
@@ -672,7 +672,7 @@ class TestCostIsChargedPerRequest:
     @pytest.mark.parametrize("cost", [1, 50, 400])
     async def test_charge_is_the_cost_not_the_call_count(self, cost: int) -> None:
         """Vary the cost; the charge must follow it, not stay at 1."""
-        from easyhunt.control_plane.ratelimit import RateLimiter
+        from cordon.control_plane.ratelimit import RateLimiter
 
         limiter = RateLimiter(rps=10_000, concurrency=5)
         async with limiter.slot(host="example.com", cost=cost, tool="t"):
@@ -683,7 +683,7 @@ class TestCostIsChargedPerRequest:
 
     async def test_a_tool_declaring_nothing_still_costs_one(self) -> None:
         """The honest floor: a call was made, so a call is charged."""
-        from easyhunt.control_plane.ratelimit import RateLimiter
+        from cordon.control_plane.ratelimit import RateLimiter
 
         limiter = RateLimiter(rps=10_000, concurrency=5)
         async with limiter.slot(host="example.com"):
@@ -701,8 +701,8 @@ class TestCostIsChargedPerRequest:
         killed scan reporting zero findings: the number that comes back is
         indistinguishable from a compliant one.
         """
-        from easyhunt.control_plane.ratelimit import RateLimiter
-        from easyhunt.errors import RateLimited
+        from cordon.control_plane.ratelimit import RateLimiter
+        from cordon.errors import RateLimited
 
         limiter = RateLimiter(rps=rps, concurrency=5)
         with pytest.raises(RateLimited) as err:
@@ -715,8 +715,8 @@ class TestCostIsChargedPerRequest:
 
     async def test_a_refused_call_never_takes_a_concurrency_slot(self) -> None:
         """A call that cannot run must not occupy a slot other work could use."""
-        from easyhunt.control_plane.ratelimit import RateLimiter
-        from easyhunt.errors import RateLimited
+        from cordon.control_plane.ratelimit import RateLimiter
+        from cordon.errors import RateLimited
 
         limiter = RateLimiter(rps=1, concurrency=1)
         for _ in range(3):
@@ -735,7 +735,7 @@ class TestCostIsChargedPerRequest:
         fully bind, and `requests_unenforced` says so — a report claiming
         compliance while silently absorbing the excess would be wrong.
         """
-        from easyhunt.control_plane.ratelimit import RateLimiter
+        from cordon.control_plane.ratelimit import RateLimiter
 
         limiter = RateLimiter(rps=10, concurrency=5)
         async with limiter.slot(host="example.com", cost=5_000, tool="heavy"):
@@ -751,7 +751,7 @@ class TestCostIsChargedPerRequest:
         """max_rps remains the thing that actually governs throughput."""
         import time
 
-        from easyhunt.control_plane.ratelimit import RateLimiter
+        from cordon.control_plane.ratelimit import RateLimiter
 
         limiter = RateLimiter(rps=rps, concurrency=10)
         started = time.monotonic()

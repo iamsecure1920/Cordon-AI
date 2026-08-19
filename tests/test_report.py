@@ -7,10 +7,10 @@ import json
 
 import pytest
 
-import easyhunt.tools.report_tools  # noqa: F401 — registers the tools
-from easyhunt.knowledge.findings import Evidence, Finding, PoC, Severity, Status
-from easyhunt.report.synthesize import generate_report
-from easyhunt.tools.base import REGISTRY
+import cordon.tools.report_tools  # noqa: F401 — registers the tools
+from cordon.knowledge.findings import Evidence, Finding, PoC, Severity, Status
+from cordon.report.synthesize import generate_report
+from cordon.tools.base import REGISTRY
 
 
 @pytest.fixture
@@ -167,7 +167,7 @@ class TestPartialReports:
         assert "absence of a finding as unknown" in text
 
     async def test_budget_abort_marks_the_report_partial(self, populated) -> None:
-        from easyhunt.errors import BudgetExceeded
+        from cordon.errors import BudgetExceeded
 
         # Ceilings are opt-in since the default flipped to enforce: false;
         # this test exercises the ceiling, so it must ask for one.

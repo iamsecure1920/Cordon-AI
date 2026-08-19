@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from easyhunt.control_plane.jobs import JobManager
+from cordon.control_plane.jobs import JobManager
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def _load_phase():
     """Import scripts/phase.py as a module (it is not a package)."""
     spec = importlib.util.spec_from_file_location(
-        "easyhunt_phase_script", str(ROOT / "scripts" / "phase.py")
+        "cordon_phase_script", str(ROOT / "scripts" / "phase.py")
     )
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
@@ -88,7 +88,7 @@ def _write_audit(workspace: Path, engagement: str) -> None:
 def test_workspace_matches_only_its_own_scope(tmp_path) -> None:
     """The resume marker must not hand a phase a foreign engagement's workspace.
 
-    Regression: after one engagement, the .easyhunt-run marker pointed at the
+    Regression: after one engagement, the .cordon-run marker pointed at the
     acme-bbp workspace. Starting the next engagement reused it, so every phase
     inherited the previous engagement's exhausted budget (instant BudgetExceeded) and its 96
     out-of-scope subdomains (instant OutOfScopeError). A workspace belongs to
@@ -171,7 +171,7 @@ def test_subprocess_timeout_scales_with_input() -> None:
     mid-scan, its partial output discarded, and resolve reported "0 hosts" for
     an estate that had 60k names. The timeout must scale with the input.
     """
-    from easyhunt.tools.common import subprocess_timeout_for
+    from cordon.tools.common import subprocess_timeout_for
 
     # Small input keeps the old constant (floor), so small runs are unchanged.
     assert subprocess_timeout_for(["a.com"], 20, minimum=600) == 600
@@ -191,10 +191,10 @@ class TestPhaseKwargs:
     """
 
     def test_forbidden_chain_gets_urls_not_target(self) -> None:
-        import easyhunt.mcp_server
+        import cordon.mcp_server
 
-        easyhunt.mcp_server.load_capabilities()
-        from easyhunt.tools.base import REGISTRY
+        cordon.mcp_server.load_capabilities()
+        from cordon.tools.base import REGISTRY
 
         entry = REGISTRY["forbidden_chain"]
         assert entry.targets_arg == "urls"
@@ -204,10 +204,10 @@ class TestPhaseKwargs:
         assert kwargs == {"urls": "http://127.0.0.1:3000/a,http://127.0.0.1:3000/b"}
 
     def test_every_phase_tool_receives_its_own_targets_arg(self) -> None:
-        import easyhunt.mcp_server
+        import cordon.mcp_server
 
-        easyhunt.mcp_server.load_capabilities()
-        from easyhunt.tools.base import REGISTRY
+        cordon.mcp_server.load_capabilities()
+        from cordon.tools.base import REGISTRY
 
         for name, spec in phase.PHASES.items():
             tool = spec.get("tool")
@@ -248,7 +248,7 @@ class TestBrokenModuleFailsLoud:
     def test_syntax_error_module_is_error_not_skipped(self, tmp_path, monkeypatch) -> None:
         import sys
 
-        import easyhunt.mcp_server as mcp_server
+        import cordon.mcp_server as mcp_server
 
         pkg = tmp_path / "brokenpkg"
         pkg.mkdir()
@@ -264,7 +264,7 @@ class TestBrokenModuleFailsLoud:
             sys.path.remove(str(tmp_path))
 
     def test_import_error_is_skipped_not_error(self, monkeypatch) -> None:
-        import easyhunt.mcp_server as mcp_server
+        import cordon.mcp_server as mcp_server
 
         monkeypatch.setattr(mcp_server, "CAPABILITY_MODULES", ["definitely_not_a_real_module_xyz"])
         status = mcp_server.load_capabilities()

@@ -18,13 +18,13 @@ from typing import Any
 
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.control_plane.sanitize import GLOBAL_DENIED_FLAGS, sanitize_argv, sanitize_value
-from easyhunt.errors import SanitizeError
-from easyhunt.knowledge.findings import Status
-from easyhunt.tools import injection as inj
-from easyhunt.tools.base import REGISTRY
-from easyhunt.tools.common import CATALOG, ToolRun
+from cordon.control_plane.approval import PolicyBackend
+from cordon.control_plane.sanitize import GLOBAL_DENIED_FLAGS, sanitize_argv, sanitize_value
+from cordon.errors import SanitizeError
+from cordon.knowledge.findings import Status
+from cordon.tools import injection as inj
+from cordon.tools.base import REGISTRY
+from cordon.tools.common import CATALOG, ToolRun
 
 pytestmark = pytest.mark.asyncio
 
@@ -66,7 +66,7 @@ PROBES: dict[str, dict[str, Any]] = {
     "nosqli_probe": {
         "binary": "nosqli",
         # One body pair, not a body: '&' is hard-denied for every argument value
-        # in EasyHunt and no policy may relax it.
+        # in Cordon and no policy may relax it.
         "kwargs": {"target": "https://www.example.com/login?user=alice", "data": "user=alice"},
         "hit": ["Injection Found!", "Error based NoSQL Injection", "Parameter: user"],
     },
@@ -108,7 +108,7 @@ class TestRegistration:
 
     @pytest.mark.parametrize("binary", sorted(SPECS))
     async def test_binary_is_in_the_catalog(self, binary: str) -> None:
-        # Without a CATALOG entry `easyhunt doctor` never looks at the tool, which
+        # Without a CATALOG entry `cordon doctor` never looks at the tool, which
         # is how a present-but-broken binary ships unnoticed.
         assert CATALOG.get(binary) is SPECS[binary]
 
@@ -124,7 +124,7 @@ class TestRegistration:
         assert REGISTRY[name].spec is SPECS[PROBES[name]["binary"]]
 
     async def test_approval_is_not_bypassed(self, engagement) -> None:
-        from easyhunt.errors import ApprovalDenied
+        from cordon.errors import ApprovalDenied
 
         # The config fixture's backend denies everything.
         with pytest.raises(ApprovalDenied):
@@ -174,7 +174,7 @@ class TestArgvPassesItsOwnSanitizer:
         "name", [n for n in sorted(SPECS) if SPECS[n].user_agent_flag is not None]
     )
     async def test_tagged_user_agent_is_not_rejected(self, engagement, name: str) -> None:
-        """guarded_run injects 'EasyHunt-AI/2.0 (authorized-testing)'.
+        """guarded_run injects 'Cordon-AI/2.0 (authorized-testing)'.
 
         The parentheses are soft-denied globally, so a policy that does not relax
         them cannot carry the engagement's own attribution string.
@@ -511,7 +511,7 @@ class TestDangerousFlagsAreRefused:
         URL_PATTERN is not permission on its own, because every value is still
         sanitized afterwards.
         """
-        from easyhunt.tools.common import URL_PATTERN
+        from cordon.tools.common import URL_PATTERN
 
         multi_param = "https://www.example.com/p?a=1&b=2"
         assert URL_PATTERN.fullmatch(multi_param)
@@ -673,14 +673,14 @@ class TestSsrfmapIsUngovernable:
         Trimming it to make a run "fit" restores the silent overspend it exists
         to prevent.
         """
-        from easyhunt.tools.base import REGISTRY
+        from cordon.tools.base import REGISTRY
 
         assert inj.SSRFMAP_REQUEST_COST == 8283
         assert REGISTRY["ssrf_probe"].estimated_requests == inj.SSRFMAP_REQUEST_COST
 
     async def test_the_budget_refuses_a_call_it_cannot_afford(self, engagement) -> None:
         """The number has to bite, or it is a comment with extra steps."""
-        from easyhunt.errors import BudgetExceeded
+        from cordon.errors import BudgetExceeded
 
         # Ceilings are opt-in since the default flipped to enforce: false;
         # this test exercises the ceiling, so it must ask for one.
@@ -691,7 +691,7 @@ class TestSsrfmapIsUngovernable:
 
     async def test_risk_notes_say_it_cannot_be_throttled(self) -> None:
         """An operator approving this must be told before, not after."""
-        from easyhunt.tools.base import REGISTRY
+        from cordon.tools.base import REGISTRY
 
         notes = " ".join(REGISTRY["ssrf_probe"].risk_notes).lower()
         assert "no rate" in notes
@@ -716,7 +716,7 @@ class TestSsrfmapIsUngovernable:
         list per host. Level 1 is one host; level 5 would be 8,282 requests
         several times over.
         """
-        from easyhunt.control_plane.sanitize import get_policy
+        from cordon.control_plane.sanitize import get_policy
 
         assert get_policy("ssrfmap").numeric_caps["--level"] == 1
 

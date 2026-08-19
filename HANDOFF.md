@@ -6,7 +6,7 @@ how it was verified, what is actually true about its performance, and what to
 build next.
 
 **Verified 2026-08-08.** Every number here was measured, not recalled. Re-derive
-before trusting: `easyhunt doctor`, `pytest -q`.
+before trusting: `cordon doctor`, `pytest -q`.
 
 **Amended 2026-08-14.** Three things landed after the 2026-08-08 sweep. Only the
 test suite was re-run for this amendment (`1853 passed, 1 skipped`) — the
@@ -23,7 +23,7 @@ measurement date and have *not* been re-derived. Treat them accordingly.
   re-read that section against the code before trusting its shape.
 
 **Amended 2026-08-18 — the neuron brain.** Added the first *active* memory
-layer: `easyhunt/knowledge/neuron.py` (NeuronBrain), an associative
+layer: `cordon/knowledge/neuron.py` (NeuronBrain), an associative
 (Hebbian-style) experience store. Unlike PoCMemory/GraphMemory/TechniqueIndex
 — which record what was seen or what the docs say — the brain learns from
 validator *outcomes* and feeds the lessons back into planning. `2112 passed,
@@ -40,7 +40,7 @@ validator *outcomes* and feeds the lessons back into planning. `2112 passed,
   repeatedly false-positived on the same shape of target (the testssl
   `ipv4_in_header`-over-a-cookie class is now learned, not hardcoded).
 - **Wiring**: `Engagement.brain` (config `memory.brain_store`, default
-  `~/.easyhunt/neuron-brain.jsonl`), persisted on `finish()` and per exploit
+  `~/.cordon/neuron-brain.jsonl`), persisted on `finish()` and per exploit
   run; `hunt_plan` returns a `learned` list; MCP tools `brain_recall` /
   `brain_learn`. Methods and outcomes only — never credentials or bodies.
 
@@ -52,23 +52,23 @@ every script — and gave it a face. `2120 passed, 1 skipped`.
   tool call passes. `Engagement` registers `brain.sense`, so every phase/tool
   in every script reaches the brain with zero per-tool changes. The brain keeps
   a 256-event ring (live state) + a JSONL timeline (`memory.brain_activity`,
-  default `~/.easyhunt/brain-activity.jsonl`). `state()` = what's happening
+  default `~/.cordon/brain-activity.jsonl`). `state()` = what's happening
   now; `history()` = episodic memory, filterable by phase/tool/outcome — the
   "what failed, what succeeded, what was FP, what was true" record.
-- **The animation**: `easyhunt brain watch` — a live ANSI neural pop-up (brain
+- **The animation**: `cordon brain watch` — a live ANSI neural pop-up (brain
   node, electrical pulses traveling along pipelines to the active phase,
   red ★ pulse on findings), pure stdlib, tails the same JSON activity stream
-  any front-end can consume. `easyhunt brain export [--open]` writes a
+  any front-end can consume. `cordon brain export [--open]` writes a
   self-contained `brain.html` (no external deps) that replays the same JSON as
   an animated neural net — shareable, attachable to a report.
 - **MCP**: `brain_state` (live pulse), `brain_history` (episodic memory),
   `brain_recall` (query experience), `brain_learn` (teach manually).
-- **CLI**: `easyhunt brain watch|state|history|export`.
+- **CLI**: `cordon brain watch|state|history|export`.
 - **Tests**: 8 new in `tests/test_neuron.py` (TestSensing), incl. the audit
   observer wiring and observer-failure isolation (a crashing observer cannot
   break the audit trail).
 
-### The live dashboard (`easyhunt/tools/dashboard.py` + `dashboard/` React app)
+### The live dashboard (`cordon/tools/dashboard.py` + `dashboard/` React app)
 
 Turns any engagement workspace into a live ops view — the answer to "what
 has the run found, and what phase is it on right now":
@@ -90,13 +90,13 @@ has the run found, and what phase is it on right now":
   Activity (brain feed), Tools (what fired, from the audit trail), False
   positives (dismissed + learned), Reports. Deep-linkable `/#view`, workspace
   switcher in the top bar, 2s polling via `useLiveState`.
-- **Serve**: `easyhunt dashboard --serve` serves `dist/` with an SPA
+- **Serve**: `cordon dashboard --serve` serves `dist/` with an SPA
   fallback + `/api/state` + `/reports/*`; falls back to the legacy
   dependency-free page when `dist` is absent. `--build` runs npm ci + vite
   build; `--workspace NAME` pins the snapshot; `--port`/`--out` as before.
 - **MCP**: `dashboard_state` returns the same blob to the agent — "where is
   the scan, what has it found" without reading workspace files.
-- **CLI**: `easyhunt dashboard [--build|--serve|--out path|--port N|--workspace NAME]`.
+- **CLI**: `cordon dashboard [--build|--serve|--out path|--port N|--workspace NAME]`.
 - **Tests**: 11 in `tests/test_dashboard.py` (phase mapping incl. the
   canonical-slug fix, findings sorting/counting, full state blob, embedded
   legacy page render, assets-by-kind, coverage, tool usage from audit,
@@ -105,14 +105,14 @@ has the run found, and what phase is it on right now":
   verifies every view renders against real data (uses system Chrome via
   `playwright-core` — no browser download). 16 checks incl. filter clicks.
 
-### 403 access-control bypass (`easyhunt/tools/forbidden.py` + unKover)
+### 403 access-control bypass (`cordon/tools/forbidden.py` + unKover)
 
 unKover (BruteLogic) — a 12-technique 403-bypass tester (IP-header spoofing,
 method tampering/case, protocol headers, Referer trust, path normalization /
 encoding, HTTP/1.0 downgrade, hop-by-hop, path suffix, API version prefix /
 swap) with wildcard-baseline FP filtering and a curl PoC on first success.
 
-- **Install**: recipe in `easyhunt/install/recipes.py` (git clone to
+- **Install**: recipe in `cordon/install/recipes.py` (git clone to
   `/opt/unkover`, symlink to PATH). Pure bash + curl — no build.
 - **`forbidden_bypass(url, prefix=)`** — runs unKover, files a finding
   (`needs_manual_review`, MEDIUM base → HIGH on admin-flavoured paths with
@@ -131,7 +131,7 @@ swap) with wildcard-baseline FP filtering and a curl PoC on first success.
   nuclei. A 403 is an access decision; these techniques find the routes
   around it. Verified live against a purpose-built 403 lab.
 
-### The research advisor (`easyhunt/tools/research_guide.py`)
+### The research advisor (`cordon/tools/research_guide.py`)
 
 `research_guidance(vuln_class, asset, evidence, stack)` — the "I found
 something / scanned clean, what do I do next" answer. Assembles into one
@@ -155,7 +155,7 @@ traffic. Fuzzy class names work (`sqli`, "request smuggling", `JWT`).
   `idor` → `insecure-direct-object-references`, `path traversal` →
   `file-inclusion`).
 
-### Browser-verified exploitation (`easyhunt/tools/browser_verify.py`)
+### Browser-verified exploitation (`cordon/tools/browser_verify.py`)
 
 `browser_verify(url, param, payload, screenshot=True)` — drives headless
 Chromium (Playwright + system Chrome, no download) at a URL and captures
@@ -217,7 +217,7 @@ was scanned:
 Verified working end-to-end on the lab through the real control plane: probe,
 waf, cors, tls, endpoints (83 URLs), js, pattern, nuclei scan (Prometheus
 finding), forbidden, ports (2 open), content (`/api-docs`, `/metrics`), and
-exploit_chain (16 injection points tested). `easyhunt doctor`: 80/83 tools
+exploit_chain (16 injection points tested). `cordon doctor`: 80/83 tools
 working, all 38 capability modules load.
 
 **Amended 2026-08-19 — triage + CORS validation.** The myfitnesspal findings
@@ -256,7 +256,7 @@ The model never holds a shell. A jailbroken prompt cannot reach the network.
 | MCP tools | 80 |
 | Catalogued binaries | 82 |
 | Tests | 1,958 across 49 files |
-| Image | `easyhunt:latest`, 4.54 GB |
+| Image | `cordon:latest`, 4.54 GB |
 | Commits | 98 |
 
 ---
@@ -300,7 +300,7 @@ session*.
 **Tests (1,958).** Mock the subprocess. Prove the wrapper's shape. Cannot
 tell you whether a real binary accepts the argv.
 
-**`easyhunt doctor`.** Executes every tool *inside the container it will run
+**`cordon doctor`.** Executes every tool *inside the container it will run
 in*, under the real read-only root and dropped capabilities. Catches "installed
 but broken". Cannot tell you whether the wrapper parses the output.
 
@@ -389,7 +389,7 @@ that third is where mature programs have already fixed everything.
 ### 6a. Authenticated testing — the biggest gap by far
 
 **Partly built.** `session_register` / `session_list` / `authz_compare` exist
-(`easyhunt/knowledge/sessions.py`, `easyhunt/tools/sessions.py`). A session is
+(`cordon/knowledge/sessions.py`, `cordon/tools/sessions.py`). A session is
 bound to the host that issued it and fails closed; values are masked in every
 result; `authz_compare` is GET/HEAD only and refuses two sessions carrying the
 same credentials, because a login-bypass that returns one admin token for any
@@ -464,7 +464,7 @@ XSS class.
 chromium is now installed in the `Dockerfile`. Two details that matter and
 should not be undone:
 
-- It is installed into `easyhunt:latest` — the image dalfox *actually* runs in
+- It is installed into `cordon:latest` — the image dalfox *actually* runs in
   after the dalfox image mapping was removed — not into a separate one.
   `_headless_available()` in `exploitation.py` probes that same image.
 - The build **asserts by running it** (`chromium --version`), not by checking
@@ -485,7 +485,7 @@ server-side sinks, parameter vocabulary. On a real run it reduced 2,748 URLs to
 
 Agent mode works (returns the surface for the calling agent). The internal-LLM
 path is untested because no OpenRouter key was available. `openai` is also not
-installed — `pip install 'easyhunt-ai[llm]'`. `doctor` now reports this.
+installed — `pip install 'cordon-ai[llm]'`. `doctor` now reports this.
 
 ### 6e. Known smaller items
 
@@ -516,7 +516,7 @@ installed — `pip install 'easyhunt-ai[llm]'`. `doctor` now reports this.
 
 ### 6f. `pattern_scan` — built
 
-`easyhunt/tools/pattern_scan.py`, registered in `mcp_server.py`, patterns in
+`cordon/tools/pattern_scan.py`, registered in `mcp_server.py`, patterns in
 `rules/gf/` (11 packs: xss, ssrf, sqli, lfi, rce, redirect, ssti, idor, upload,
 s3-buckets, + `manifest.json`).
 
@@ -549,9 +549,9 @@ catalogued tools" (CLAUDE.md §2) figures predate it. Re-derive with
 ## 7. How to start
 
 ```bash
-git clone <repo> && cd EasyHunt-AI
-./bootstrap.sh                 # 30-45 min, builds easyhunt:latest
-easyhunt doctor                # expect 0 broken
+git clone <repo> && cd Cordon-AI
+./bootstrap.sh                 # 30-45 min, builds cordon:latest
+cordon doctor                # expect 0 broken
 ```
 
 **You must write `scope.yaml` by hand** from a program's published policy. The
@@ -628,7 +628,7 @@ came from (`argument` or `assets:url[live](n)`). That is the audit trail for
 - Do not add evasion capability — WAF bypass, TLS fingerprint spoofing,
   `--random-agent`. If a target blocks identified traffic, say so in the report.
 - Do not commit engagement data. `scope.*.yaml`, `engagements/` and
-  `.easyhunt-run` are gitignored for a reason: the last one leaked an engagement
+  `.cordon-run` are gitignored for a reason: the last one leaked an engagement
   name into two commits before it was caught.
 - Do not claim a capability that has not been demonstrated. The README describes
   the control plane, which is earned. It does not claim to out-hunt anything,

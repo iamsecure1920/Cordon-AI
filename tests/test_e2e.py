@@ -6,7 +6,7 @@ validate → report. Real binaries (httpx, nuclei) run if they are installed;
 where they are not, the test asserts the graceful-degradation path instead.
 
 The server binds 127.0.0.1 only, and the scope names 127.0.0.0/8 explicitly —
-which is the one way EasyHunt permits a reserved address, precisely so a lab can
+which is the one way Cordon permits a reserved address, precisely so a lab can
 exist without weakening the rule for real engagements.
 """
 
@@ -24,13 +24,13 @@ from typing import Any
 import pytest
 import yaml
 
-from easyhunt.config import Config
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.control_plane.context import Engagement, set_engagement
-from easyhunt.control_plane.scope import Scope
-from easyhunt.knowledge.findings import Status
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools.base import REGISTRY
+from cordon.config import Config
+from cordon.control_plane.approval import PolicyBackend
+from cordon.control_plane.context import Engagement, set_engagement
+from cordon.control_plane.scope import Scope
+from cordon.knowledge.findings import Status
+from cordon.mcp_server import load_capabilities
+from cordon.tools.base import REGISTRY
 
 pytestmark = pytest.mark.e2e
 
@@ -40,14 +40,14 @@ load_capabilities()
 
 def _real_httpx() -> bool:
     """ProjectDiscovery's httpx, not the Python library's CLI of the same name."""
-    from easyhunt.tools.common import verify_identity
+    from cordon.tools.common import verify_identity
 
     return shutil.which("httpx") is not None and verify_identity("httpx")[0]
 
 VULNERABLE_FILES = {
     ".env": "APP_ENV=production\nDB_PASSWORD=hunter2\nAWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE\n",
     ".git/config": "[core]\n\trepositoryformatversion = 0\n[remote \"origin\"]\n\turl = https://github.com/example/app.git\n",
-    "index.html": "<html><title>Lab target</title><body>EasyHunt e2e lab</body></html>",
+    "index.html": "<html><title>Lab target</title><body>Cordon e2e lab</body></html>",
     "app.js": 'const API="/api/v2/internal";const KEY="AIzaSyD-1234567890abcdefghijklmnopqrstu";\n',
 }
 
@@ -104,7 +104,7 @@ def lab_engagement(lab, tmp_path) -> Any:
             "researcher_handle": "e2e",
         },
         # Loopback is reserved; naming the CIDR explicitly is the only way
-        # EasyHunt will permit it.
+        # Cordon will permit it.
         "in_scope": {"cidrs": ["127.0.0.0/8"]},
         "out_of_scope": {"domains": ["example.com"]},
         "rules": {"max_rps": 50, "max_concurrency": 5, "allow_aggressive": True,
@@ -130,7 +130,7 @@ def lab_engagement(lab, tmp_path) -> Any:
     engagement = Engagement(Scope.load(scope_file), config, workspace=tmp_path / "ws")
     set_engagement(engagement)
 
-    from easyhunt.plugins.loader import load_all
+    from cordon.plugins.loader import load_all
 
     load_all([repo / "rules"], import_python=False)
 
@@ -177,10 +177,10 @@ class TestEndToEnd:
         )
         assert result.get("completed"), f"scan did not finish: {result}"
         rules = {f["rule_id"] for f in result.get("findings", [])}
-        assert "easyhunt-exposed-git-config" in rules, f"got {rules}"
+        assert "cordon-exposed-git-config" in rules, f"got {rules}"
 
         finding = next(
-            f for f in lab_engagement.findings.all() if f.rule_id == "easyhunt-exposed-git-config"
+            f for f in lab_engagement.findings.all() if f.rule_id == "cordon-exposed-git-config"
         )
         # A scanner hit is a candidate, never a confirmed finding.
         assert finding.status is Status.CANDIDATE
@@ -204,7 +204,7 @@ class TestEndToEnd:
         )
 
     async def test_validation_confirms_a_real_exposure(self, lab_engagement, lab) -> None:
-        from easyhunt.knowledge.findings import Finding, Severity
+        from cordon.knowledge.findings import Finding, Severity
 
         finding = lab_engagement.findings.add(
             Finding(
@@ -225,7 +225,7 @@ class TestEndToEnd:
         assert "curl" in finding.poc.reproduction
 
     async def test_validation_refuses_to_confirm_a_missing_file(self, lab_engagement, lab) -> None:
-        from easyhunt.knowledge.findings import Finding, Severity
+        from cordon.knowledge.findings import Finding, Severity
 
         finding = lab_engagement.findings.add(
             Finding(
@@ -242,14 +242,14 @@ class TestEndToEnd:
         assert finding.status is Status.NEEDS_MANUAL_REVIEW
 
     async def test_out_of_scope_target_is_refused_mid_run(self, lab_engagement) -> None:
-        from easyhunt.errors import OutOfScopeError
+        from cordon.errors import OutOfScopeError
 
         with pytest.raises(OutOfScopeError):
             await REGISTRY["http_probe"].fn(target="http://example.com/")
 
     async def test_full_flow_produces_a_complete_report(self, lab_engagement, lab) -> None:
-        import easyhunt.tools.report_tools  # noqa: F401
-        from easyhunt.knowledge.findings import Finding, Severity
+        import cordon.tools.report_tools  # noqa: F401
+        from cordon.knowledge.findings import Finding, Severity
 
         finding = lab_engagement.findings.add(
             Finding(
@@ -288,7 +288,7 @@ class TestEndToEnd:
         assert summary["memory"]["techniques_remembered"] >= 1
 
     async def test_audit_log_records_every_attempt(self, lab_engagement, lab) -> None:
-        from easyhunt.errors import OutOfScopeError
+        from cordon.errors import OutOfScopeError
 
         await REGISTRY["js_analyze"].fn(target=f"{lab['url']}/app.js")
         with pytest.raises(OutOfScopeError):

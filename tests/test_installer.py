@@ -1,7 +1,7 @@
 """Installer: recipes, ordering, isolation, verification, and repair.
 
 The sharpest test here is ``test_never_installs_into_our_own_environment``. It
-exists because the installer once ran ``pip install semgrep`` into EasyHunt's own
+exists because the installer once ran ``pip install semgrep`` into Cordon's own
 venv, which pulled in ``fastmcp-slim`` and silently removed FastMCP's client
 support — the installer broke the application running it.
 """
@@ -15,12 +15,12 @@ import sys
 
 import pytest
 
-from easyhunt.install import RECIPES, Installer, install_order, recipes_for
-from easyhunt.install.installer import ToolHealth, health_check, probe_tool
-from easyhunt.install.recipes import SYSTEM_PACKAGES, Recipe
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools.base import ToolSpec
-from easyhunt.tools.common import CATALOG
+from cordon.install import RECIPES, Installer, install_order, recipes_for
+from cordon.install.installer import ToolHealth, health_check, probe_tool
+from cordon.install.recipes import SYSTEM_PACKAGES, Recipe
+from cordon.mcp_server import load_capabilities
+from cordon.tools.base import ToolSpec
+from cordon.tools.common import CATALOG
 
 load_capabilities()
 
@@ -65,7 +65,7 @@ class TestRecipeUpstreamDrift:
     """Tools that broke against upstream changes or new runtimes.
 
     Each was diagnosed against a live install, and the recipe now encodes the
-    fix so `easyhunt install` reproduces a working tool rather than re-hitting
+    fix so `cordon install` reproduces a working tool rather than re-hitting
     the same failure.
     """
 
@@ -132,7 +132,7 @@ class TestIsolation:
     def test_never_installs_into_our_own_environment(self) -> None:
         # The guard that stops the installer breaking its own host.
         installer = Installer(dry_run=True)
-        with pytest.raises(RuntimeError, match="refusing to install into EasyHunt"):
+        with pytest.raises(RuntimeError, match="refusing to install into Cordon"):
             installer._run(f"{sys.executable} -m pip install semgrep")
 
     def test_python_tools_use_pipx(self) -> None:
@@ -304,7 +304,7 @@ def _fake_tool(directory, name: str, script: str) -> str:
 @pytest.fixture
 def fake_path(tmp_path, monkeypatch):
     """A directory at the front of PATH, with the identity caches cleared."""
-    from easyhunt.tools.common import resolve_binary, verify_identity
+    from cordon.tools.common import resolve_binary, verify_identity
 
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
     resolve_binary.cache_clear()
@@ -330,7 +330,7 @@ class TestHealthIsNotPathPresence:
     """The regression that let nikto and testssl ship 100% non-functional.
 
     Both resolved with ``shutil.which()`` and died on every invocation, and
-    ``easyhunt doctor`` printed a green tick for each. These tests fail if
+    ``cordon doctor`` printed a green tick for each. These tests fail if
     anything ever again reports "working" on the strength of a filename.
     """
 
@@ -530,7 +530,7 @@ class TestHealthIsNotPathPresence:
     def test_doctor_executes_by_default(self) -> None:
         # The health check that is not the default is the health check nobody
         # runs — which is how this shipped broken in the first place.
-        from easyhunt.cli import build_parser
+        from cordon.cli import build_parser
 
         args = build_parser().parse_args(["doctor"])
         assert args.fast is False

@@ -50,7 +50,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/":
             self._send(
-                "<h1>EasyHunt validation lab</h1>"
+                "<h1>Cordon validation lab</h1>"
                 "<ul><li><a href='/ssti?q=hello'>/ssti</a></li>"
                 "<li><a href='/cmd?cmd=date'>/cmd</a></li>"
                 "<li><a href='/fetch?url=http://127.0.0.1:8899/'>/fetch</a></li></ul>"

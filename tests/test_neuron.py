@@ -8,7 +8,7 @@ the recall/suppression semantics, not the internals.
 
 from __future__ import annotations
 
-from easyhunt.knowledge.neuron import (
+from cordon.knowledge.neuron import (
     BrainOutcome,
     NeuronBrain,
     context_signature,
@@ -210,7 +210,7 @@ class TestSensing:
 
     def test_audit_observer_wires_sensing(self, tmp_path) -> None:
         """The audit log's observer hook feeds the brain every tool call."""
-        from easyhunt.control_plane.audit import AuditLog
+        from cordon.control_plane.audit import AuditLog
 
         brain = NeuronBrain(tmp_path / "brain.jsonl", tmp_path / "activity.jsonl")
         log = AuditLog(tmp_path / "audit.jsonl")
@@ -224,7 +224,7 @@ class TestSensing:
         assert brain.history(tool="nuclei_scan")[0]["outcome"] == "error"
 
     def test_observer_failure_does_not_break_audit(self, tmp_path) -> None:
-        from easyhunt.control_plane.audit import AuditLog
+        from cordon.control_plane.audit import AuditLog
 
         def boom(record):
             raise RuntimeError("observer crashed")
@@ -244,7 +244,7 @@ class TestBrainWatchCanonicalization:
     """
 
     def test_canonical_phase_maps_audit_slugs(self) -> None:
-        from easyhunt.tools.brain_watch import _canonical_phase
+        from cordon.tools.brain_watch import _canonical_phase
 
         assert _canonical_phase("http_probe") == "probe"
         assert _canonical_phase("recon_passive") == "recon"
@@ -255,7 +255,7 @@ class TestBrainWatchCanonicalization:
         assert _canonical_phase("tls") == "tls"
 
     def test_pulse_events_key_on_canonical_phases(self) -> None:
-        from easyhunt.tools.brain_watch import _pulse_events
+        from cordon.tools.brain_watch import _pulse_events
 
         events = [
             {"phase": "http_probe", "tool": "cors_audit", "findings": 1},

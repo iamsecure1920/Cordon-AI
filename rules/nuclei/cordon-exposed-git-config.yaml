@@ -1,0 +1,48 @@
+id: cordon-exposed-git-config
+
+info:
+  name: Exposed .git/config
+  author: cordon
+  severity: medium
+  description: |
+    A readable .git/config at the web root usually means the whole .git directory
+    is served, which exposes source history and frequently credentials embedded in
+    remote URLs.
+  remediation: |
+    Block dotted paths at the web server, and deploy build artifacts rather than
+    working copies. Rotate any credential found in a remote URL.
+  reference:
+    - https://github.com/internetwache/GitTools
+  tags: exposure,git,cordon
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/config"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "[core]"
+          - "repositoryformatversion"
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+        negative: true
+
+    extractors:
+      - type: regex
+        name: remote_url
+        part: body
+        group: 1
+        regex:
+          - 'url\s*=\s*(\S+)'

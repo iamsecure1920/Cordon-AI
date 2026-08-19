@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools.common import CATALOG, installed, resolve_binary, verify_identity
+from cordon.mcp_server import load_capabilities
+from cordon.tools.common import CATALOG, installed, resolve_binary, verify_identity
 
 load_capabilities()
 
@@ -45,8 +45,8 @@ def fake_path(tmp_path, monkeypatch):
 
 @pytest.fixture
 def toolx_spec(fake_path):
-    from easyhunt.tools.base import ToolSpec
-    from easyhunt.tools.common import register_spec
+    from cordon.tools.base import ToolSpec
+    from cordon.tools.common import register_spec
 
     spec = register_spec(
         ToolSpec(
@@ -79,8 +79,8 @@ class TestIdentityResolution:
         assert installed("toolx") is True
 
     def test_only_an_impostor_counts_as_not_installed(self, tmp_path, monkeypatch) -> None:
-        from easyhunt.tools.base import ToolSpec
-        from easyhunt.tools.common import register_spec
+        from cordon.tools.base import ToolSpec
+        from cordon.tools.common import register_spec
 
         only_impostor = tmp_path / "bin"
         only_impostor.mkdir()
@@ -116,8 +116,8 @@ class TestIdentityResolution:
         the breakage says nothing about the behaviour under test. Synthetic spec
         instead.
         """
-        from easyhunt.tools.base import ToolSpec
-        from easyhunt.tools.common import register_spec
+        from cordon.tools.base import ToolSpec
+        from cordon.tools.common import register_spec
 
         directory = tmp_path / "plain"
         directory.mkdir()
@@ -138,7 +138,7 @@ class TestIdentityResolution:
             verify_identity.cache_clear()
 
     def test_guarded_run_uses_the_resolved_path(self, toolx_spec, fake_path, engagement) -> None:
-        from easyhunt.control_plane.sanitize import ArgPolicy, register_policy
+        from cordon.control_plane.sanitize import ArgPolicy, register_policy
 
         register_policy(ArgPolicy(tool="toolx", allowed_flags=set(), allow_positional=False))
         plan = engagement.sandbox.plan(
@@ -172,7 +172,7 @@ class TestBbotThreeCompat:
         pytest.importorskip("bbot")
         from bbot.scanner import Scanner
 
-        from easyhunt.engines.bbot_engine import _bbot_config
+        from cordon.engines.bbot_engine import _bbot_config
 
         # BBOT validates config keys and *raises* on unknown ones, so a stale
         # name aborts the scan rather than being quietly ignored.
@@ -190,7 +190,7 @@ class TestBbotThreeCompat:
         pytest.importorskip("bbot")
         from bbot.scanner import Scanner
 
-        from easyhunt.engines.bbot_engine import _bbot_config
+        from cordon.engines.bbot_engine import _bbot_config
 
         scanner = Scanner(
             *engagement.scope.bbot_whitelist(),
@@ -206,7 +206,7 @@ class TestBbotThreeCompat:
         assert not scanner.in_scope("someone-else.net")
 
     def test_bbot_state_stays_in_the_workspace(self, engagement) -> None:
-        from easyhunt.engines.bbot_engine import _bbot_config
+        from cordon.engines.bbot_engine import _bbot_config
 
         config = _bbot_config(engagement)
         # Not the user's ~/.bbot: an engagement is self-contained and disposable.

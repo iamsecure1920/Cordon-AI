@@ -27,9 +27,9 @@ from pathlib import Path
 
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.knowledge.sessions import Session, SessionStore, mask
-from easyhunt.tools import sessions as st
+from cordon.control_plane.approval import PolicyBackend
+from cordon.knowledge.sessions import Session, SessionStore, mask
+from cordon.tools import sessions as st
 
 SECRET = "eyJhbGciOiJIUzI1NiJ9.super-secret-token-value.signature"
 

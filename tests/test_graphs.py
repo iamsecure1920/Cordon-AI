@@ -8,20 +8,20 @@ from pathlib import Path
 
 import pytest
 
-from easyhunt.knowledge.attackgraph import (
+from cordon.knowledge.attackgraph import (
     AttackGraph,
     Edge,
     Node,
     build_from_prowler,
 )
-from easyhunt.knowledge.graphmemory import (
+from cordon.knowledge.graphmemory import (
     Entity,
     GraphMemory,
     ingest_engagement,
     relations_from_dns,
 )
-from easyhunt.knowledge.taskgraph import TaskGraph
-from easyhunt.report.graphs import (
+from cordon.knowledge.taskgraph import TaskGraph
+from cordon.report.graphs import (
     GraphRender,
     RenderEdge,
     RenderNode,
@@ -58,7 +58,7 @@ class TestAttackGraph:
         assert "api-handler" in narrative and "→ reads" in narrative
 
     def test_reachable_data_is_critical(self) -> None:
-        from easyhunt.knowledge.findings import Severity
+        from cordon.knowledge.findings import Severity
 
         assert lambda_to_data().find_paths()[0].severity is Severity.CRITICAL
 
@@ -165,7 +165,7 @@ class TestGraphMemory:
         assert relations == {"delegates_to"}
 
     def test_findings_attach_to_their_asset(self, tmp_path: Path, engagement) -> None:
-        from easyhunt.knowledge.findings import Finding, Severity
+        from cordon.knowledge.findings import Finding, Severity
 
         engagement.findings.add(
             Finding(
@@ -205,7 +205,7 @@ class TestGraphMemory:
         assert engagement.graph.stats()["backend"] == "native"
 
     def test_finish_indexes_the_engagement(self, engagement) -> None:
-        from easyhunt.knowledge.findings import Asset
+        from cordon.knowledge.findings import Asset
 
         engagement.assets.add(Asset(value="api.example.com", kind="subdomain", source="bbot"))
         summary = engagement.finish()
@@ -289,7 +289,7 @@ class TestRendering:
 
 class TestReportIntegration:
     async def test_report_includes_rendered_graphs(self, engagement) -> None:
-        from easyhunt.report.synthesize import generate_report
+        from cordon.report.synthesize import generate_report
 
         engagement.discovered("dangling_cname", "cdn.example.com", source="dns_resolve")
         result = await generate_report(engagement, formats=["md"])
@@ -298,8 +298,8 @@ class TestReportIntegration:
         assert "taskgraph_dot" in result["reports"]
 
     async def test_attack_paths_reach_the_report(self, engagement) -> None:
-        from easyhunt.knowledge.findings import Finding, Severity
-        from easyhunt.report.synthesize import generate_report
+        from cordon.knowledge.findings import Finding, Severity
+        from cordon.report.synthesize import generate_report
 
         path = lambda_to_data().find_paths()[0]
         engagement.findings.add(

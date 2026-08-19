@@ -1,9 +1,9 @@
 {
-  "name": "easyhunt-dashboard",
+  "name": "cordon-dashboard",
   "private": true,
   "version": "2.1.0",
   "type": "module",
-  "description": "EasyHunt AI — React live engagement dashboard (phases, findings, assets, coverage, activity)",
+  "description": "Cordon AI — React live engagement dashboard (phases, findings, assets, coverage, activity)",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

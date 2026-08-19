@@ -15,16 +15,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.control_plane.sanitize import sanitize_argv
-from easyhunt.engines import osmedeus_engine, strix_engine  # noqa: F401 — registers the tools
-from easyhunt.engines.bbot_engine import PRESET_MODES, _store_event, normalize_event
-from easyhunt.engines.nuclei_engine import DENIED_TAGS, parse_nuclei_results
-from easyhunt.engines.nuclei_engine import SPEC as NUCLEI_SPEC
-from easyhunt.errors import SanitizeError, ToolUnavailable
-from easyhunt.knowledge.findings import Severity, Status
-from easyhunt.tools.base import REGISTRY
-from easyhunt.tools.common import resolve_binary, verify_identity
+from cordon.control_plane.approval import PolicyBackend
+from cordon.control_plane.sanitize import sanitize_argv
+from cordon.engines import osmedeus_engine, strix_engine  # noqa: F401 — registers the tools
+from cordon.engines.bbot_engine import PRESET_MODES, _store_event, normalize_event
+from cordon.engines.nuclei_engine import DENIED_TAGS, parse_nuclei_results
+from cordon.engines.nuclei_engine import SPEC as NUCLEI_SPEC
+from cordon.errors import SanitizeError, ToolUnavailable
+from cordon.knowledge.findings import Severity, Status
+from cordon.tools.base import REGISTRY
+from cordon.tools.common import resolve_binary, verify_identity
 
 NUCLEI_RESULT = {
     "template-id": "exposed-git-config",
@@ -248,7 +248,7 @@ class TestNucleiExecution:
             await REGISTRY["nuclei_scan"].fn(target="https://www.example.com", tags="cve,dos")
 
     async def test_custom_rules_directory_is_included(self, engagement, fake_nuclei) -> None:
-        from easyhunt.plugins.loader import load_all
+        from cordon.plugins.loader import load_all
 
         load_all([Path(__file__).resolve().parents[1] / "rules"], import_python=False)
         engagement.approval.backend = PolicyBackend(auto_approve=["nuclei_scan"])
@@ -256,7 +256,7 @@ class TestNucleiExecution:
         assert "rules/nuclei" in (fake_nuclei / "nuclei-argv.txt").read_text()
 
     async def test_scan_requires_approval(self, engagement, fake_nuclei) -> None:
-        from easyhunt.errors import ApprovalDenied
+        from cordon.errors import ApprovalDenied
 
         with pytest.raises(ApprovalDenied):
             await REGISTRY["nuclei_scan"].fn(target="https://www.example.com")

@@ -10,11 +10,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from easyhunt.config import Config
-from easyhunt.control_plane.context import Engagement, set_engagement
-from easyhunt.control_plane.scope import Scope
-from easyhunt.knowledge.findings import Severity
-from easyhunt.tools.forbidden import _escalate
+from cordon.config import Config
+from cordon.control_plane.context import Engagement, set_engagement
+from cordon.control_plane.scope import Scope
+from cordon.knowledge.findings import Severity
+from cordon.tools.forbidden import _escalate
 
 UNKOVER = shutil.which("unkover")
 
@@ -67,7 +67,7 @@ def lab_url() -> str:
 @pytest.fixture(scope="module")
 def engagement(lab_url: str, tmp_path_factory: pytest.TempPathFactory):
     """Engagement whose scope includes the 403 lab (module-scoped, like lab_url)."""
-    from easyhunt.control_plane.approval import PolicyBackend
+    from cordon.control_plane.approval import PolicyBackend
     from tests.conftest import scope_dict
 
     root = tmp_path_factory.mktemp("forbidden")
@@ -117,7 +117,7 @@ class TestParse:
     """Parsing of unKover's JSON contract — no binary required."""
 
     def test_bypass_json(self) -> None:
-        from easyhunt.tools.forbidden import _parse_unkover_output
+        from cordon.tools.forbidden import _parse_unkover_output
 
         out = {
             "meta": {"tool": "unkover"},
@@ -140,7 +140,7 @@ class TestParse:
         assert parsed["poc"].startswith("curl")
 
     def test_clean_json(self) -> None:
-        from easyhunt.tools.forbidden import _parse_unkover_output
+        from cordon.tools.forbidden import _parse_unkover_output
 
         parsed, error = _parse_unkover_output(
             json.dumps({"bypass": False, "findings": [], "baseline": {"status": 403, "size": 9}})
@@ -149,7 +149,7 @@ class TestParse:
         assert parsed["bypass"] is False
 
     def test_error_json(self) -> None:
-        from easyhunt.tools.forbidden import _parse_unkover_output
+        from cordon.tools.forbidden import _parse_unkover_output
 
         parsed, error = _parse_unkover_output(
             json.dumps({"error": "target returned 301, expected 403"})
@@ -159,7 +159,7 @@ class TestParse:
         assert parsed is None and error == "not_forbidden"
 
     def test_garbage_output(self) -> None:
-        from easyhunt.tools.forbidden import _parse_unkover_output
+        from cordon.tools.forbidden import _parse_unkover_output
 
         parsed, error = _parse_unkover_output("not json at all\n")
         assert parsed is None
@@ -169,8 +169,8 @@ class TestParse:
 @pytest.mark.skipif(not UNKOVER, reason="unkover not installed")
 class TestLiveBypass:
     def test_finds_bypass_and_files_finding(self, engagement, lab_url: str) -> None:
-        import easyhunt.tools.forbidden  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.forbidden  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         result = asyncio.run(REGISTRY["forbidden_bypass"].fn(url=f"{lab_url}/admin"))
         assert result["ok"] is True
@@ -185,8 +185,8 @@ class TestLiveBypass:
         assert "X-Forwarded-For" in str(f.extra.get("poc"))
 
     def test_not_forbidden_is_refused(self, engagement, lab_url: str) -> None:
-        import easyhunt.tools.forbidden  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.forbidden  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         # A URL that is NOT 403 must be refused before any bypass attempt.
         before = len(engagement.findings.all())
@@ -196,8 +196,8 @@ class TestLiveBypass:
         assert len(engagement.findings.all()) == before  # nothing filed
 
     def test_clean_pass_files_nothing(self, engagement, lab_url: str) -> None:
-        import easyhunt.tools.forbidden  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.forbidden  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         # A genuinely enforced 403 survives all 12 techniques: no new finding,
         # and the brain records a clean lesson.
@@ -214,8 +214,8 @@ class TestLiveBypass:
         assert lessons and lessons[0].clean >= 1
 
     def test_candidates_precheck(self, engagement, lab_url: str) -> None:
-        import easyhunt.tools.forbidden  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.forbidden  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         result = asyncio.run(
             REGISTRY["forbidden_candidates"].fn(urls=[f"{lab_url}/admin", f"{lab_url}/open"])
@@ -229,8 +229,8 @@ class TestLiveBypass:
 class TestForbiddenChain:
     def test_chain_discovers_and_bypasses_403(self, engagement, lab_url: str) -> None:
         """The auto-chain: pre-check finds the 403, then bypasses it end-to-end."""
-        import easyhunt.tools.forbidden  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.forbidden  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         result = asyncio.run(
             REGISTRY["forbidden_chain"].fn(
@@ -249,9 +249,9 @@ class TestForbiddenChain:
 
     def test_chain_empty_input_refused(self, engagement) -> None:
         """An empty target list is refused by the scope gate, never silently passed."""
-        import easyhunt.tools.forbidden  # noqa: F401
-        from easyhunt.errors import EasyHuntError
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.forbidden  # noqa: F401
+        from cordon.errors import CordonError
+        from cordon.tools.base import REGISTRY
 
-        with pytest.raises(EasyHuntError):
+        with pytest.raises(CordonError):
             asyncio.run(REGISTRY["forbidden_chain"].fn(urls=[]))

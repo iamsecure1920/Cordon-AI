@@ -6,8 +6,8 @@ data always does: it listed 53 of the 85 tools the installer actually knows
 about, so `gf`, `commix`, `medusa`, `forge` and 28 others were installable,
 catalogued, and absent from the reference a reader consults to find them.
 
-`easyhunt/install/recipes.py` is the single source of truth — it is what
-`easyhunt install` executes, so it cannot drift from reality without the
+`cordon/install/recipes.py` is the single source of truth — it is what
+`cordon install` executes, so it cannot drift from reality without the
 installer breaking first. This script renders that data between the
 BEGIN/END markers in tools.md; `tests/test_tool_matrix.py` fails when the
 file no longer matches, so the next person to add a recipe is told to re-run
@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from easyhunt.install.recipes import RECIPES  # noqa: E402
+from cordon.install.recipes import RECIPES  # noqa: E402
 
 BEGIN = "<!-- BEGIN GENERATED TOOL MATRIX -->"
 END = "<!-- END GENERATED TOOL MATRIX -->"
@@ -53,9 +53,9 @@ def render() -> str:
         BEGIN,
         "",
         f"**{len(recipes)} installable tools**, generated from "
-        "`easyhunt/install/recipes.py` by `scripts/gen_tool_matrix.py`.",
+        "`cordon/install/recipes.py` by `scripts/gen_tool_matrix.py`.",
         "Do not edit this table by hand — run the script.",
-        "`easyhunt doctor` reports which of these are actually working on *this* machine.",
+        "`cordon doctor` reports which of these are actually working on *this* machine.",
         "",
         "| Tool | Category | Install | License | Core |",
         "|------|----------|---------|---------|------|",
@@ -66,7 +66,7 @@ def render() -> str:
             f"| `{r.tool}` | {r.category or '—'} | {method} | "
             f"{r.license or '—'} | {'✅' if r.core else ''} |"
         )
-    lines += ["", "**Core** marks the minimum viable pipeline (`easyhunt install --core`).", "", END]
+    lines += ["", "**Core** marks the minimum viable pipeline (`cordon install --core`).", "", END]
     return "\n".join(lines)
 
 

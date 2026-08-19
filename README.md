@@ -1,6 +1,6 @@
 <div align="center">
 
-![EasyHunt AI](docs/easyhunt-hero.svg)
+![Cordon AI](docs/cordon-hero.svg)
 
 **An agentic VAPT orchestrator where the control plane — not the model — is the security boundary.**
 
@@ -24,7 +24,7 @@
 ## The one-paragraph version
 
 Most AI security tools give a model a shell and a system prompt telling it to
-behave. EasyHunt gives the model **no shell at all**. Every capability is an MCP
+behave. Cordon gives the model **no shell at all**. Every capability is an MCP
 tool that passes through a fixed sequence — scope, sanitize, budget, rate-limit,
 approval, sandbox, parse, audit — enforced in code, server-side, with no path
 that skips a step. The model supplies strategy. The control plane decides what is
@@ -34,7 +34,7 @@ permitted. **A jailbroken prompt cannot reach the network.**
 
 ## The whole system in one picture
 
-![The five layers, and where the security boundary sits](docs/easyhunt-layers.svg)
+![The five layers, and where the security boundary sits](docs/cordon-layers.svg)
 
 Every call descends from L5 to L2 and crosses **L3**. There is no code path that
 routes around it — not a wrapper, not a chained validator, not the unattended
@@ -44,11 +44,11 @@ pipeline.
 
 ### One tool call, end to end
 
-![One tool call through the control plane](docs/easyhunt-flow.svg)
+![One tool call through the control plane](docs/cordon-flow.svg)
 
 ### The engagement pipeline — each phase feeds the next
 
-![The engagement pipeline](docs/easyhunt-pipeline.svg)
+![The engagement pipeline](docs/cordon-pipeline.svg)
 
 </div>
 
@@ -105,12 +105,12 @@ to what the binary actually accepts.
 
 `pip install nuclei` gets you a 2018 Kaggle package. `slither` on PyPI is a
 children's Scratch-for-Python toy. Kali's `medusa` is a password brute-forcer;
-ours is a fuzzer. EasyHunt executes each candidate and keeps the one that
+ours is a fuzzer. Cordon executes each candidate and keeps the one that
 identifies itself — and never "fixes" a collision by uninstalling your software.
 
 ### 5. Health checks run where the tool runs
 
-`easyhunt doctor` executes every tool **inside the container it will actually
+`cordon doctor` executes every tool **inside the container it will actually
 run in**, under the real read-only root and dropped capabilities. Checking the
 host copy answers a question about a different program — that is how tools
 shipped broken for days behind a green tick.
@@ -127,14 +127,14 @@ until a human or a validator proves it.
 ## Quick start
 
 ```bash
-git clone https://github.com/iamsecure1920/EasyHunt-AI.git && cd EasyHunt-AI
+git clone https://github.com/iamsecure1920/EasyHunt-AI.git && cd Cordon-AI
 ./bootstrap.sh
 ```
 
 That is the whole install. `bootstrap.sh` is idempotent and is also the repair
 path: system packages, Go and Python runtimes, Docker enabled at boot, the
-EasyHunt package, the tool suite, **the `easyhunt:latest` image**, the per-tool
-images, then `easyhunt doctor`.
+Cordon package, the tool suite, **the `cordon:latest` image**, the per-tool
+images, then `cordon doctor`.
 
 Budget **30–45 minutes** for a first run. Needs ~15 GB free and Python ≥ 3.11.
 
@@ -145,20 +145,20 @@ Budget **30–45 minutes** for a first run. Needs ~15 GB free and Python ≥ 3.1
 | `--no-tools` | package only |
 
 > [!NOTE]
-> `easyhunt:latest` is built from this repo's `Dockerfile` and is **not on any
+> `cordon:latest` is built from this repo's `Dockerfile` and is **not on any
 > registry**, so `docker pull` cannot find it. `bootstrap.sh` builds it, or:
-> `docker build -t easyhunt:latest .`
+> `docker build -t cordon:latest .`
 
 ### Then, before anything touches a network
 
 ```bash
 cp scope.example.yaml scope.yaml
 $EDITOR scope.yaml          # transcribe the program's published policy
-easyhunt scope validate
-easyhunt doctor             # expect 0 broken
+cordon scope validate
+cordon doctor             # expect 0 broken
 ```
 
-In Claude Code: `/easyhunt`.
+In Claude Code: `/cordon`.
 
 ### Running an engagement
 
@@ -206,7 +206,7 @@ touching the run:
 | **Smart contracts** | `slither` `aderyn` `forge` |
 | **LLM security** | `garak` `promptfoo` `deepteam` |
 
-Run `easyhunt doctor` for the live picture, and see
+Run `cordon doctor` for the live picture, and see
 [`USERMANUAL.md`](USERMANUAL.md#11-mcp-tools-by-phase) for every MCP tool
 grouped by phase.
 
@@ -228,8 +228,8 @@ grouped by phase.
 
 ```bash
 .venv/bin/python -m pytest tests/ -q          # 1,983 tests
-.venv/bin/ruff check easyhunt/ tests/
-easyhunt doctor                                # executed, not just found on PATH
+.venv/bin/ruff check cordon/ tests/
+cordon doctor                                # executed, not just found on PATH
 ```
 
 Nearly every test in the suite exists because something broke against a live
@@ -240,5 +240,5 @@ the bug in a test, then re-measure.
 ## License
 
 See [LICENSE](LICENSE). Third-party tools retain their own licenses — several are
-AGPL-3.0, and `nmap` ships under a custom non-OSI license. `easyhunt doctor`
+AGPL-3.0, and `nmap` ships under a custom non-OSI license. `cordon doctor`
 prints the license of every tool it finds.

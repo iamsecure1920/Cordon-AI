@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 import yaml
 
-from easyhunt.errors import ConfigError
-from easyhunt.knowledge.findings import Finding, Severity, Status
-from easyhunt.llm.triage import (
+from cordon.errors import ConfigError
+from cordon.knowledge.findings import Finding, Severity, Status
+from cordon.llm.triage import (
     Taskflow,
     TriageResult,
     _canary_penalty,
@@ -277,8 +277,8 @@ class TestTriageRun:
 
 class TestTriageTools:
     async def test_lists_shipped_taskflows(self, engagement) -> None:
-        import easyhunt.tools.triage_tools  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.triage_tools  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         engagement.config.data["triage"]["taskflows_dir"] = str(REPO_TASKFLOWS)
         result = await REGISTRY["triage_taskflows"].fn()
@@ -286,8 +286,8 @@ class TestTriageTools:
         assert result["rejected"] == []
 
     async def test_triage_without_a_key_explains_itself(self, engagement, monkeypatch) -> None:
-        import easyhunt.tools.triage_tools  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.triage_tools  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         engagement.config.data["triage"]["taskflows_dir"] = str(REPO_TASKFLOWS)
@@ -296,8 +296,8 @@ class TestTriageTools:
         assert result["ok"] is False and result["error"] == "llm_unavailable"
 
     async def test_canary_preview(self, engagement) -> None:
-        import easyhunt.tools.triage_tools  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.triage_tools  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         result = await REGISTRY["triage_canary_preview"].fn(count=2)
         assert len(result["canaries"]) == 2

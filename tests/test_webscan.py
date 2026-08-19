@@ -22,14 +22,14 @@ from typing import Any
 
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.control_plane.sanitize import sanitize_argv
-from easyhunt.errors import EasyHuntError, SanitizeError
-from easyhunt.knowledge.findings import Severity
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools import webscan as ws
-from easyhunt.tools.base import REGISTRY
-from easyhunt.tools.common import CATALOG, ToolRun
+from cordon.control_plane.approval import PolicyBackend
+from cordon.control_plane.sanitize import sanitize_argv
+from cordon.errors import CordonError, SanitizeError
+from cordon.knowledge.findings import Severity
+from cordon.mcp_server import load_capabilities
+from cordon.tools import webscan as ws
+from cordon.tools.base import REGISTRY
+from cordon.tools.common import CATALOG, ToolRun
 
 # The rest of the tool surface, so cross-module claims (whatweb's spec lives in
 # http_probe) are checked against the real catalog.
@@ -98,7 +98,7 @@ def _approve(engagement: Any, *tools: str) -> None:
 
 class TestRegistration:
     def test_every_tool_is_catalogued(self) -> None:
-        # Absence from CATALOG is why `easyhunt doctor` had no opinion about
+        # Absence from CATALOG is why `cordon doctor` had no opinion about
         # nikto and testssl while both were shipping broken.
         for name in SPEC_NAMES:
             assert name in CATALOG, f"{name} is installed but not catalogued"
@@ -143,7 +143,7 @@ class TestModes:
         # The conftest engagement denies by default; that must be enough to stop
         # a scan, with no fallback path.
         for name in ("nikto_scan", "wapiti_scan"):
-            with pytest.raises(EasyHuntError):
+            with pytest.raises(CordonError):
                 await REGISTRY[name].fn(target="https://example.com/")
 
     def test_jwt_inspection_costs_no_requests(self) -> None:
@@ -850,7 +850,7 @@ class TestParsing:
         # means callers must hand over the https:// form — which the docstring
         # says and this test keeps true.
         calls = _spy(monkeypatch)
-        with pytest.raises(EasyHuntError):
+        with pytest.raises(CordonError):
             await REGISTRY["websocket_probe"].fn(target="wss://example.com/socket")
         assert calls == []
 
@@ -878,13 +878,13 @@ class TestScope:
     ) -> None:
         _approve(engagement, "nikto_scan", "wapiti_scan")
         calls = _spy(monkeypatch)
-        with pytest.raises(EasyHuntError):
+        with pytest.raises(CordonError):
             await REGISTRY[name].fn(target="https://not-ours.example.net/", **kwargs)
         assert calls == [], f"{name} ran the binary before the scope check"
 
 
 def test_is_own_output_filters_intermediates_not_bundles() -> None:
-    """secrets hits inside EasyHunt's own logs are noise; downloaded bundles are not.
+    """secrets hits inside Cordon's own logs are noise; downloaded bundles are not.
 
     gitleaks regex-matches URL/JSON text in dnsx/httpx output (an ``edgekey.net``
     CNAME looks like an API key), and kingfisher flags the noseyparker datastore's
@@ -892,7 +892,7 @@ def test_is_own_output_filters_intermediates_not_bundles() -> None:
     what keeps a secrets report honest. ``js-*.js`` bundles are the target's
     downloaded code and must survive the filter.
     """
-    from easyhunt.tools.secrets import _is_own_output
+    from cordon.tools.secrets import _is_own_output
 
     assert _is_own_output("/ws/raw/dnsx-234549229.jsonl")
     assert _is_own_output("/ws/raw/httpx-025205041.jsonl")

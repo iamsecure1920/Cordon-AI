@@ -1,4 +1,4 @@
-# EasyHunt AI — v2.1 Integration Blueprint
+# Cordon AI — v2.1 Integration Blueprint
 
 **Author:** code review of 7 repositories (2026-08-17)
 **Status:** P0 (WAF bypass, response-diff, regex bypass) + P1 (endpoint scoring,
@@ -10,23 +10,23 @@ code audit, llms.txt) implemented and shipped** (2026-08-17).
 
 | Blueprint item | Landed in | Verified by |
 |---|---|---|
-| WAF fingerprint DB + bypass tables + encodings | `easyhunt/knowledge/waf.py` | `tests/test_waf_bypass.py` |
-| `waf_bypass` / `fingerprint_waf` / `waf_vendors` MCP tools | `easyhunt/tools/waf_bypass.py` | `tests/test_waf_bypass.py` |
-| Chain injects bypass into sqlmap (`--prefix/--suffix`) + dalfox (`--custom-payload`) on clean base pass | `easyhunt/tools/exploit_chain.py`, `exploitation.py` | `tests/test_v21_integration.py::TestWafBypassChainPass` |
-| Response-diff engine (body-hash clustering, deltas) | `easyhunt/tools/fuzz_diff.py` | `tests/test_fuzz_diff.py` |
-| `fuzz_compare` MCP tool + cache-poison re-request mode | `easyhunt/tools/webscan.py` | suite green |
-| fuzz_diff wired into `content_discovery` soft-404 triage | `easyhunt/tools/endpoints.py` | suite green |
-| Regex-bypass generator (4 modes × 4 encodings) | `easyhunt/knowledge/bypass.py` | `tests/test_bypass_generator.py` |
-| Generator wired into `web_injection_probe(regex_bypass=True)` | `easyhunt/tools/web_injection.py` | suite green |
-| Endpoint risk scoring + scored ordering in the chain | `easyhunt/tools/exploit_chain.py` (`_score_injection_point`) | `tests/test_v21_integration.py::TestEndpointScoring` |
-| Finding chains + `find_finding_chains` + report section | `easyhunt/knowledge/attackgraph.py`, `easyhunt/report/synthesize.py` | `tests/test_v21_integration.py::TestFindingChains` |
-| `verify_output` per-tool post-checks | `easyhunt/tools/common.py` | `tests/test_v21_integration.py::TestVerifyOutput` |
-| verify_output wired into `nuclei_scan` + `content_discovery` empty-result cases | `easyhunt/engines/nuclei_engine.py`, `easyhunt/tools/endpoints.py` | suite green |
-| Runtime coverage ledger + report coverage table | `easyhunt/knowledge/coverage.py` (`CoverageLedger`), `control_plane/context.py`, report | `tests/test_v21_integration.py::TestCoverageLedger` |
-| P2-10 JS escape normalization | `easyhunt/tools/js_analysis.py` (`_normalize_escapes`) | `tests/test_v21_integration.py::TestJsEscapeNormalization` |
-| P2-8 Prompt packs (18 classes, role/objective/scope/denies/criteria/evidence) | `easyhunt/knowledge/prompts.py` + `easyhunt/tools/prompts.py` (`exploit_prompt`, `prompt_classes`) | `tests/test_v22_p2.py::TestPromptPacks` |
-| P2-9 Burp handoff (scope-enforced, approval-gated, bounded batch) | `easyhunt/tools/burp.py` (`burp_send`) | `tests/test_v22_p2.py::TestBurpSend` |
-| P2-11 Code-audit deliverable (semgrep + gitleaks → code-audit.json/.md, redacted) | `easyhunt/tools/code_audit.py` (`code_audit`), phase in `scripts/phase.py` + `hunt.sh` | `tests/test_v22_p2.py::TestCodeAudit` |
+| WAF fingerprint DB + bypass tables + encodings | `cordon/knowledge/waf.py` | `tests/test_waf_bypass.py` |
+| `waf_bypass` / `fingerprint_waf` / `waf_vendors` MCP tools | `cordon/tools/waf_bypass.py` | `tests/test_waf_bypass.py` |
+| Chain injects bypass into sqlmap (`--prefix/--suffix`) + dalfox (`--custom-payload`) on clean base pass | `cordon/tools/exploit_chain.py`, `exploitation.py` | `tests/test_v21_integration.py::TestWafBypassChainPass` |
+| Response-diff engine (body-hash clustering, deltas) | `cordon/tools/fuzz_diff.py` | `tests/test_fuzz_diff.py` |
+| `fuzz_compare` MCP tool + cache-poison re-request mode | `cordon/tools/webscan.py` | suite green |
+| fuzz_diff wired into `content_discovery` soft-404 triage | `cordon/tools/endpoints.py` | suite green |
+| Regex-bypass generator (4 modes × 4 encodings) | `cordon/knowledge/bypass.py` | `tests/test_bypass_generator.py` |
+| Generator wired into `web_injection_probe(regex_bypass=True)` | `cordon/tools/web_injection.py` | suite green |
+| Endpoint risk scoring + scored ordering in the chain | `cordon/tools/exploit_chain.py` (`_score_injection_point`) | `tests/test_v21_integration.py::TestEndpointScoring` |
+| Finding chains + `find_finding_chains` + report section | `cordon/knowledge/attackgraph.py`, `cordon/report/synthesize.py` | `tests/test_v21_integration.py::TestFindingChains` |
+| `verify_output` per-tool post-checks | `cordon/tools/common.py` | `tests/test_v21_integration.py::TestVerifyOutput` |
+| verify_output wired into `nuclei_scan` + `content_discovery` empty-result cases | `cordon/engines/nuclei_engine.py`, `cordon/tools/endpoints.py` | suite green |
+| Runtime coverage ledger + report coverage table | `cordon/knowledge/coverage.py` (`CoverageLedger`), `control_plane/context.py`, report | `tests/test_v21_integration.py::TestCoverageLedger` |
+| P2-10 JS escape normalization | `cordon/tools/js_analysis.py` (`_normalize_escapes`) | `tests/test_v21_integration.py::TestJsEscapeNormalization` |
+| P2-8 Prompt packs (18 classes, role/objective/scope/denies/criteria/evidence) | `cordon/knowledge/prompts.py` + `cordon/tools/prompts.py` (`exploit_prompt`, `prompt_classes`) | `tests/test_v22_p2.py::TestPromptPacks` |
+| P2-9 Burp handoff (scope-enforced, approval-gated, bounded batch) | `cordon/tools/burp.py` (`burp_send`) | `tests/test_v22_p2.py::TestBurpSend` |
+| P2-11 Code-audit deliverable (semgrep + gitleaks → code-audit.json/.md, redacted) | `cordon/tools/code_audit.py` (`code_audit`), phase in `scripts/phase.py` + `hunt.sh` | `tests/test_v22_p2.py::TestCodeAudit` |
 | llms.txt agent index | `llms.txt` | — |
 
 Full suite: **2081 passed** (was 1,973 at sprint start); ruff clean on all new files.
@@ -36,11 +36,11 @@ Full suite: **2081 passed** (was 1,973 at sprint start); ruff clean on all new f
 ## 0. Executive summary
 
 Seven repositories were analyzed end-to-end (full source, configs, migrations,
-docs): **HuntProxy**, **autopentest-ai**, **bugbounty-lab101**, **EasyHunt-AI**
+docs): **HuntProxy**, **autopentest-ai**, **bugbounty-lab101**, **Cordon-AI**
 (local, already deeply known), **PayloadsAllTheThings** (already integrated
 locally), **shannon**, **ReconX**.
 
-EasyHunt-AI's real, honest gaps — from its own `knowledge/coverage.py` matrix —
+Cordon-AI's real, honest gaps — from its own `knowledge/coverage.py` matrix —
 are:
 
 1. **13 bug classes without an auto-validator** (6 `detect-only`: XXE, CRLF,
@@ -106,10 +106,10 @@ filesystem/process/socket/secret APIs, CPU budget per plan/analyze stage) →
   `DoubleUrl`), bounded to N payloads. A generic WAF-regex bypass engine, not
   a hardcoded list.
 - **`page_analyzer` escape normalization**: normalizes `https:\/\/host` and
-  `\u002Fapi` before regexing, so minified bundles yield endpoints. (EasyHunt's
+  `\u002Fapi` before regexing, so minified bundles yield endpoints. (Cordon's
   `js_analysis.py` does not do this — see P2-10.)
 - **`compare.rs`** redaction discipline: raw evidence is diffed, sensitive
-  header values are never returned. Matches EasyHunt's evidence-handling ethos.
+  header values are never returned. Matches Cordon's evidence-handling ethos.
 
 ### 1.2 autopentest-ai — bhavsec (Python MCP server, ~9.6k LOC, MIT)
 
@@ -143,7 +143,7 @@ append_event)` dependency-injection pattern.
   `WAF_BYPASSES[vendor][vuln]` with payloads tiered `basic → intermediate →
   advanced`, plus encoding strategies (double-URL, unicode, HTML-entity,
   chunked). **This is the exact "advanced bypass techniques" capability the
-  user asked for, and EasyHunt has nothing like it.**
+  user asked for, and Cordon has nothing like it.**
 - **`find_chains()`** (`knowledge_graph.py`): BFS over typed edges with named
   patterns — `XSS + no CSP`, `SSRF + cloud metadata`, `IDOR + admin`,
   `reflected input + authz` — each with a severity-upgrade suggestion.
@@ -152,7 +152,7 @@ append_event)` dependency-injection pattern.
   "absence ≠ negative" invariant, enforced per binary.
 - **WSTG phase gates**: `track_test`/`track_tool`/`get_coverage`/
   `phase_gate_check` — a runtime test-status ledger with PASS/FAIL gates,
-  which is exactly what EasyHunt's static `coverage.py` matrix cannot show.
+  which is exactly what Cordon's static `coverage.py` matrix cannot show.
 
 ### 1.3 bugbounty-lab101 — DevCop95 (bash + Python, 52 files)
 
@@ -164,22 +164,22 @@ Kali tools; Burp REST integration; local VM lab.
 
 - **`scripts/scope_guard.py`** — target normalization with real edge cases:
   rejects URL credentials, validates ports, rejects control chars/whitespace,
-  IP-vs-CIDR-vs-wildcard matching, Markdown scope-section parsing. EasyHunt's
+  IP-vs-CIDR-vs-wildcard matching, Markdown scope-section parsing. Cordon's
   `scope.py` is stricter (YAML, policy text) — this is a **test/reference
   oracle** for normalization, not a replacement.
 - **`auto-scanner/burp-integration/burp_api.py`** — Burp REST client (target,
   active scan, spider, sitemap, issues, export) with **scope enforcement on
-  every call** (`require_authorized()`). EasyHunt has no Burp integration at
+  every call** (`require_authorized()`). Cordon has no Burp integration at
   all — an optional human-handoff surface (P2-9).
-- **Tool registry with risk ratings** — informational; EasyHunt's
+- **Tool registry with risk ratings** — informational; Cordon's
   `install/recipes.py` already supersedes it.
 
-### 1.4 EasyHunt-AI — local (the project being upgraded)
+### 1.4 Cordon-AI — local (the project being upgraded)
 
 Deeply known from the v2.0 engagement work. Relevant state for this
 blueprint:
 
-- 82 catalogued tools; 24 pipeline phases; MCP server (`easyhunt serve`);
+- 82 catalogued tools; 24 pipeline phases; MCP server (`cordon serve`);
   control plane (`scope/sanitize/ratelimit/budget/approval/audit`); findings
   store with `Severity` enum; `knowledge/` holds `coverage.py` (the honest
   gap matrix), `techniques.py` + `pat/index.json` (PayloadsAllTheThings
@@ -216,17 +216,17 @@ exploits against the live app+API and reports only proof-backed findings.
   (`exploit-injection`, `exploit-auth`, `exploit-authz`, `exploit-ssrf`,
   `exploit-xss`) + validation prompts (`validate-authentication`…) + vuln
   write-up prompts, each with role/objective/scope/success-criteria/
-  evidence-format sections. This is EasyHunt's "No PoC, no finding" invariant
+  evidence-format sections. This is Cordon's "No PoC, no finding" invariant
   expressed as agent instructions (P2-8).
 - **Cross-cutting code-path deny** (permission-system.ts): every `avoid` path
   compiles into deny patterns applied across *all* tools and child sessions,
-  not overridable by a per-tool allow. Audit target for EasyHunt's `scope.py`
+  not overridable by a per-tool allow. Audit target for Cordon's `scope.py`
   + `sanitize.py` — confirm forbidden paths are enforced in every tool's
   sanitizer (P1-6 check).
 - **Structured deliverable handoff** between pipeline stages (`set_*` tools,
   `.shannon/deliverables/`): pre-recon code analysis → recon → vuln → exploit
   → findings, each stage's output typed and consumed by the next. Mirrors
-  EasyHunt's `status.jsonl` handoff but for *LLM-mode* artifacts (P2-11).
+  Cordon's `status.jsonl` handoff but for *LLM-mode* artifacts (P2-11).
 - **llms.txt / llms-full.txt** — the repo publishes an agent-readable index
   of itself. Cheap documentation win for this repo (P2, docs).
 
@@ -239,34 +239,34 @@ tunnels, power/internet resilience.
 **High-value components.**
 
 - **`core/scanners/gf_analyzer.py`** — pure-Python regex packs per class
-  (xss/sqli/ssrf/lfi/rce/idor/debug…). EasyHunt already has the `gf` binary
+  (xss/sqli/ssrf/lfi/rce/idor/debug…). Cordon already has the `gf` binary
   and a `pattern` phase, so this is **reference material**, not a port — but
   its compact per-class regexes are a good second opinion for
   `pattern_scan.py` rules (P2, minor).
-- **`core/state_checkpoint.py`** — scan-state serialization/resume; EasyHunt
+- **`core/state_checkpoint.py`** — scan-state serialization/resume; Cordon
   already has `status.jsonl` + `--from` resume. No action.
 - **`api/resilience_manager.py`, `tunnel_manager.py`, `notifications.py`** —
   mobile/ops concerns; **not relevant** to a server-side orchestrator.
 - **`core/scanners/nuclei_wrapper.py`** — plain severity/tags selection;
-  EasyHunt's `nuclei_engine.py` stack-tag derivation is strictly better.
+  Cordon's `nuclei_engine.py` stack-tag derivation is strictly better.
 
 ---
 
-## 2. Filter: high-value components → EasyHunt-AI mapping
+## 2. Filter: high-value components → Cordon-AI mapping
 
-| # | Component | Source | License | Fits where in EasyHunt-AI | Closes gap |
+| # | Component | Source | License | Fits where in Cordon-AI | Closes gap |
 |---|---|---|---|---|---|
-| 1 | WAF fingerprint DB + bypass tables + encoding strategies | autopentest-ai `waf_evasion.py` | MIT — port with attribution | `easyhunt/knowledge/waf.py` (data) + `easyhunt/tools/waf_bypass.py` (tool) | "WAF bypass techniques" — none today |
-| 2 | Fuzz response-diff engine (body-hash clustering, duration/header deltas) | HuntProxy `fuzzer/mod.rs`, `compare.rs` | Apache-2.0 — port algorithm | `easyhunt/tools/fuzz_diff.py` + `fuzz_compare` MCP tool; used by `content_discovery` + new cache-poison check | detect-only soft-404s; web cache poisoning (manual class) |
-| 3 | Regex-bypass payload generator (4 modes × 4 encodings) | HuntProxy `fuzzer/generators.rs` | Apache-2.0 — port algorithm | `easyhunt/knowledge/bypass.py`; feeds `web_injection.py` payloads | generic WAF-regex bypass for every injection class |
+| 1 | WAF fingerprint DB + bypass tables + encoding strategies | autopentest-ai `waf_evasion.py` | MIT — port with attribution | `cordon/knowledge/waf.py` (data) + `cordon/tools/waf_bypass.py` (tool) | "WAF bypass techniques" — none today |
+| 2 | Fuzz response-diff engine (body-hash clustering, duration/header deltas) | HuntProxy `fuzzer/mod.rs`, `compare.rs` | Apache-2.0 — port algorithm | `cordon/tools/fuzz_diff.py` + `fuzz_compare` MCP tool; used by `content_discovery` + new cache-poison check | detect-only soft-404s; web cache poisoning (manual class) |
+| 3 | Regex-bypass payload generator (4 modes × 4 encodings) | HuntProxy `fuzzer/generators.rs` | Apache-2.0 — port algorithm | `cordon/knowledge/bypass.py`; feeds `web_injection.py` payloads | generic WAF-regex bypass for every injection class |
 | 4 | Endpoint risk scoring (tech+method+params) | autopentest-ai `endpoint_priority.py` | MIT | upgrade `exploit_chain.py` `_API_SIGNAL_TIER0/1` + `endpoints.py` | validator budget spent on wrong endpoints |
-| 5 | Chain patterns + `find_chains` BFS w/ severity upgrade | autopentest-ai `knowledge_graph.py` | MIT | extend `easyhunt/knowledge/attackgraph.py` + report | IDOR/business-logic "manual" classes get chain evidence |
-| 6 | Per-tool output verification (empty ≠ clean, corrected flags) | autopentest-ai `tool_verification.py` | MIT | `easyhunt/tools/common.py` / wrapper post-check | "absence ≠ negative" made machine-enforced |
-| 7 | WSTG runtime coverage ledger + phase gates | autopentest-ai `server.py` (track_test/get_coverage) | MIT | `easyhunt/knowledge/coverage.py` runtime tracking + report % | report can't say "we covered 9/12 classes" today |
-| 8 | Per-class proof-based exploit prompt packs | shannon `apps/worker/prompts/exploit-*.txt` | AGPL — reimplement concept | `skills/` or `easyhunt/knowledge/prompts/` | LLM-mode exploitation rigor |
-| 9 | Burp REST integration with scope-enforced calls | bugbounty-lab101 `burp_api.py` | MIT | new optional `easyhunt/tools/burp.py` | human handoff for classes no scanner owns |
-| 10 | JS escape normalization (`https:\/\/`, `\u002F`) | HuntProxy `page_analyzer` | Apache-2.0 | `easyhunt/tools/js_analysis.py` | endpoint extraction from minified bundles |
-| 11 | Pre-recon code-analysis deliverable stage | shannon | AGPL — reimplement | optional `easyhunt/tools/code_audit.py` (semgrep already exists) | white-box engagements |
+| 5 | Chain patterns + `find_chains` BFS w/ severity upgrade | autopentest-ai `knowledge_graph.py` | MIT | extend `cordon/knowledge/attackgraph.py` + report | IDOR/business-logic "manual" classes get chain evidence |
+| 6 | Per-tool output verification (empty ≠ clean, corrected flags) | autopentest-ai `tool_verification.py` | MIT | `cordon/tools/common.py` / wrapper post-check | "absence ≠ negative" made machine-enforced |
+| 7 | WSTG runtime coverage ledger + phase gates | autopentest-ai `server.py` (track_test/get_coverage) | MIT | `cordon/knowledge/coverage.py` runtime tracking + report % | report can't say "we covered 9/12 classes" today |
+| 8 | Per-class proof-based exploit prompt packs | shannon `apps/worker/prompts/exploit-*.txt` | AGPL — reimplement concept | `skills/` or `cordon/knowledge/prompts/` | LLM-mode exploitation rigor |
+| 9 | Burp REST integration with scope-enforced calls | bugbounty-lab101 `burp_api.py` | MIT | new optional `cordon/tools/burp.py` | human handoff for classes no scanner owns |
+| 10 | JS escape normalization (`https:\/\/`, `\u002F`) | HuntProxy `page_analyzer` | Apache-2.0 | `cordon/tools/js_analysis.py` | endpoint extraction from minified bundles |
+| 11 | Pre-recon code-analysis deliverable stage | shannon | AGPL — reimplement | optional `cordon/tools/code_audit.py` (semgrep already exists) | white-box engagements |
 | 12 | scope normalization edge-case oracle | bugbounty-lab101 `scope_guard.py` | MIT | `tests/test_scope.py` fixtures | scope.py hardening |
 
 ---
@@ -284,16 +284,16 @@ that fact. Every validator (sqlmap, dalfox, commix, sstimap, ssrfmap,
 web_injection) currently sends textbook payloads straight into the WAF.
 
 **Where.**
-- `easyhunt/knowledge/waf.py` — port `WAF_SIGNATURES` (12 vendors) and
+- `cordon/knowledge/waf.py` — port `WAF_SIGNATURES` (12 vendors) and
   `WAF_BYPASSES[vendor][class]` from autopentest-ai (MIT, add attribution
   header). Add PAT cross-reference: when a PAT technique record has a
   `waf-bypass` section, merge it in at index-build time
   (`scripts/fetch_pat.py` extension).
-- `easyhunt/tools/waf_bypass.py` — new `@easyhunt_tool` **`waf_bypass`**:
+- `cordon/tools/waf_bypass.py` — new `@cordon_tool` **`waf_bypass`**:
   input `(vendor_or_fingerprint, vuln_class, level)` → payload list, ordered
   basic→advanced, with encoding strategies. Read-only — approval class
   `discovery`.
-- `easyhunt/tools/web_injection.py` / `exploit_chain.py` — the chain asks
+- `cordon/tools/web_injection.py` / `exploit_chain.py` — the chain asks
   `waf_bypass` for the observed vendor (from the `waf` phase's stored result)
   before firing each validator, and passes payloads via each tool's
   `--prefix/--suffix` (sqlmap `--prefix/--suffix`, dalfox `--custom-payload`,
@@ -327,11 +327,11 @@ crude filters for soft-404 triage; (b) the `RegexBypass` generator
 (Start/Separator/End/RegexMetachar × Url/Unicode/Raw/DoubleUrl).
 
 **Where.**
-- `easyhunt/tools/fuzz_diff.py` — port the algorithm from HuntProxy
+- `cordon/tools/fuzz_diff.py` — port the algorithm from HuntProxy
   `FuzzResponseDiff`/`FuzzResponseGroup` (Apache-2.0, attribution). Pure
   functions: `group_cases(cases) -> clusters`, `diff_case(baseline, case) ->
   FuzzResponseDiff`-shaped dataclass. Body-hash via existing hashing utils.
-- `easyhunt/tools/webscan.py` — `content_discovery` post-processes ffuf JSON
+- `cordon/tools/webscan.py` — `content_discovery` post-processes ffuf JSON
   with `fuzz_diff` instead of relying on ffuf's filters; new MCP tool
   **`fuzz_compare`** (read-only, discovery class) exposed to the agent for
   on-demand baseline-vs-injected comparisons.
@@ -339,7 +339,7 @@ crude filters for soft-404 triage; (b) the `RegexBypass` generator
   comparing the *second* response to the baseline (poisoned cache serves the
   injected body to the next requester) — the only honest way to move
   "web cache poisoning" from `manual` toward detectable.
-- `easyhunt/knowledge/bypass.py` — port `PayloadGenerator::RegexBypass`
+- `cordon/knowledge/bypass.py` — port `PayloadGenerator::RegexBypass`
   (Apache-2.0, attribution). `generate_regex_bypass(input, modes, encoding,
   max_payloads)`. Wire into `web_injection.py` as a payload source behind the
   tier-B gate.
@@ -368,13 +368,13 @@ skip binary MIME. Bypass generation is combinatorial → honor the
 severity-upgrade suggestions, surfaced in the report.
 
 **Where.**
-- `easyhunt/tools/endpoints.py` — port `_score_endpoint` (tech risk, method
+- `cordon/tools/endpoints.py` — port `_score_endpoint` (tech risk, method
   score, param count, auth weight) from autopentest-ai (MIT); `endpoints`
   phase stores a scored queue; `exploit_chain.py` consumes the top-N instead
   of regex tiers.
-- `easyhunt/knowledge/attackgraph.py` — add `CHAIN_PATTERNS` (XSS+no-CSP,
+- `cordon/knowledge/attackgraph.py` — add `CHAIN_PATTERNS` (XSS+no-CSP,
   SSRF+cloud-metadata, IDOR+admin, reflected-input+authz, open-redirect+OAuth)
-  and a `find_chains()` BFS; `easyhunt/report/synthesize.py` renders chain
+  and a `find_chains()` BFS; `cordon/report/synthesize.py` renders chain
   upgrades in the findings section (a chained Medium becomes High with the
   chain named).
 
@@ -393,12 +393,12 @@ corrected-command hint); (b) runtime WSTG coverage ledger so the report shows
 per-class coverage and phase gates.
 
 **Where.**
-- `easyhunt/tools/common.py` — a `verify_output(tool, cmd, raw)` registry
+- `cordon/tools/common.py` — a `verify_output(tool, cmd, raw)` registry
   (nmap `-Pn`, nuclei empty JSON, sqlmap "no parameter found", dalfox no
   output). Wrappers call it after `run_one`; UNTESTED is recorded in the
   findings store instead of silence. Port the rule tables from
   autopentest-ai `tool_verification.py` (MIT).
-- `easyhunt/knowledge/coverage.py` — add runtime status per class
+- `cordon/knowledge/coverage.py` — add runtime status per class
   (not_attempted / detected / validated / disproven / n_a) written from each
   phase; `report_generate` renders a coverage % table and a phase-gate
   PASS/FAIL per WSTG category.
@@ -412,12 +412,12 @@ per-class coverage and phase gates.
 
 ### PHASE 4 — Agent-mode & integrations (P2-8 … P2-11, low risk, optional)
 
-- **P2-8 exploit prompt packs** — **IMPLEMENTED** (`easyhunt/knowledge/prompts.py`
-  + `easyhunt/tools/prompts.py`): 18 classes, each with role/objective/scope/
+- **P2-8 exploit prompt packs** — **IMPLEMENTED** (`cordon/knowledge/prompts.py`
+  + `cordon/tools/prompts.py`): 18 classes, each with role/objective/scope/
   universal+class denies/success-criteria/evidence-format (the "No PoC, no
   finding" fields), reimplemented AGPL-clean from shannon's structure; exposed
   via `exploit_prompt` / `prompt_classes` (read-only).
-- **P2-9 Burp handoff** — **IMPLEMENTED** (`easyhunt/tools/burp.py`):
+- **P2-9 Burp handoff** — **IMPLEMENTED** (`cordon/tools/burp.py`):
   `burp_send` forwards one scope-checked request per target (≤10 per call)
   through the operator's local Burp proxy so the traffic lands in Proxy
   history; approval-gated, cost derived from its own batch cap, distinct
@@ -425,7 +425,7 @@ per-class coverage and phase gates.
 - **P2-10 JS escape normalization** — **IMPLEMENTED**: `js_analysis.py`
   normalizes `https:\/\/` and `\u002F` before endpoint extraction (HuntProxy
   technique).
-- **P2-11 code-audit deliverable** — **IMPLEMENTED** (`easyhunt/tools/code_audit.py`):
+- **P2-11 code-audit deliverable** — **IMPLEMENTED** (`cordon/tools/code_audit.py`):
   `code_audit` stage (global phase in `hunt.sh`) wraps semgrep + gitleaks into
   a structured pre-recon deliverable (`code-audit.json`/`.md`, secrets
   redacted, semgrep hits filed as candidates) for white-box engagements.

@@ -19,7 +19,7 @@ class TestDuplicateCollapse:
                 "validation_note": "", "snippet": snippet}
 
     def test_same_value_across_files_becomes_one_finding(self) -> None:
-        from easyhunt.tools.secrets import _collapse_duplicates
+        from cordon.tools.secrets import _collapse_duplicates
 
         hits = [self._hit("generic-api-key", f"raw/chunk-{i}.js", 'KEY":"abc123"')
                 for i in range(56)]
@@ -30,14 +30,14 @@ class TestDuplicateCollapse:
 
     def test_every_other_location_is_retained_for_remediation(self) -> None:
         """Triage needs one row; remediation needs all the files."""
-        from easyhunt.tools.secrets import _collapse_duplicates
+        from cordon.tools.secrets import _collapse_duplicates
 
         hits = [self._hit("aws", "a.js", "AKIA..."), self._hit("aws", "b.js", "AKIA...")]
         out = _collapse_duplicates(hits)
         assert out[0]["duplicate_paths"] == ["b.js:1"]
 
     def test_different_values_stay_separate(self) -> None:
-        from easyhunt.tools.secrets import _collapse_duplicates
+        from cordon.tools.secrets import _collapse_duplicates
 
         out = _collapse_duplicates([
             self._hit("generic-api-key", "a.js", 'KEY":"aaa"'),
@@ -46,7 +46,7 @@ class TestDuplicateCollapse:
         assert len(out) == 2, "two distinct keys are two findings"
 
     def test_same_value_different_rule_stays_separate(self) -> None:
-        from easyhunt.tools.secrets import _collapse_duplicates
+        from cordon.tools.secrets import _collapse_duplicates
 
         out = _collapse_duplicates([
             self._hit("aws", "a.js", "SECRET"),
@@ -56,7 +56,7 @@ class TestDuplicateCollapse:
 
     def test_a_validated_occurrence_wins_the_merge(self) -> None:
         """Validation is a property of the credential, not of the file."""
-        from easyhunt.tools.secrets import _collapse_duplicates
+        from cordon.tools.secrets import _collapse_duplicates
 
         out = _collapse_duplicates([
             self._hit("aws", "a.js", "AKIA...", validated=False),
@@ -67,6 +67,6 @@ class TestDuplicateCollapse:
         assert out[0]["path"] == "b.js", "the confirmed location is the one to report"
 
     def test_empty_input_is_safe(self) -> None:
-        from easyhunt.tools.secrets import _collapse_duplicates
+        from cordon.tools.secrets import _collapse_duplicates
 
         assert _collapse_duplicates([]) == []

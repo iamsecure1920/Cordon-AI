@@ -26,9 +26,9 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from easyhunt.control_plane.scope import Scope
-from easyhunt.knowledge.findings import Finding, FindingStore, Severity
-from easyhunt.tools.webscan import _confirms_ipv4_in_header
+from cordon.control_plane.scope import Scope
+from cordon.knowledge.findings import Finding, FindingStore, Severity
+from cordon.tools.webscan import _confirms_ipv4_in_header
 from tests.conftest import scope_dict
 
 

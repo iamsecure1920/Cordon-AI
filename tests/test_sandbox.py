@@ -2,7 +2,7 @@
 behaviour that matters most — a host fallback must never be silent.
 
 The unit tests below run everywhere. The container tests at the bottom skip
-unless a Docker daemon and ``easyhunt:latest`` are actually present, because
+unless a Docker daemon and ``cordon:latest`` are actually present, because
 "the plan says sandboxed: true" is not evidence that anything ran in a container.
 Where the image exists they execute a real binary inside it and check the output.
 """
@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from easyhunt.control_plane.sandbox import CONTAINER_WORKDIR, Sandbox, SandboxConfig
-from easyhunt.errors import ToolUnavailable
+from cordon.control_plane.sandbox import CONTAINER_WORKDIR, Sandbox, SandboxConfig
+from cordon.errors import ToolUnavailable
 
-SHARED_IMAGE = "easyhunt:latest"
+SHARED_IMAGE = "cordon:latest"
 
 
 def _docker_ok() -> bool:
@@ -320,7 +320,7 @@ class TestFallbackIsVisible:
 
     def test_fallback_is_logged_at_warning(self, tmp_path: Path, caplog) -> None:
         sandbox = make_sandbox(tmp_path, default_image="")
-        with caplog.at_level("WARNING", logger="easyhunt.sandbox"):
+        with caplog.at_level("WARNING", logger="cordon.sandbox"):
             sandbox.plan(tool="subzy", binary="sh", argv=["-c", "true"])
 
         assert "SANDBOX FALLBACK" in caplog.text
@@ -403,7 +403,7 @@ class TestActuallyRunsInTheContainer:
         )
 
     def test_the_process_runs_inside_the_image_not_on_the_host(self, tmp_path: Path) -> None:
-        """/etc/easyhunt-image-marker does not exist on the host. Reading the
+        """/etc/cordon-image-marker does not exist on the host. Reading the
         container's own filesystem is the difference between "planned" and "ran"."""
         sandbox = self.real(tmp_path)
         plan = sandbox.plan(
@@ -511,7 +511,7 @@ class TestHostPathNeverReachesTheContainer:
     """
 
     def test_container_check_uses_the_name_not_the_host_path(self, tmp_path) -> None:
-        from easyhunt.control_plane.sandbox import Sandbox, SandboxConfig
+        from cordon.control_plane.sandbox import Sandbox, SandboxConfig
 
         asked: list[str] = []
 
@@ -544,7 +544,7 @@ class TestHostPathNeverReachesTheContainer:
 
     def test_host_fallback_still_uses_the_resolved_path(self, tmp_path) -> None:
         """The identity-resolved path is the whole point on the host branch."""
-        from easyhunt.control_plane.sandbox import Sandbox, SandboxConfig
+        from cordon.control_plane.sandbox import Sandbox, SandboxConfig
 
         sandbox = Sandbox(
             SandboxConfig.from_dict({"mode": "none", "fallback_to_host": True}),

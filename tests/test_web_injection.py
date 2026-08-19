@@ -19,9 +19,9 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.tools import web_injection as w
-from easyhunt.tools.base import REGISTRY
+from cordon.control_plane.approval import PolicyBackend
+from cordon.tools import web_injection as w
+from cordon.tools.base import REGISTRY
 
 
 def approve(engagement, tool: str) -> None:
@@ -62,11 +62,11 @@ class TestRegistration:
 class TestInjector:
     def test_substitutes_and_quotes_a_payload(self) -> None:
         url = "https://www.example.com/next?dest=/home"
-        injected = w._inject(url, "dest", "https://easyhunt-canary.invalid/x", safe="")
+        injected = w._inject(url, "dest", "https://cordon-canary.invalid/x", safe="")
         # The scheme and slashes are quoted so the value survives the wire as one
         # parameter, not as path structure.
         assert injected.startswith("https://www.example.com/next?dest=https%3A%2F%2F")
-        assert "easyhunt-canary.invalid" in injected
+        assert "cordon-canary.invalid" in injected
 
     def test_lfi_keeps_slashes_literal(self) -> None:
         url = "https://www.example.com/view?file=index.php"
@@ -98,32 +98,32 @@ class TestInjector:
 
     def test_crlf_payload_is_not_double_encoded(self) -> None:
         url = "https://www.example.com/redirect?next=home"
-        injected = w._inject(url, "next", "\r\nEasyHunt-Injected: 1", safe="")
+        injected = w._inject(url, "next", "\r\nCordon-Injected: 1", safe="")
         # One layer of quoting: %0D%0A, not %250D%250A.
         assert "%0D%0A" in injected.upper()
         assert "%250D" not in injected.upper()
 
     def test_hpp_duplicates_instead_of_replacing(self) -> None:
         url = "https://www.example.com/search?q=original"
-        injected = w._inject(url, "q", "easyhunt-hpp-canary", safe="", duplicate=True)
+        injected = w._inject(url, "q", "cordon-hpp-canary", safe="", duplicate=True)
         # The original value is preserved and the canary is appended as a second
         # occurrence of the same parameter — the HPP primitive.
         assert injected.count("q=") == 2
         assert "q=original" in injected
-        assert "easyhunt-hpp-canary" in injected
+        assert "cordon-hpp-canary" in injected
 
 
 class TestSignatureHit:
     def test_header_signature_matches_header_names(self) -> None:
-        resp = httpx.Response(200, headers={"easyhunt-injected": "1"})
+        resp = httpx.Response(200, headers={"cordon-injected": "1"})
         assert w._signature_hit(resp, "headers", w._CLASSES["crlf"]["signature"])
 
     def test_location_signature_reads_the_location_header(self) -> None:
-        resp = httpx.Response(302, headers={"location": "https://easyhunt-canary.invalid/x"})
+        resp = httpx.Response(302, headers={"location": "https://cordon-canary.invalid/x"})
         assert w._signature_hit(resp, "location", w._CLASSES["open-redirect"]["signature"])
 
     def test_scheme_relative_location_is_a_hit(self) -> None:
-        resp = httpx.Response(302, headers={"location": "//easyhunt-canary.invalid/x"})
+        resp = httpx.Response(302, headers={"location": "//cordon-canary.invalid/x"})
         assert w._signature_hit(resp, "location", w._CLASSES["open-redirect"]["signature"])
 
     def test_relative_location_echoing_canary_is_not_an_open_redirect(self) -> None:
@@ -131,24 +131,24 @@ class TestSignatureHit:
         # query string into a *relative* Location: /api?id=<injected>. Same-origin
         # by construction — no victim can be redirected off-host. Without this
         # guard every canonical redirect becomes a false open-redirect finding.
-        resp = httpx.Response(308, headers={"location": "/api?id=https%3A%2F%2Feasyhunt-canary.invalid%2Fredirect"})
+        resp = httpx.Response(308, headers={"location": "/api?id=https%3A%2F%2Fcordon-canary.invalid%2Fredirect"})
         assert not w._signature_hit(resp, "location", w._CLASSES["open-redirect"]["signature"])
 
     def test_absolute_location_echoing_canary_in_query_is_not_an_open_redirect(self) -> None:
         # The ATT false-positive class: nginx/Cloudflare scheme rewrites emit an
         # *absolute* Location to the site's own www host with the injected value
         # echoed into the query string:
-        #   Location: http://www.victim.example/api?id=easyhunt-canary.invalid
+        #   Location: http://www.victim.example/api?id=cordon-canary.invalid
         # The Location is absolute, so an "is it off-host" check passes; but the
         # victim lands on victim.example, not on the canary. Only the canary as
         # the parsed *destination host* is an open redirect.
-        resp = httpx.Response(301, headers={"location": "http://www.victim.example/api?id=easyhunt-canary.invalid"})
+        resp = httpx.Response(301, headers={"location": "http://www.victim.example/api?id=cordon-canary.invalid"})
         assert not w._signature_hit(resp, "location", w._CLASSES["open-redirect"]["signature"])
         # Same page, genuine form: canary IS the destination host.
-        genuine = httpx.Response(302, headers={"location": "https://easyhunt-canary.invalid/redirect"})
+        genuine = httpx.Response(302, headers={"location": "https://cordon-canary.invalid/redirect"})
         assert w._signature_hit(genuine, "location", w._CLASSES["open-redirect"]["signature"])
         # Triple-slash form browsers normalise to scheme-relative: still a hit.
-        triple = httpx.Response(302, headers={"location": "///easyhunt-canary.invalid/redirect"})
+        triple = httpx.Response(302, headers={"location": "///cordon-canary.invalid/redirect"})
         assert w._signature_hit(triple, "location", w._CLASSES["open-redirect"]["signature"])
 
     def test_body_signature_matches_the_body(self) -> None:

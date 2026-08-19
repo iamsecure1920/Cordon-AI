@@ -1,6 +1,6 @@
 """The technique index: PayloadsAllTheThings as queryable methodology.
 
-The WSTG index answers *what to check*; this answers *how* — which EasyHunt
+The WSTG index answers *what to check*; this answers *how* — which Cordon
 tools test a bug class, which vetted payload lists and gf pattern packs belong
 to it. Built by ``scripts/fetch_pat.py`` from a pinned PAT commit (MIT), with
 attribution on every record. The tests below are split: retrieval behaviour
@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools.base import REGISTRY
+from cordon.mcp_server import load_capabilities
+from cordon.tools.base import REGISTRY
 
 # Register every capability tool once, so REGISTRY["technique_lookup"] exists.
 load_capabilities()
@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 class TestTechniqueIndex:
     def _index(self):
-        from easyhunt.knowledge.techniques import load_index
+        from cordon.knowledge.techniques import load_index
 
         index = load_index()
         if not index.available:
@@ -111,7 +111,7 @@ class TestTechniqueIndex:
             tech = index.get(class_name)
             assert tech is not None, f"{class_name} missing"
             assert tech["phase"] == "post_exploitation"
-            # EasyHunt has no C2/host-agent tooling; pretending otherwise would
+            # Cordon has no C2/host-agent tooling; pretending otherwise would
             # be a lie in the index.
             assert tech["tools"] == []
 
@@ -120,7 +120,7 @@ class TestWiringIntegrity:
     """The index is only as trustworthy as its references. These run always."""
 
     def _index(self):
-        from easyhunt.knowledge.techniques import load_index
+        from cordon.knowledge.techniques import load_index
 
         index = load_index()
         if not index.available:
@@ -150,7 +150,7 @@ class TestWiringIntegrity:
 
 class TestTechniqueLookupTool:
     async def test_tool_reports_a_missing_index(self, engagement, monkeypatch) -> None:
-        from easyhunt.knowledge import techniques
+        from cordon.knowledge import techniques
 
         monkeypatch.setattr(
             techniques, "load_index", lambda *a, **k: techniques.TechniqueIndex({})
@@ -179,8 +179,8 @@ class TestHuntPlanEnrichment:
     names the "how", not just the "what"."""
 
     def _enrich(self, proposal: dict) -> dict:
-        from easyhunt.knowledge.techniques import load_index
-        from easyhunt.tools import hunt_plan
+        from cordon.knowledge.techniques import load_index
+        from cordon.tools import hunt_plan
 
         if not load_index().available:
             pytest.skip("technique index not built on this machine")

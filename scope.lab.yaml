@@ -1,7 +1,7 @@
-# EasyHunt AI — engagement scope: the local validation lab (127.0.0.1)
+# Cordon AI — engagement scope: the local validation lab (127.0.0.1)
 #
 # This is not an engagement. It is a scope for a deliberately vulnerable app
-# bound to loopback on the machine EasyHunt is running on, and it exists to
+# bound to loopback on the machine Cordon is running on, and it exists to
 # exercise the paths a real target cannot.
 #
 # Why it is needed: a live third-party target proves a wrapper builds an argv
@@ -21,7 +21,7 @@
 version: 1
 
 engagement:
-  name: easyhunt-lab
+  name: cordon-lab
   authorization: owned
   program_url: null
   approval_ref: null
@@ -67,7 +67,7 @@ rules:
   allow_aggressive: true
   allow_exploitation: true
   no_dos: true
-  user_agent: "EasyHunt-AI/2.0 (local-validation-lab; contact=your-handle)"
+  user_agent: "Cordon-AI/2.0 (local-validation-lab; contact=your-handle)"
   forbidden_paths: []
 
 budget:

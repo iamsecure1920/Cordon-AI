@@ -15,11 +15,11 @@ from typing import Any
 
 import pytest
 
-from easyhunt.control_plane.sanitize import sanitize_argv
-from easyhunt.tools.base import REGISTRY
-from easyhunt.tools.common import CATALOG, ToolRun
+from cordon.control_plane.sanitize import sanitize_argv
+from cordon.tools.base import REGISTRY
+from cordon.tools.common import CATALOG, ToolRun
 
-EP = importlib.import_module("easyhunt.tools.endpoints")
+EP = importlib.import_module("cordon.tools.endpoints")
 
 
 @pytest.mark.parametrize(

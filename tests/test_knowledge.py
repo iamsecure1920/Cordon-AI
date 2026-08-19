@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from easyhunt.knowledge.findings import Finding, PoC, Severity
-from easyhunt.knowledge.memory import MemoryEntry, PoCMemory
-from easyhunt.knowledge.taskgraph import TaskGraph, TaskState
+from cordon.knowledge.findings import Finding, PoC, Severity
+from cordon.knowledge.memory import MemoryEntry, PoCMemory
+from cordon.knowledge.taskgraph import TaskGraph, TaskState
 
 
 class TestTaskGraph:

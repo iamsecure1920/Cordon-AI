@@ -1,0 +1,46 @@
+id: dangling-cname-candidate
+kind: rule-pack
+phase: takeover
+mode: passive
+severity: medium
+description: >
+  Flags a response whose body matches a known unclaimed-service fingerprint,
+  making the host a subdomain-takeover candidate.
+author: cordon
+license: MIT
+inputs: [http_response]
+condition: or
+matchers:
+  - type: word
+    part: body
+    condition: or
+    words:
+      - "There isn't a GitHub Pages site here"
+      - "NoSuchBucket"
+      - "The specified bucket does not exist"
+      - "Sorry, this shop is currently unavailable"
+      - "Do you want to register"
+      - "Repository not found"
+      - "The request could not be satisfied"
+      - "herokucdn.com/error-pages/no-such-app.html"
+      - "project not found"
+      - "Domain uses DO name servers with no records in DO"
+extractors:
+  - name: fingerprint_line
+    type: regex
+    part: body
+    regex:
+      - '(?i).{0,60}(no such|not found|unavailable|unclaimed|does not exist).{0,60}'
+verify:
+  manual: false
+  note: >
+    A fingerprint alone is never a takeover — hosting providers serve these pages
+    for plenty of claimed-but-empty resources.
+  command: >
+    dig CNAME {{host}} +short && curl -sS -o /dev/null -w '%{http_code}' https://{{host}}/
+remediation: >
+  Remove the dangling DNS record, or re-claim the resource at the provider. Audit
+  the zone for other records pointing at decommissioned services.
+references:
+  - https://github.com/EdOverflow/can-i-take-over-xyz
+tags: [takeover, dns]

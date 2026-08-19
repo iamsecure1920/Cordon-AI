@@ -33,8 +33,8 @@ from pathlib import Path
 
 RESOLV = Path("/etc/resolv.conf")
 DNSMASQ = Path("/etc/dnsmasq.conf")
-SYSCTL = Path("/etc/sysctl.d/99-easyhunt-tuning.conf")
-BACKUP_SUFFIX = ".easyhunt-backup"
+SYSCTL = Path("/etc/sysctl.d/99-cordon-tuning.conf")
+BACKUP_SUFFIX = ".cordon-backup"
 
 G, Y, R, C, B, N = (
     "\033[92m", "\033[93m", "\033[91m", "\033[96m", "\033[1m", "\033[0m"
@@ -67,7 +67,7 @@ def run(argv: list[str], *, check: bool = False) -> subprocess.CompletedProcess[
 def docker_bridge_ip() -> str | None:
     """The docker0 address, so containers can reach the cache.
 
-    Without this the whole exercise is theatre for EasyHunt: tools run in
+    Without this the whole exercise is theatre for Cordon: tools run in
     containers, and 127.0.0.1 inside a container is the container itself. Docker
     sees a loopback nameserver in the host resolv.conf and silently substitutes
     public DNS — the cache reports healthy and serves nobody.
@@ -91,7 +91,7 @@ UPSTREAMS = ["1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9"]
 def dnsmasq_config(bridge: str | None) -> str:
     listen = ["127.0.0.1"] + ([bridge] if bridge else [])
     lines = [
-        "# EasyHunt — caching resolver for DNS-bound enumeration.",
+        "# Cordon — caching resolver for DNS-bound enumeration.",
         "port=53",
         "domain-needed",
         "bogus-priv",
@@ -232,7 +232,7 @@ def apply(*, do_dns: bool, do_kernel: bool) -> int:
         run(["modprobe", "tcp_bbr"])
         run(["modprobe", "nf_conntrack"])
         SYSCTL.write_text(
-            "# EasyHunt — high-concurrency scanning.\n"
+            "# Cordon — high-concurrency scanning.\n"
             + "".join(f"{k} = {v}\n" for k, v in SYSCTL_SETTINGS.items())
         )
         result = run(["sysctl", "-p", str(SYSCTL)])

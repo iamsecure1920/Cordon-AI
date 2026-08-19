@@ -1,11 +1,11 @@
-"""Tests for the live engagement dashboard (easyhunt/tools/dashboard.py)."""
+"""Tests for the live engagement dashboard (cordon/tools/dashboard.py)."""
 from __future__ import annotations
 
 import json
 import re
 from pathlib import Path
 
-from easyhunt.tools.dashboard import (
+from cordon.tools.dashboard import (
     _canonical_phase,
     _collect_assets_detailed,
     _collect_coverage,
@@ -116,7 +116,7 @@ class TestRenderHtml:
         root = tmp_path
         _make_workspace(root)
         html = _render_html(collect_state(root))
-        assert "<title>EasyHunt" in html
+        assert "<title>Cordon" in html
         assert "window.__live__ = false;" in html  # static mode does not poll
         embedded = re.search(
             r'<script id="boot-state" type="application/json">(.*?)</script>',

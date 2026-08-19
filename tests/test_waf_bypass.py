@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from easyhunt.knowledge import waf
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools.base import REGISTRY
+from cordon.knowledge import waf
+from cordon.mcp_server import load_capabilities
+from cordon.tools.base import REGISTRY
 
 load_capabilities()
 

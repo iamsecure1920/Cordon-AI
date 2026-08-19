@@ -1,4 +1,4 @@
-# EasyHunt AI — engagement scope artifact
+# Cordon AI — engagement scope artifact
 #
 # This file IS the legal authorization boundary for a run. The MCP control plane
 # refuses every network-touching call whose target does not match it.
@@ -72,7 +72,7 @@ out_of_scope:
 
 rules:
   # Does "*.example.com" also authorize example.com itself? Most programs mean
-  # yes, but EasyHunt fails closed: list the apex under domains: if you want it.
+  # yes, but Cordon fails closed: list the apex under domains: if you want it.
   wildcard_includes_apex: false
   # Refuse loopback/link-local/private/reserved IPs unless a cidr above covers
   # them explicitly. Stops SSRF-style pivots into infrastructure you don't own.
@@ -89,7 +89,7 @@ rules:
   allow_self_registration: false
   # Anything whose purpose is volumetric disruption stays off, always.
   no_dos: true
-  user_agent: "EasyHunt-AI/2.0 (authorized-testing; handle=your-handle)"
+  user_agent: "Cordon-AI/2.0 (authorized-testing; handle=your-handle)"
   # Paths the program has asked researchers not to touch.
   forbidden_paths:
     - /admin/delete

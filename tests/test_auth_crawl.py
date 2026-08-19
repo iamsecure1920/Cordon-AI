@@ -29,9 +29,9 @@ from typing import Any
 import httpx
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.tools import auth_crawl as ac
-from easyhunt.tools.sessions import session_register
+from cordon.control_plane.approval import PolicyBackend
+from cordon.tools import auth_crawl as ac
+from cordon.tools.sessions import session_register
 
 pytestmark = pytest.mark.asyncio
 

@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// The Python server (easyhunt dashboard --serve) owns /api/state on :8765.
+// The Python server (cordon dashboard --serve) owns /api/state on :8765.
 // In dev mode, vite runs on :5173 and proxies API + report fetches there so
 // `npm run dev` works against a running backend unchanged.
 export default defineConfig({

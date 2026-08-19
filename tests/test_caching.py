@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from easyhunt.llm.openrouter import (
+from cordon.llm.openrouter import (
     MIN_CACHEABLE_CHARS,
     LLMClient,
     build_messages,
@@ -182,8 +182,8 @@ class TestCacheAccounting:
 
 class TestTriageUsesCaching:
     async def test_triage_puts_instructions_in_the_cacheable_prefix(self, engagement) -> None:
-        from easyhunt.knowledge.findings import Finding, Severity
-        from easyhunt.llm.triage import Taskflow, run_taskflow
+        from cordon.knowledge.findings import Finding, Severity
+        from cordon.llm.triage import Taskflow, run_taskflow
 
         sent: list[Any] = []
 

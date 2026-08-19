@@ -19,7 +19,7 @@ import time
 
 import pytest
 
-from easyhunt.util.run import _set_pdeathsig, _spawn_kwargs
+from cordon.util.run import _set_pdeathsig, _spawn_kwargs
 
 IS_LINUX = sys.platform.startswith("linux")
 

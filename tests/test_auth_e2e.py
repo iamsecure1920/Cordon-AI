@@ -25,7 +25,7 @@ import pytest
 
 pytestmark = pytest.mark.e2e
 
-RESOURCE = "https://easyhunt.test"
+RESOURCE = "https://cordon.test"
 ISSUER = "https://idp.test/"
 
 
@@ -45,7 +45,7 @@ def keypair() -> Any:
 
 @pytest.fixture(scope="module")
 def server(keypair, tmp_path_factory) -> Any:
-    """The real ``easyhunt.mcp_server`` entrypoint, in a subprocess, over HTTP.
+    """The real ``cordon.mcp_server`` entrypoint, in a subprocess, over HTTP.
 
     Deliberately not an in-process FastMCP built by the test: launching the
     shipped entrypoint means this exercises config loading, the bind check, the
@@ -83,7 +83,7 @@ def server(keypair, tmp_path_factory) -> Any:
 
     proc = subprocess.Popen(  # noqa: S603
         [
-            sys.executable, "-m", "easyhunt.mcp_server",
+            sys.executable, "-m", "cordon.mcp_server",
             "--transport", "http", "--host", "127.0.0.1", "--port", str(port),
             "--config", str(tmp / "config.yaml"), "--log-level", "ERROR",
         ],
@@ -151,13 +151,13 @@ class TestTokenRejection:
     def test_wrong_audience_is_refused(self, server, keypair) -> None:
         # RFC 8707: a token minted for another service that trusts the same IdP
         # must not be replayable here. This is the confused-deputy case.
-        other = token(keypair, scopes=["easyhunt:read"], audience="https://other.service")
+        other = token(keypair, scopes=["cordon:read"], audience="https://other.service")
         with pytest.raises(Exception) as excinfo:
             asyncio.run(_list_tools(server["url"], other))
         assert any(m in str(excinfo.value).lower() for m in ("401", "unauthorized", "auth"))
 
     def test_expired_token_is_refused(self, server, keypair) -> None:
-        stale = token(keypair, scopes=["easyhunt:read"], expires_in=-60)
+        stale = token(keypair, scopes=["cordon:read"], expires_in=-60)
         with pytest.raises(Exception) as excinfo:
             asyncio.run(_list_tools(server["url"], stale))
         assert any(m in str(excinfo.value).lower() for m in ("401", "unauthorized", "auth"))
@@ -169,23 +169,23 @@ class TestTokenRejection:
 
 class TestScopeLadderOverTheWire:
     def test_read_token_sees_only_read_tools(self, server, keypair) -> None:
-        jwt = token(keypair, scopes=["easyhunt:read"])
+        jwt = token(keypair, scopes=["cordon:read"])
         names = asyncio.run(_list_tools(server["url"], jwt))
-        assert "easyhunt_status" in names
+        assert "cordon_status" in names
         # No recon, scanning, or exploitation is even visible.
         assert "http_probe" not in names
         assert "nuclei_scan" not in names
         assert "validate_findings" not in names
 
     def test_recon_token_gains_passive_tools_only(self, server, keypair) -> None:
-        jwt = token(keypair, scopes=["easyhunt:read", "easyhunt:recon"])
+        jwt = token(keypair, scopes=["cordon:read", "cordon:recon"])
         names = asyncio.run(_list_tools(server["url"], jwt))
         assert "http_probe" in names and "subdomain_enum" in names
         assert "nuclei_scan" not in names
         assert "validate_findings" not in names
 
     def test_scan_token_stops_short_of_exploitation(self, server, keypair) -> None:
-        jwt = token(keypair, scopes=["easyhunt:recon", "easyhunt:scan"])
+        jwt = token(keypair, scopes=["cordon:recon", "cordon:scan"])
         names = asyncio.run(_list_tools(server["url"], jwt))
         assert "nuclei_scan" in names and "port_scan" in names
         # The ceiling holds: scanning does not imply exploiting.
@@ -193,7 +193,7 @@ class TestScopeLadderOverTheWire:
         assert "takeover_confirm" not in names
 
     def test_exploit_token_unlocks_validation(self, server, keypair) -> None:
-        jwt = token(keypair, scopes=["easyhunt:exploit"])
+        jwt = token(keypair, scopes=["cordon:exploit"])
         names = asyncio.run(_list_tools(server["url"], jwt))
         assert "validate_findings" in names and "takeover_confirm" in names
 
@@ -203,7 +203,7 @@ class TestScopeLadderOverTheWire:
         # cannot approve its own aggressive actions.
         jwt = token(
             keypair,
-            scopes=["easyhunt:read", "easyhunt:recon", "easyhunt:scan", "easyhunt:exploit"],
+            scopes=["cordon:read", "cordon:recon", "cordon:scan", "cordon:exploit"],
         )
         names = asyncio.run(_list_tools(server["url"], jwt))
         assert "validate_findings" in names, "sanity: this token is otherwise privileged"
@@ -215,15 +215,15 @@ class TestScopeLadderOverTheWire:
             )
 
     def test_operator_token_can_approve(self, server, keypair) -> None:
-        jwt = token(keypair, scopes=["easyhunt:approve"])
+        jwt = token(keypair, scopes=["cordon:approve"])
         assert "approval_respond" in asyncio.run(_list_tools(server["url"], jwt))
 
     def test_admin_scope_gates_scope_loading(self, server, keypair) -> None:
-        agent = token(keypair, scopes=["easyhunt:recon", "easyhunt:scan", "easyhunt:exploit"])
-        assert "easyhunt_load_scope" not in asyncio.run(_list_tools(server["url"], agent))
+        agent = token(keypair, scopes=["cordon:recon", "cordon:scan", "cordon:exploit"])
+        assert "cordon_load_scope" not in asyncio.run(_list_tools(server["url"], agent))
 
-        admin = token(keypair, scopes=["easyhunt:admin"])
-        assert "easyhunt_load_scope" in asyncio.run(_list_tools(server["url"], admin))
+        admin = token(keypair, scopes=["cordon:admin"])
+        assert "cordon_load_scope" in asyncio.run(_list_tools(server["url"], admin))
 
 
 class TestProtectedResourceMetadata:
@@ -254,8 +254,8 @@ class TestProtectedResourceMetadata:
         assert any(ISSUER.rstrip("/") in str(a) for a in payload["authorization_servers"])
         # Clients can discover the full privilege ladder up front.
         assert set(payload.get("scopes_supported", [])) == {
-            "easyhunt:read", "easyhunt:recon", "easyhunt:scan",
-            "easyhunt:exploit", "easyhunt:approve", "easyhunt:admin",
+            "cordon:read", "cordon:recon", "cordon:scan",
+            "cordon:exploit", "cordon:approve", "cordon:admin",
         }
 
     def test_advertised_metadata_url_resolves(self, server) -> None:

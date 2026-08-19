@@ -3,7 +3,7 @@
 # Live view of a running engagement: which tools are executing, what the audit
 # log has recorded, and how the workspace is filling up.
 #
-# EasyHunt is quiet by design — tool output goes to the workspace, not the
+# Cordon is quiet by design — tool output goes to the workspace, not the
 # terminal — so without this it is hard to tell "working" from "hung".
 #
 # Usage: ./scripts/watch.sh [refresh-seconds]
@@ -18,7 +18,7 @@ GREEN='\033[0;32m'; YELLOW='\033[0;33m'; DIM='\033[2m'; BOLD='\033[1m'; NC='\033
 while true; do
     clear
     WS=$(ls -dt "$ROOT"/engagements/*/ 2>/dev/null | head -1)
-    printf "${BOLD}EasyHunt — live${NC}   %s\n" "$(date '+%H:%M:%S')"
+    printf "${BOLD}Cordon — live${NC}   %s\n" "$(date '+%H:%M:%S')"
     printf "${DIM}%s${NC}\n\n" "${WS:-no engagement workspace yet}"
 
     # ── What is actually executing right now ──────────────────────────────
@@ -34,7 +34,7 @@ while true; do
         fi
     done
     if command -v docker >/dev/null 2>&1; then
-        # Only EasyHunt's own sandbox containers — the host may run unrelated ones.
+        # Only Cordon's own sandbox containers — the host may run unrelated ones.
         dps=$(docker ps --format '  {{.Names}} {{.Image}} ({{.Status}})' 2>/dev/null \
             | grep -E 'projectdiscovery|dalfox|trufflehog|prowler|semgrep' | head -5)
         [ -n "$dps" ] && { printf '%s\n' "$dps"; found=1; }

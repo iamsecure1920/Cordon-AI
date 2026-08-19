@@ -34,7 +34,7 @@ def load_status(ws: Path) -> list[dict]:
 
 
 def main() -> int:
-    marker = ROOT / ".easyhunt-run"
+    marker = ROOT / ".cordon-run"
     ws = Path(sys.argv[1]) if len(sys.argv) > 1 else (
         Path(marker.read_text().strip()) if marker.exists() else None
     )

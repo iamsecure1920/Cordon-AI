@@ -29,7 +29,7 @@ from typing import Any
 import httpx
 import pytest
 
-from easyhunt.tools import auth_surface as asf
+from cordon.tools import auth_surface as asf
 
 pytestmark = pytest.mark.asyncio
 

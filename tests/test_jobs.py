@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from easyhunt.control_plane.jobs import JobManager, JobStatus
-from easyhunt.errors import EasyHuntError
+from cordon.control_plane.jobs import JobManager, JobStatus
+from cordon.errors import CordonError
 
 
 @pytest.fixture
@@ -72,7 +72,7 @@ class TestLifecycle:
         await jobs.cancel(job.id)
 
     def test_unknown_job_id_is_an_explicit_error(self, jobs: JobManager) -> None:
-        with pytest.raises(EasyHuntError, match="unknown job_id"):
+        with pytest.raises(CordonError, match="unknown job_id"):
             jobs.status("nope-0001")
 
 

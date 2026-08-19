@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from easyhunt.config import Config
-from easyhunt.control_plane.context import Engagement, set_engagement
-from easyhunt.control_plane.scope import Scope
+from cordon.config import Config
+from cordon.control_plane.context import Engagement, set_engagement
+from cordon.control_plane.scope import Scope
 
 NMAP = shutil.which("nmap")
 
@@ -24,7 +24,7 @@ NMAP = shutil.which("nmap")
 @pytest.fixture(scope="module")
 def engagement(tmp_path_factory: pytest.TempPathFactory):
     """Engagement that approves service_scan (aggressive) and redirects memory."""
-    from easyhunt.control_plane.approval import PolicyBackend
+    from cordon.control_plane.approval import PolicyBackend
     from tests.conftest import scope_dict
 
     root = Path(tmp_path_factory.mktemp("ports"))
@@ -51,10 +51,10 @@ class TestPortInheritance:
     """service_scan must consume what port_scan produced (no nmap required)."""
 
     def test_inherits_open_ports_from_store(self, engagement, monkeypatch) -> None:
-        import easyhunt.tools.ports  # noqa: F401
-        from easyhunt.control_plane.context import get_engagement
-        from easyhunt.knowledge.findings import Asset
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.ports  # noqa: F401
+        from cordon.control_plane.context import get_engagement
+        from cordon.knowledge.findings import Asset
+        from cordon.tools.base import REGISTRY
 
         # Simulate port_scan's output for juice-shop-style non-web ports on a
         # host inside the fixture scope (203.0.113.0/24).
@@ -83,7 +83,7 @@ class TestPortInheritance:
             run.to_dict = lambda: {"binary": "nmap", "argv": argv, "ran": False}
             return run
 
-        monkeypatch.setattr("easyhunt.tools.ports.run_one", fake_run_one)
+        monkeypatch.setattr("cordon.tools.ports.run_one", fake_run_one)
         result = asyncio.run(REGISTRY["service_scan"].fn(target="203.0.113.7"))
         assert result["ok"] is True
         argv = captured["argv"]
@@ -93,10 +93,10 @@ class TestPortInheritance:
         assert ports_flag == "3000,8080", f"expected discovered ports, got {ports_flag!r}"
 
     def test_explicit_ports_win_over_store(self, engagement, monkeypatch) -> None:
-        import easyhunt.tools.ports  # noqa: F401
-        from easyhunt.control_plane.context import get_engagement
-        from easyhunt.knowledge.findings import Asset
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.ports  # noqa: F401
+        from cordon.control_plane.context import get_engagement
+        from cordon.knowledge.findings import Asset
+        from cordon.tools.base import REGISTRY
 
         store = get_engagement().assets
         store.add(
@@ -117,14 +117,14 @@ class TestPortInheritance:
             run.to_dict = lambda: {"binary": "nmap", "argv": argv, "ran": False}
             return run
 
-        monkeypatch.setattr("easyhunt.tools.ports.run_one", fake_run_one)
+        monkeypatch.setattr("cordon.tools.ports.run_one", fake_run_one)
         asyncio.run(REGISTRY["service_scan"].fn(target="203.0.113.7", ports="443"))
         argv = captured["argv"]
         assert argv[argv.index("-p") + 1] == "443"
 
     def test_empty_store_falls_back_to_web_ports(self, engagement, monkeypatch) -> None:
-        import easyhunt.tools.ports  # noqa: F401
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.ports  # noqa: F401
+        from cordon.tools.base import REGISTRY
 
         captured: dict[str, object] = {}
 
@@ -140,17 +140,17 @@ class TestPortInheritance:
 
         # A host with no open_port assets in the store (module-scoped
         # engagement retains earlier tests' assets for 203.0.113.7).
-        monkeypatch.setattr("easyhunt.tools.ports.run_one", fake_run_one)
+        monkeypatch.setattr("cordon.tools.ports.run_one", fake_run_one)
         asyncio.run(REGISTRY["service_scan"].fn(target="203.0.113.8"))
         argv = captured["argv"]
         assert argv[argv.index("-p") + 1] == "80,443"
 
     def test_multi_host_merges_discovered_ports(self, engagement, monkeypatch) -> None:
         """Estate-wide: several hosts each contribute their open ports to one pass."""
-        import easyhunt.tools.ports  # noqa: F401
-        from easyhunt.control_plane.context import get_engagement
-        from easyhunt.knowledge.findings import Asset
-        from easyhunt.tools.base import REGISTRY
+        import cordon.tools.ports  # noqa: F401
+        from cordon.control_plane.context import get_engagement
+        from cordon.knowledge.findings import Asset
+        from cordon.tools.base import REGISTRY
 
         store = get_engagement().assets
         store.add_many([
@@ -179,7 +179,7 @@ class TestPortInheritance:
             run.to_dict = lambda: {"binary": "nmap", "argv": argv, "ran": False}
             return run
 
-        monkeypatch.setattr("easyhunt.tools.ports.run_one", fake_run_one)
+        monkeypatch.setattr("cordon.tools.ports.run_one", fake_run_one)
         asyncio.run(REGISTRY["service_scan"].fn(
             target="203.0.113.7,203.0.113.9"
         ))

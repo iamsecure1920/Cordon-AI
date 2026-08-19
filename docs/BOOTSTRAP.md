@@ -1,11 +1,11 @@
-# Bootstrap — moving EasyHunt to a new machine
+# Bootstrap — moving Cordon to a new machine
 
 ## 1. The short version
 
 ```bash
 # on the new machine
-scp -r EasyHunt-AI/ user@newbox:~/          # or rsync, git clone, USB, whatever
-cd ~/EasyHunt-AI
+scp -r Cordon-AI/ user@newbox:~/          # or rsync, git clone, USB, whatever
+cd ~/Cordon-AI
 ./bootstrap.sh                              # idempotent; safe to re-run
 ```
 
@@ -50,7 +50,7 @@ registration). Bootstrap calls install — you do not need to run both.
    transitive dependency, which removes client support and breaks the auth layer.
 7. **Config** — copies `config.example.yaml` → `config.yaml` if absent.
 8. **Sandbox images** — pulls the 9 configured images, skipping any already present.
-9. **`easyhunt doctor`** — full verification.
+9. **`cordon doctor`** — full verification.
 10. **Tells you what is still missing** — `scope.yaml`, `OPENROUTER_API_KEY`.
 
 Flags: `--no-docker`, `--no-images`, `--no-tools`. All are also environment
@@ -69,14 +69,14 @@ authorization, and it drifts, so re-pull it before each engagement.
 ```bash
 cp scope.example.yaml scope.yaml
 $EDITOR scope.yaml
-easyhunt scope validate
+cordon scope validate
 ```
 
 > **The installer will not do this for you, deliberately.** `install.sh` used to
 > copy the template into place; the operator ended up with a file declaring
 > `authorization: bug-bounty`, a `program_url` and a `fetched_at` date they never
-> wrote — and `easyhunt doctor` then printed a green tick for it. `scope.yaml` is
-> not configuration, it is the record of an authorization. `easyhunt scope
+> wrote — and `cordon doctor` then printed a green tick for it. `scope.yaml` is
+> not configuration, it is the record of an authorization. `cordon scope
 > validate` warns if it is still the unedited template.
 
 
@@ -97,7 +97,7 @@ work — only the AI triage and narrative report synthesis are unavailable.
 Do not trust "it installed". Check these four:
 
 ```bash
-easyhunt doctor                    # 1. expect ~79/82 tools, 0 broken
+cordon doctor                    # 1. expect ~79/82 tools, 0 broken
 ```
 
 ```bash
@@ -108,8 +108,8 @@ easyhunt doctor                    # 1. expect ~79/82 tools, 0 broken
 # 3. sandbox is genuinely containerised, not silently falling back to the host
 .venv/bin/python -c "
 import tempfile; from pathlib import Path
-from easyhunt.control_plane.sandbox import Sandbox, SandboxConfig
-from easyhunt.config import Config
+from cordon.control_plane.sandbox import Sandbox, SandboxConfig
+from cordon.config import Config
 cfg = Config.load()
 sb = Sandbox(SandboxConfig.from_dict(cfg.section('sandbox')),
              workspace=Path(tempfile.mkdtemp()), user_agent='x')
@@ -136,7 +136,7 @@ anything else, tools are running on the host with no isolation.
 | `docker.service is masked` | Kali ships it masked. | `systemctl unmask docker.service docker.socket` |
 | `failed to start daemon ... PID N is still running` | Stale pidfile from a manually-started daemon. | `rm -f /var/run/docker.pid; systemctl reset-failed docker.service; systemctl start docker` |
 | `Start request repeated too quickly` | systemd rate-limited after repeated failures. | `systemctl reset-failed docker.service` then start. |
-| Tool installed but `doctor` says missing | PATH ordering, or a stale wrapper pointing at a deleted venv. | `source ~/.profile`; then `easyhunt doctor --fix` |
+| Tool installed but `doctor` says missing | PATH ordering, or a stale wrapper pointing at a deleted venv. | `source ~/.profile`; then `cordon doctor --fix` |
 | `externally-managed-environment` from pip | Debian PEP 668. | Expected — the installer gives each cloned tool its own venv. Do not `--break-system-packages`. |
 | FastMCP client import errors | `fastmcp-slim` displaced it. | `.venv/bin/pip install --force-reinstall fastmcp==3.4.5` |
 | `httpx` resolves to the wrong binary | Python's `httpx` CLI shadows ProjectDiscovery's. | Already handled by `resolve_binary()`. **Do not uninstall the user's Python httpx.** |

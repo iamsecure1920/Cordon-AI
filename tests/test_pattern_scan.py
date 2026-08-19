@@ -20,8 +20,8 @@ import json
 import httpx
 import pytest
 
-from easyhunt.tools import pattern_scan as ps
-from easyhunt.tools.pattern_scan import GF_PATTERNS, load_patterns
+from cordon.tools import pattern_scan as ps
+from cordon.tools.pattern_scan import GF_PATTERNS, load_patterns
 
 HOST = "https://www.example.com"
 

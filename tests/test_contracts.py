@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-from easyhunt.control_plane.sanitize import sanitize_argv
-from easyhunt.errors import SanitizeError
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools.base import REGISTRY
-from easyhunt.tools.common import CATALOG
+from cordon.control_plane.sanitize import sanitize_argv
+from cordon.errors import SanitizeError
+from cordon.mcp_server import load_capabilities
+from cordon.tools.base import REGISTRY
+from cordon.tools.common import CATALOG
 
 load_capabilities()
 
@@ -92,7 +92,7 @@ class TestAnalysisHonesty:
     async def test_absent_slither_means_unanalysed(self, engagement, monkeypatch) -> None:
         # The failure this codebase keeps producing: a tool that did not run,
         # reported as a clean result.
-        from easyhunt.tools import common
+        from cordon.tools import common
 
         (engagement.workspace / "repo").mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(common, "installed", lambda name: name != "slither")
@@ -109,14 +109,14 @@ class TestAnalysisHonesty:
     def test_detector_hits_never_exceed_high(self) -> None:
         # Slither's "High" means high impact *if real*, not high confidence.
         # CRITICAL requires a reproducible PoC, which static analysis cannot give.
-        from easyhunt.knowledge.findings import Severity
-        from easyhunt.tools.contracts import _IMPACT
+        from cordon.knowledge.findings import Severity
+        from cordon.tools.contracts import _IMPACT
 
         assert Severity.CRITICAL not in _IMPACT.values()
         assert _IMPACT["High"] is Severity.HIGH
 
     def test_priority_detectors_cover_what_pays(self) -> None:
-        from easyhunt.tools.contracts import _PRIORITY
+        from cordon.tools.contracts import _PRIORITY
 
         # The classes that actually earn bounties: access control, reentrancy
         # including read-only, arbitrary calls, delegatecall, precision.

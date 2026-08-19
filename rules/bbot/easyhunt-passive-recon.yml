@@ -2,9 +2,9 @@
 #
 # Everything here reads public sources — certificate transparency, passive DNS,
 # public code search. No requests are sent to the target's own infrastructure
-# beyond DNS resolution, which is why EasyHunt exposes it as a passive tool that
+# beyond DNS resolution, which is why Cordon exposes it as a passive tool that
 # runs without an approval prompt.
-description: EasyHunt passive attack-surface mapping (no active probing)
+description: Cordon passive attack-surface mapping (no active probing)
 
 flags:
   - passive
@@ -27,11 +27,11 @@ output_modules:
   - json
 
 config:
-  # EasyHunt overwrites scope.whitelist / scope.blacklist from scope.yaml at
+  # Cordon overwrites scope.whitelist / scope.blacklist from scope.yaml at
   # launch time. Anything set here is a floor, never a ceiling.
   dns:
     minimal: false
   web:
-    user_agent: "EasyHunt-AI/2.0 (authorized-testing)"
+    user_agent: "Cordon-AI/2.0 (authorized-testing)"
   scope:
     report_distance: 0

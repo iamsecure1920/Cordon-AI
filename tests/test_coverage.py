@@ -11,8 +11,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from easyhunt.mcp_server import load_capabilities
-from easyhunt.tools.base import REGISTRY
+from cordon.mcp_server import load_capabilities
+from cordon.tools.base import REGISTRY
 
 load_capabilities()
 
@@ -35,7 +35,7 @@ VALID_STATUSES = {"auto", "detect-only", "manual"}
 
 class TestCoverageIndex:
     def _index(self):
-        from easyhunt.knowledge.coverage import load_coverage
+        from cordon.knowledge.coverage import load_coverage
 
         return load_coverage()
 
@@ -80,12 +80,12 @@ class TestCoverageReferences:
     """A coverage row must not point at things that do not exist."""
 
     def _index(self):
-        from easyhunt.knowledge.coverage import load_coverage
+        from cordon.knowledge.coverage import load_coverage
 
         return load_coverage()
 
     def test_bypass_techniques_exist_in_the_technique_index(self) -> None:
-        from easyhunt.knowledge.techniques import load_index
+        from cordon.knowledge.techniques import load_index
 
         tech = load_index()
         if not tech.available:

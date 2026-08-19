@@ -1,6 +1,6 @@
 """Run one engagement phase through the control plane and report what it did.
 
-`hunt.sh` calls this once per phase. Everything goes through `@easyhunt_tool`, so
+`hunt.sh` calls this once per phase. Everything goes through `@cordon_tool`, so
 scope, sanitize, budget, rate-limit, approval and audit apply exactly as they do
 from the MCP transport — this is a different front door, not a bypass.
 
@@ -28,9 +28,9 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from easyhunt.config import Config  # noqa: E402
-from easyhunt.control_plane.context import Engagement, set_engagement  # noqa: E402
-from easyhunt.control_plane.scope import Scope  # noqa: E402
+from cordon.config import Config  # noqa: E402
+from cordon.control_plane.context import Engagement, set_engagement  # noqa: E402
+from cordon.control_plane.scope import Scope  # noqa: E402
 
 #: phase -> (tool, kwargs-builder, "what non-empty looks like")
 #
@@ -441,7 +441,7 @@ async def main() -> int:
 
     config = Config.load(ROOT / "config.yaml")
     scope = Scope.load(ROOT / "scope.yaml")
-    marker = ROOT / ".easyhunt-run"
+    marker = ROOT / ".cordon-run"
     workspace = None
     if marker.exists():
         # The marker is only an inheritance hint for RESUMING the same
@@ -458,10 +458,10 @@ async def main() -> int:
     marker.write_text(str(eng.workspace))
     set_engagement(eng)
 
-    import easyhunt.mcp_server as mcp
+    import cordon.mcp_server as mcp
 
     mcp.load_capabilities()
-    from easyhunt.tools.base import REGISTRY
+    from cordon.tools.base import REGISTRY
 
     entry = REGISTRY.get(spec["tool"])
     if entry is None:

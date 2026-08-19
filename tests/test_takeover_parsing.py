@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import pytest
 
-from easyhunt.tools.takeover import _ANSI, _hosts_in, _is_takeover_hit
+from cordon.tools.takeover import _ANSI, _hosts_in, _is_takeover_hit
 
 
 class TestClearedHostsAreNotHits:

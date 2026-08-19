@@ -1,4 +1,4 @@
-# EasyHunt AI
+# Cordon AI
 
 > Agentic VAPT orchestrator: an LLM decides what to test, a control plane
 > decides what is allowed (scope, sanitize, budget, rate, approval, audit) and
@@ -8,15 +8,15 @@
 ## Key facts
 
 - **Architecture**: 5 layers — Strategy (the agent) → Method (`skills/`
-  playbooks) → Control (`easyhunt/control_plane/`: scope, sanitize, budget,
-  rate-limit, approval, audit) → Execution (`easyhunt/tools/` + `engines/`
+  playbooks) → Control (`cordon/control_plane/`: scope, sanitize, budget,
+  rate-limit, approval, audit) → Execution (`cordon/tools/` + `engines/`
   wrappers over sandboxed scanners) → Knowledge (`rules/`, memory, findings).
 - **Authorization**: `scope.yaml` is the legal authorization record,
   transcribed from the target program's published policy. No scope file, no
-  engagement. `easyhunt scope validate` checks it.
+  engagement. `cordon scope validate` checks it.
 - **Every tool call** passes the fixed sequence `scope → sanitize → budget →
   rate-limit → approval → sandbox exec → parse → audit`; there is no argument,
-  flag, or debug mode that skips a step (`easyhunt/tools/base.py`).
+  flag, or debug mode that skips a step (`cordon/tools/base.py`).
 - **No PoC, no finding**: a vulnerability is CONFIRMED only with a reproducible
   proof; everything else is filed "needs manual review".
 - **The unattended pipeline** is `scripts/hunt.sh <target> [--exploit]`, which
@@ -52,18 +52,18 @@
 
 ## Source map
 
-- `easyhunt/control_plane/` — scope, sanitize, budget, rate-limit, approval,
+- `cordon/control_plane/` — scope, sanitize, budget, rate-limit, approval,
   audit, jobs, sandbox, sessions, context (the invariants, in code).
-- `easyhunt/tools/` — MCP capabilities: recon, dns, http_probe, endpoints,
+- `cordon/tools/` — MCP capabilities: recon, dns, http_probe, endpoints,
   js_analysis, pattern_scan, ports, takeover, secrets, exploitation,
   exploit_chain, web_injection, webscan, waf_bypass, prompts, burp, code_audit,
   and more.
-- `easyhunt/engines/` — scanner integration: bbot, nuclei, jaeles, semgrep,
+- `cordon/engines/` — scanner integration: bbot, nuclei, jaeles, semgrep,
   osmedeus, strix.
-- `easyhunt/knowledge/` — findings, payloads, techniques (PAT index), waf
+- `cordon/knowledge/` — findings, payloads, techniques (PAT index), waf
   fingerprint DB + bypass tables, regex-bypass generator, prompt packs,
   coverage ledger, attack graph, task graph, memory.
-- `easyhunt/report/` — report synthesis.
+- `cordon/report/` — report synthesis.
 - `scripts/` — hunt.sh (pipeline), phase.py (phase gate), summary.py,
   vet_payloads.py, fetch_wstg.py, fetch_pat.py.
 - `rules/` — semgrep, nuclei, jaeles, gf pattern packs, custom rules.
@@ -72,10 +72,10 @@
 ## Commands
 
 ```bash
-easyhunt doctor            # health check — run first, always
-easyhunt install           # add missing tools
-easyhunt serve             # MCP server, stdio
-easyhunt scope validate    # check the authorization file
+cordon doctor            # health check — run first, always
+cordon install           # add missing tools
+cordon serve             # MCP server, stdio
+cordon scope validate    # check the authorization file
 ./scripts/hunt.sh <target> [--only phase,...] [--from phase] [--exploit]
 python3 scripts/summary.py # digest a finished workspace
 ```

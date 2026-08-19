@@ -10,7 +10,7 @@ export function Reports({ state }: { state: DashboardState }) {
     return (
       <EmptyState>
         <b>No reports generated yet.</b><br />
-        Run the report phase (or <span className="mono">easyhunt report</span>) — PDFs and markdown land in the
+        Run the report phase (or <span className="mono">cordon report</span>) — PDFs and markdown land in the
         workspace and appear here.
       </EmptyState>
     );

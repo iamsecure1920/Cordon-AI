@@ -86,7 +86,7 @@ export default function App() {
               <b>{state?.error ?? "Connecting to engagement state…"}</b>
               <br /><br />
               Run a phase or <span className="mono">./scripts/hunt.sh &lt;target&gt;</span> first, then start
-              <span className="mono"> easyhunt dashboard --serve</span> and open this page.
+              <span className="mono"> cordon dashboard --serve</span> and open this page.
               <br />
               {error ? <div style={{ color: "var(--fail)", marginTop: 10 }}>{error}</div> : null}
             </EmptyState>
@@ -104,7 +104,7 @@ export default function App() {
         <div className="brand">
           <div className="logo">🧠</div>
           <div>
-            <h1>EasyHunt AI</h1>
+            <h1>Cordon AI</h1>
             <small>Engagement ops</small>
           </div>
         </div>

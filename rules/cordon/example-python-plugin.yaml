@@ -1,0 +1,28 @@
+# Reference manifest for a class-A (Python) plugin.
+#
+# The entrypoint is imported at startup; anything it exposes must go through
+# @cordon_tool, so a plugin gets exactly the same scope/sanitize/approval
+# treatment as a builtin. Note mode: passive here — the loader scans the source
+# and refuses this manifest if the code reaches for an aggressive primitive.
+id: example-security-txt
+kind: python-tool
+phase: recon
+mode: passive
+severity: info
+description: Fetches /.well-known/security.txt and reports the program's declared contact channel.
+entrypoint: example_security_txt.py
+author: cordon
+license: MIT
+requires: []
+uses: []
+verify:
+  manual: true
+  note: >
+    security.txt is informational. Confirm the contact address before using it —
+    a stale file can point at a channel the program no longer monitors.
+remediation: >
+  Not a vulnerability. A missing security.txt is a process gap worth mentioning
+  in the report's observations section, not a finding.
+references:
+  - https://www.rfc-editor.org/rfc/rfc9116
+tags: [recon, disclosure]

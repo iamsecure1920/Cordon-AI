@@ -13,30 +13,30 @@ import string
 
 import pytest
 
-from easyhunt.control_plane.approval import PolicyBackend
-from easyhunt.control_plane.pins import compute_pins, diff_pins, verify_or_write_pins
-from easyhunt.control_plane.sanitize import (
+from cordon.control_plane.approval import PolicyBackend
+from cordon.control_plane.pins import compute_pins, diff_pins, verify_or_write_pins
+from cordon.control_plane.sanitize import (
     GLOBAL_DENIED_FLAGS,
     ArgPolicy,
     register_policy,
     sanitize_argv,
     sanitize_value,
 )
-from easyhunt.errors import ApprovalDenied, OutOfScopeError, SanitizeError
-from easyhunt.tools.base import REGISTRY, easyhunt_tool
-from easyhunt.util.parse import sanitize_for_model
+from cordon.errors import ApprovalDenied, OutOfScopeError, SanitizeError
+from cordon.tools.base import REGISTRY, cordon_tool
+from cordon.util.parse import sanitize_for_model
 
 REACHED: list[str] = []
 
 
-@easyhunt_tool(phase="recon", mode="passive", targets_arg="target", name="sec_passive")
+@cordon_tool(phase="recon", mode="passive", targets_arg="target", name="sec_passive")
 async def _sec_passive(target: str, note: str = "") -> dict:
     """Passive tool used to prove refusals happen before the body runs."""
     REACHED.append(target)
     return {"ok": True, "target": target}
 
 
-@easyhunt_tool(phase="exploit", mode="exploit", targets_arg="target", name="sec_exploit")
+@cordon_tool(phase="exploit", mode="exploit", targets_arg="target", name="sec_exploit")
 async def _sec_exploit(target: str) -> dict:
     """Exploit tool used to prove the approval gate holds."""
     REACHED.append(target)
@@ -52,7 +52,7 @@ HOSTILE_PAGE = (
 )
 
 
-@easyhunt_tool(phase="recon", mode="passive", targets_arg="target", name="sec_echo")
+@cordon_tool(phase="recon", mode="passive", targets_arg="target", name="sec_echo")
 async def _sec_echo(target: str) -> dict:
     """Returns target-controlled text, as a real scanner would."""
     return {"ok": True, "title": HOSTILE_PAGE, "body": HOSTILE_PAGE}
@@ -242,7 +242,7 @@ class TestPromptInjection:
 
     async def test_our_own_guidance_is_not_mangled(self, engagement) -> None:
         # Trusted keys carry instructions this codebase wrote for the agent.
-        from easyhunt.tools.base import _defang
+        from cordon.tools.base import _defang
 
         payload = {"note": "Run takeover_verify before reporting.", "title": "x" * 30}
         assert _defang(payload)["note"] == "Run takeover_verify before reporting."
@@ -300,7 +300,7 @@ class TestToolPinning:
 
     def test_mismatch_is_audited(self, engagement) -> None:
         verify_or_write_pins(engagement, REGISTRY)
-        pin_file = engagement.config.path("hardening.pin_file", ".easyhunt-pins.json")
+        pin_file = engagement.config.path("hardening.pin_file", ".cordon-pins.json")
         payload = json.loads(pin_file.read_text())
         payload["tools"]["sec_passive"]["hash"] = "tampered"
         pin_file.write_text(json.dumps(payload))
@@ -311,7 +311,7 @@ class TestToolPinning:
 
 
 class TestNoEvasionCapability:
-    """EasyHunt must not ship features whose purpose is evading controls."""
+    """Cordon must not ship features whose purpose is evading controls."""
 
     def test_anti_attribution_flags_are_globally_denied(self) -> None:
         for flag in ("--tor", "--proxy-chain", "--random-agent", "--check-tor"):
@@ -326,15 +326,15 @@ class TestNoEvasionCapability:
                 assert phrase not in description, f"{tool.name} advertises {phrase!r}"
 
     def test_rate_limits_cannot_be_raised_by_argument(self, engagement) -> None:
-        from easyhunt.engines.nuclei_engine import SPEC
+        from cordon.engines.nuclei_engine import SPEC
 
         # The engine sets -rate-limit from scope; the policy caps any override.
         with pytest.raises(SanitizeError):
             sanitize_argv("nuclei", ["-rate-limit", "100000"], policy=SPEC.arg_policy)
 
     def test_dos_capability_is_absent(self) -> None:
-        from easyhunt.engines.nuclei_engine import DENIED_TAGS
-        from easyhunt.tools.ports import DENIED_NSE_CATEGORIES
+        from cordon.engines.nuclei_engine import DENIED_TAGS
+        from cordon.tools.ports import DENIED_NSE_CATEGORIES
 
         assert "dos" in DENIED_TAGS
         assert "dos" in DENIED_NSE_CATEGORIES

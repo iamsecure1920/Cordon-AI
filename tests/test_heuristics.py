@@ -42,9 +42,9 @@ from __future__ import annotations
 
 import pytest
 
-from easyhunt.knowledge.findings import Severity
-from easyhunt.tools.base import REGISTRY
-from easyhunt.tools.webscan import (
+from cordon.knowledge.findings import Severity
+from cordon.tools.base import REGISTRY
+from cordon.tools.webscan import (
     _NIKTO_VALIDATORS,
     _TESTSSL_SCAN_STATUS_IDS,
     _TESTSSL_VALIDATORS,
