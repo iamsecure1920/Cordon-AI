@@ -79,6 +79,7 @@ CAPABILITY_MODULES = [
     "easyhunt.tools.smuggling_framework",
     "easyhunt.tools.forbidden",
     "easyhunt.tools.research_guide",
+    "easyhunt.tools.browser_verify",
     "easyhunt.tools.llmsec",
     "easyhunt.tools.triage_tools",
     "easyhunt.tools.report_tools",

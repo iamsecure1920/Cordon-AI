@@ -122,6 +122,11 @@ swap) with wildcard-baseline FP filtering and a curl PoC on first success.
   soft-404. Refuses anything that is not 403.
 - **`forbidden_candidates(urls)`** — passive pre-check (one HEAD per URL)
   returning the actual 403s, so you only feed the bypass tester real 403s.
+- **`forbidden_chain(urls, max_candidates=200, max_bypass=15)`** — the
+  auto-chain: HEAD-pre-checks the estate, then fires `forbidden_bypass` at
+  each real 403. Wired into `hunt.sh` as the global `forbidden` phase (after
+  `wapiti`, before `exploit`), inheriting live URLs from the asset store.
+  A 403 is either bypassed (finding) or proven enforced (coverage).
 - **When to use**: any URL that returned 403 from probe / content discovery /
   nuclei. A 403 is an access decision; these techniques find the routes
   around it. Verified live against a purpose-built 403 lab.
@@ -137,6 +142,36 @@ vendor is observed, a per-class evidence checklist, and canonical resources
 (PAT, PortSwigger, OWASP). With an LLM enabled it also produces a grounded
 step plan; without one the knowledge playbook is the answer. Sends no
 traffic. Fuzzy class names work (`sqli`, "request smuggling", `JWT`).
+
+- **`guided_validate(vuln_class, asset, limit=3)`** — closes the loop:
+  assembles the same playbook, then EXECUTES the validators the coverage
+  matrix wires to the class (`sqli` → `sqli_validate`, `open redirect` →
+  `web_injection_probe`, …) against the asset. Each dispatch is
+  independently approval-gated; classes with no auto-validator return the
+  evidence checklist instead of a fake dispatch.
+- Alias tables fixed to the real coverage class names (`jwt` →
+  `json-web-token`, `file upload` → `upload-insecure-files`, `csrf` →
+  `cross-site-request-forgery`, `cache poisoning` → `web-cache-deception`,
+  `idor` → `insecure-direct-object-references`, `path traversal` →
+  `file-inclusion`).
+
+### Browser-verified exploitation (`easyhunt/tools/browser_verify.py`)
+
+`browser_verify(url, param, payload, screenshot=True)` — drives headless
+Chromium (Playwright + system Chrome, no download) at a URL and captures
+render-time evidence: unescaped reflection (`raw`/`escaped`/`plain`), payload
+execution (dialog/page-error/console — the authoritative XSS signal, HIGH),
+open-redirect (host change, LOW), console trace, and a screenshot + DOM
+excerpt saved to the workspace `evidence/` dir. Plain-token echoes are NOT
+findings (FP guard, live-tested). Payloads pass unescaped via `text_args`.
+
+- **Install**: `pip install 'playwright>=1.40'` (declared as the `browser`
+  optional extra in `pyproject.toml`); uses `CHROME_BIN`/`CHROME_PATH` or
+  PATH discovery. Degrades to `dependency_missing`/`browser_unavailable`
+  cleanly. Registered in `CAPABILITY_MODULES`.
+- **Live-verified**: reflection + `<svg onload=alert(...)>` execution filed a
+  HIGH finding with screenshot evidence; `hello-world` echoed back filed
+  nothing.
 
 ---
 

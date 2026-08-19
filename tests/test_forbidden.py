@@ -1,4 +1,5 @@
 """Tests for forbidden_bypass / forbidden_candidates (unKover 403-bypass)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -41,11 +42,9 @@ class _ForbiddenLab(BaseHTTPRequestHandler):
             return
         h = self.headers
         bypass = (
-            h.get("X-Forwarded-For") or h.get("X-Original-URL")
-            or self.command in ("POST", "PUT")
+            h.get("X-Forwarded-For") or h.get("X-Original-URL") or self.command in ("POST", "PUT")
         )
-        self._reply(200 if bypass else 403,
-                    b"secret dashboard content" if bypass else b"forbidden")
+        self._reply(200 if bypass else 403, b"secret dashboard content" if bypass else b"forbidden")
 
     def _reply(self, code: int, body: bytes) -> None:
         self.send_response(code)
@@ -77,22 +76,26 @@ def engagement(lab_url: str, tmp_path_factory: pytest.TempPathFactory):
     sd["in_scope"]["urls"].append(f"{lab_url}/")
     # Redirect the brain/activity stores to tmp — tests must never write the
     # real home-dir memory.
-    config = Config({
-        "workspace": {"root": str(root / "engagements")},
-        "approval": {"backend": "deny"},
-        "sandbox": {"mode": "none"},
-        "memory": {
-            "poc_store": str(root / "poc-memory.jsonl"),
-            "brain_store": str(root / "neuron-brain.jsonl"),
-            "brain_activity": str(root / "brain-activity.jsonl"),
+    config = Config(
+        {
+            "workspace": {"root": str(root / "engagements")},
+            "approval": {"backend": "deny"},
+            "sandbox": {"mode": "none"},
+            "memory": {
+                "poc_store": str(root / "poc-memory.jsonl"),
+                "brain_store": str(root / "neuron-brain.jsonl"),
+                "brain_activity": str(root / "brain-activity.jsonl"),
+            },
         },
-    }, source=str(root / "config.yaml"))
+        source=str(root / "config.yaml"),
+    )
 
     eng = Engagement(
-        Scope(sd, source="<test>"), config,
+        Scope(sd, source="<test>"),
+        config,
         workspace=root / "ws",
     )
-    eng.approval.backend = PolicyBackend(auto_approve=["forbidden_bypass"])
+    eng.approval.backend = PolicyBackend(auto_approve=["forbidden_bypass", "forbidden_chain"])
     set_engagement(eng)
     yield eng
     set_engagement(None)
@@ -121,11 +124,13 @@ class TestParse:
             "bypass": True,
             "target": "https://x.com/admin",
             "poc": "curl -i -H 'X-Forwarded-For: 127.0.0.1' 'https://x.com/admin'",
-            "findings": [{
-                "technique": "ip_header_spoof",
-                "request": {"header": "X-Forwarded-For", "value": "127.0.0.1"},
-                "result": {"status": 200, "size": 24},
-            }],
+            "findings": [
+                {
+                    "technique": "ip_header_spoof",
+                    "request": {"header": "X-Forwarded-For", "value": "127.0.0.1"},
+                    "result": {"status": 200, "size": 24},
+                }
+            ],
             "baseline": {"status": 403, "size": 9},
         }
         parsed, error = _parse_unkover_output(json.dumps(out))
@@ -202,7 +207,8 @@ class TestLiveBypass:
         assert result["bypass"] is False
         assert len(engagement.findings.all()) == before  # nothing new filed
         lessons = [
-            s for s in engagement.brain._synapses.values()
+            s
+            for s in engagement.brain._synapses.values()
             if s.context.startswith("access-control-bypass")
         ]
         assert lessons and lessons[0].clean >= 1
@@ -211,9 +217,41 @@ class TestLiveBypass:
         import easyhunt.tools.forbidden  # noqa: F401
         from easyhunt.tools.base import REGISTRY
 
-        result = asyncio.run(REGISTRY["forbidden_candidates"].fn(
-            urls=[f"{lab_url}/admin", f"{lab_url}/open"]
-        ))
+        result = asyncio.run(
+            REGISTRY["forbidden_candidates"].fn(urls=[f"{lab_url}/admin", f"{lab_url}/open"])
+        )
         assert result["checked"] == 2
         assert len(result["candidates"]) == 1
         assert result["candidates"][0]["status"] == 403
+
+
+@pytest.mark.skipif(not UNKOVER, reason="unkover not installed")
+class TestForbiddenChain:
+    def test_chain_discovers_and_bypasses_403(self, engagement, lab_url: str) -> None:
+        """The auto-chain: pre-check finds the 403, then bypasses it end-to-end."""
+        import easyhunt.tools.forbidden  # noqa: F401
+        from easyhunt.tools.base import REGISTRY
+
+        result = asyncio.run(
+            REGISTRY["forbidden_chain"].fn(
+                urls=[f"{lab_url}/admin", f"{lab_url}/open", f"{lab_url}/locked"]
+            )
+        )
+        assert result["ok"] is True
+        assert result["checked"] == 3
+        assert result["candidates"] == 2  # /admin and /locked are 403
+        assert result["bypassed"] == 1  # /admin bypasses; /locked holds
+        by_url = {r["url"]: r for r in result["results"]}
+        assert by_url[f"{lab_url}/admin"]["bypass"] is True
+        assert by_url[f"{lab_url}/locked"]["bypass"] is False
+        # The bypass filed a finding through forbidden_bypass.
+        assert any(f.asset == f"{lab_url}/admin" for f in engagement.findings.all())
+
+    def test_chain_empty_input_refused(self, engagement) -> None:
+        """An empty target list is refused by the scope gate, never silently passed."""
+        import easyhunt.tools.forbidden  # noqa: F401
+        from easyhunt.errors import EasyHuntError
+        from easyhunt.tools.base import REGISTRY
+
+        with pytest.raises(EasyHuntError):
+            asyncio.run(REGISTRY["forbidden_chain"].fn(urls=[]))

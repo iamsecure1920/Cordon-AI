@@ -836,6 +836,15 @@ outcome. `forbidden_candidates(urls=[...])` pre-checks which URLs actually
 return 403 (one HEAD each) so you never feed it a false start. Install via the
 `unkover` recipe (`easyhunt install`).
 
+**Auto-chained in `hunt.sh`:** the global `forbidden` phase (after `wapiti`,
+before `exploit`) runs `forbidden_chain(urls=[...])` over the live estate —
+it HEAD-pre-checks up to 200 URLs for real 403s, then fires `forbidden_bypass`
+(unKover's 12 techniques) at up to 15 of them. A 403 is never left as an
+unexplained dead end: it is either bypassed (finding filed) or proven
+enforced (coverage record). Like every aggressive tool, `forbidden_chain` and
+`forbidden_bypass` need `approval.policy.auto_approve` entries to run
+unattended.
+
 ### The research advisor (`research_guidance`)
 
 When a scan produces a candidate — or comes back clean and you need to know
@@ -855,6 +864,47 @@ a submittable report needs), and canonical resources (PayloadsAllTheThings /
 PortSwigger / OWASP). With an LLM configured it also produces a grounded
 step-by-step plan; without one the knowledge playbook is the answer. Fuzzy
 class names work: `sqli`, "request smuggling", `JWT`. Sends no traffic.
+
+**`guided_validate` closes the loop** — it assembles the same playbook, then
+*executes* the validators the playbook names against the asset:
+
+```bash
+guided_validate(vuln_class="open redirect", asset="https://target/page?next=/")
+# -> dispatch.ran: [{tool: web_injection_probe, ...}]
+```
+
+The coverage matrix wires each class to its validator (`sqli` → `sqli_validate`,
+`xss` → `xss_validate`, `open redirect` → `web_injection_probe`, …); the chain
+dispatches them with their own approval gates and files whatever they prove.
+Classes with no auto-validator (`file upload`, IDOR, cache deception …)
+honestly return the evidence checklist instead of a fake dispatch.
+
+### Browser-verified exploitation (`browser_verify`)
+
+Scanner output is a lead; a real browser turns it into evidence.
+`browser_verify(url, param, payload)` drives headless Chromium (via the
+`playwright` package and the **system Chrome** — no browser download) to a
+URL and reports what actually happened at render time:
+
+```bash
+browser_verify(url="https://target/search", param="q", payload='<svg onload=alert(1)>')
+# -> reflection=raw/none, executed=true (dialog fired), screenshot=/ws/evidence/*.png
+```
+
+* **reflection** — is the payload back unescaped (`raw` — XSS candidate),
+  escaped, or only echoed as a plain token (`plain` — interesting, not
+  vulnerable)?
+* **execution** — did it actually run (alert/confirm dialog, page error,
+  console)? An executed payload is the PoC a report needs. Files a HIGH
+  finding; raw-but-not-executed files MEDIUM.
+* **redirect** — navigation landing on a different host (open-redirect
+  candidate, LOW).
+* **evidence** — screenshot + DOM excerpt saved into the workspace
+  `evidence/` dir and attached to the finding.
+
+Install: `.venv/bin/pip install 'playwright>=1.40'` (or `easyhunt install`
+with the `browser` extra). Payloads are passed **unescaped** — the tool
+builds the URL itself and never hands them to a subprocess.
 
 ### The payload store
 

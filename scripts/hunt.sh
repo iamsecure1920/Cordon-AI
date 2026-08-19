@@ -69,7 +69,7 @@ PER_TARGET_PHASES="recon permute resolve probe cdn waf tls cors endpoints js aut
 # never fire on a run the operator did not explicitly authorise for exploitation.
 # ports/services/params/content/pattern/graphql/websocket/nikto/wapiti are global:
 # they consume the whole estate once, not once per host.
-GLOBAL_PHASES_LIST="secrets code_audit pattern graphql websocket takeover scan ports services params content nikto wapiti exploit plan report"
+GLOBAL_PHASES_LIST="secrets code_audit pattern graphql websocket takeover scan ports services params content nikto wapiti forbidden exploit plan report"
 ALL_PHASES="$PER_TARGET_PHASES $GLOBAL_PHASES_LIST"
 # Only probe is genuinely required: if nothing is alive, later phases scan hosts
 # nobody confirmed exist. `resolve` was in here too, so any target already

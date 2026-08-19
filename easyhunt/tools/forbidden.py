@@ -36,11 +36,13 @@ from easyhunt.tools.common import URL_PATTERN, register_spec, run_one
 
 log = logging.getLogger("easyhunt.tools.forbidden")
 
-__all__ = ["forbidden_bypass", "forbidden_candidates"]
+__all__ = ["forbidden_bypass", "forbidden_candidates", "forbidden_chain"]
 
 UNKOVER = register_spec(
     ToolSpec(
-        name="unkover", binary="unkover", license="MIT",
+        name="unkover",
+        binary="unkover",
+        license="MIT",
         homepage="https://github.com/BruteLogic/unKover",
         version_args=["-q"],
         identity_marker="unKover",
@@ -59,17 +61,28 @@ UNKOVER = register_spec(
 #: Technique -> severity escalation. Base is medium; admin-flavoured targets
 #: and methods that bypass real authz (not just WAF quirks) go up.
 _TECHNIQUE_WEIGHT = {
-    "ip_header_spoof": 1,   # trusting client-supplied IP headers is a real authz gap
-    "header_override": 1,   # X-Original-URL / X-Rewrite-URL rewriting
-    "api_version": 1,       # version prefix/swap reaching code that skipped authz
+    "ip_header_spoof": 1,  # trusting client-supplied IP headers is a real authz gap
+    "header_override": 1,  # X-Original-URL / X-Rewrite-URL rewriting
+    "api_version": 1,  # version prefix/swap reaching code that skipped authz
     "method_tampering": 0,  # method quirks are often framework behaviour
     "method_case": 0,
     "http10_bypass": 0,
 }
 
 _ADMIN_HINTS = (
-    "admin", "dashboard", "internal", "console", "config", "debug",
-    "manage", "panel", "staff", "backoffice", "api/v1", "api/v2", ".git",
+    "admin",
+    "dashboard",
+    "internal",
+    "console",
+    "config",
+    "debug",
+    "manage",
+    "panel",
+    "staff",
+    "backoffice",
+    "api/v1",
+    "api/v2",
+    ".git",
 )
 
 _BRAIN_CLASS = "access-control-bypass"
@@ -138,7 +151,9 @@ async def forbidden_bypass(url: str, prefix: str | None = None) -> dict[str, Any
         argv += ["--prefix", prefix]
 
     run = await run_one(
-        "unkover", argv, timeout=240,
+        "unkover",
+        argv,
+        timeout=240,
         # unKover emits one JSON object on stdout; keep it whole.
         extract=lambda r: [r.stdout],
     )
@@ -156,7 +171,7 @@ async def forbidden_bypass(url: str, prefix: str | None = None) -> dict[str, Any
             "ok": False,
             "error": "unparseable_output",
             "message": f"unkover returned non-JSON output (exit {run.exit_code}): "
-                        f"{(run.values[0] if run.values else '')[:300]}",
+            f"{(run.values[0] if run.values else '')[:300]}",
         }
     if parse_error == "not_forbidden":
         return {
@@ -164,11 +179,14 @@ async def forbidden_bypass(url: str, prefix: str | None = None) -> dict[str, Any
             "error": "not_forbidden",
             "message": parsed.get("error") if parsed else "target did not return 403",
             "hint": "Feed forbidden_bypass only URLs that returned 403 — run "
-                    "forbidden_candidates first.",
+            "forbidden_candidates first.",
         }
     if parsed is None:
-        return {"ok": False, "error": "unparseable_output",
-                "message": "unkover returned no usable output."}
+        return {
+            "ok": False,
+            "error": "unparseable_output",
+            "message": "unkover returned no usable output.",
+        }
 
     bypass = bool(parsed.get("bypass"))
     findings = parsed.get("findings") or []
@@ -190,8 +208,12 @@ async def forbidden_bypass(url: str, prefix: str | None = None) -> dict[str, Any
     if not bypass:
         coverage = getattr(engagement, "coverage", None)
         if coverage is not None:
-            coverage.record(_BRAIN_CLASS, "disproven", tool="forbidden_bypass",
-                            note=f"12 techniques clean on {url}")
+            coverage.record(
+                _BRAIN_CLASS,
+                "disproven",
+                tool="forbidden_bypass",
+                note=f"12 techniques clean on {url}",
+            )
         return {
             "ok": True,
             "bypass": False,
@@ -256,8 +278,9 @@ async def forbidden_bypass(url: str, prefix: str | None = None) -> dict[str, Any
 
     coverage = getattr(engagement, "coverage", None)
     if coverage is not None:
-        coverage.record(_BRAIN_CLASS, "detected", tool="forbidden_bypass",
-                        note=f"{technique} bypassed {url}")
+        coverage.record(
+            _BRAIN_CLASS, "detected", tool="forbidden_bypass", note=f"{technique} bypassed {url}"
+        )
 
     return {
         "ok": True,
@@ -311,7 +334,8 @@ async def forbidden_candidates(urls: list[str]) -> dict[str, Any]:
 
     checked: list[dict[str, Any]] = []
     async with _httpx.AsyncClient(
-        timeout=10.0, follow_redirects=False,
+        timeout=10.0,
+        follow_redirects=False,
         # Deliberate: pre-checking may hit self-signed lab or internal hosts,
         # exactly like unkover's own curl -sk.
         verify=False,  # noqa: S501
@@ -330,4 +354,108 @@ async def forbidden_candidates(urls: list[str]) -> dict[str, Any]:
         "count": len(candidates),
         "candidates": candidates,
         "note": "Feed these to forbidden_bypass — it refuses anything that is not 403.",
+    }
+
+
+def _sample_urls(urls: list[str], cap: int) -> list[str]:
+    """Sample a huge estate evenly, never a prefix (same rationale as phase.py)."""
+    if len(urls) <= cap:
+        return urls
+    step = len(urls) / cap
+    return [urls[int(i * step)] for i in range(cap)]
+
+
+@easyhunt_tool(
+    phase="exploit",
+    mode="aggressive",
+    targets_arg="urls",
+    timeout=1800,
+    name="forbidden_chain",
+    tags={"authz", "bypass", "access-control", "chain"},
+    # Pre-check HEADs (capped) + ~80 requests per 403 actually bypass-tested.
+    estimated_requests=1400,
+    rationale=(
+        "Auto-chain 403 bypass across the estate: HEAD-pre-check URLs for a 403, "
+        "then fire forbidden_bypass (unKover's 12 techniques) at each real 403. "
+        "Runs unattended so a 403 is never left as an unexplained dead end — it "
+        "is either bypassed (finding) or proven enforced."
+    ),
+    risk_notes=(
+        "Sends ~80 crafted requests per 403 found (up to a cap), header spoofing, "
+        "method and path variants. 403-bypass testing is the access-control "
+        "equivalent of a login bypass check — authorization state, not data. "
+        "Each sub-tool is independently approval-gated: forbidden_chain in "
+        "auto_approve does not approve forbidden_bypass.",
+    ),
+)
+async def forbidden_chain(
+    urls: list[str],
+    max_candidates: int = 200,
+    max_bypass: int = 15,
+) -> dict[str, Any]:
+    """Auto-chain 403 bypass across a list of URLs.
+
+    Pre-checks up to ``max_candidates`` URLs with one HEAD each, keeps the real
+    403s, then runs ``forbidden_bypass`` (unKover's 12 techniques) on up to
+    ``max_bypass`` of them. Every bypass files its own finding; a clean pass is
+    recorded as coverage evidence that the access decision held.
+
+    Give it the estate's live URLs (the pipeline passes the asset store). The
+    chain is what makes a 403 a *tested* access decision instead of a dead end
+    an operator has to revisit by hand.
+    """
+    if not urls:
+        return {"ok": True, "checked": 0, "candidates": 0, "bypassed": 0, "results": [], "count": 0}
+
+    from easyhunt.mcp_server import load_capabilities
+    from easyhunt.tools.base import REGISTRY
+
+    load_capabilities()
+
+    try:
+        max_candidates = max(1, min(int(max_candidates), 1000))
+        max_bypass = max(1, min(int(max_bypass), 50))
+    except (TypeError, ValueError):
+        max_candidates, max_bypass = 200, 15
+
+    sample = _sample_urls(urls, max_candidates)
+    pre = await REGISTRY["forbidden_candidates"].fn(urls=sample)
+    if not pre.get("ok"):
+        return {
+            "ok": False,
+            "error": pre.get("error", "precheck_failed"),
+            "message": pre.get("message", "403 pre-check failed"),
+        }
+    candidates = pre.get("candidates") or []
+
+    results: list[dict[str, Any]] = []
+    bypassed = 0
+    for cand in candidates[:max_bypass]:
+        url = cand["url"]
+        out = await REGISTRY["forbidden_bypass"].fn(url=url)
+        results.append(
+            {
+                "url": url,
+                "bypass": bool(out.get("bypass")),
+                "technique": out.get("technique"),
+                "poc": out.get("poc"),
+                "finding_id": out.get("finding_id"),
+                "error": out.get("error"),
+            }
+        )
+        if out.get("bypass"):
+            bypassed += 1
+
+    return {
+        "ok": True,
+        "checked": len(sample),
+        "candidates": len(candidates),
+        "bypassed": bypassed,
+        "results": results,
+        "count": len(sample),  # the gate's "did it do anything" = pre-checked N URLs
+        "note": (
+            f"{len(candidates)} 403(s) found across {len(sample)} URLs; "
+            f"{bypassed} bypassed by unKover's techniques. Bypasses are filed "
+            "as findings (needs_manual_review)."
+        ),
     }

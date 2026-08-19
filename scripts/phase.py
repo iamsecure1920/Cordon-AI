@@ -84,7 +84,7 @@ def _inherited_sample(available: list[str], cap: int) -> list[str]:
 # should have been sized once against the real total.
 GLOBAL_PHASES = frozenset({
     "takeover", "scan", "ports", "services", "params", "content",
-    "nikto", "wapiti", "exploit", "plan", "report",
+    "nikto", "wapiti", "forbidden", "exploit", "plan", "report",
 })
 
 PHASES: dict[str, dict[str, Any]] = {
@@ -154,6 +154,12 @@ PHASES: dict[str, dict[str, Any]] = {
     "content":   {"tool": "content_discovery",    "count": "count",    "focus": True, "extra": {"wordlist": "juicy-paths"}},
     "nikto":     {"tool": "nikto_scan",           "count": "items",    "focus": True},
     "wapiti":    {"tool": "wapiti_scan",          "count": "candidates", "focus": True},
+    # Auto-chain 403-bypass: HEAD-pre-check the live estate for 403s, then fire
+    # unKover's 12 access-bypass techniques at each. A 403 is an access
+    # decision; leaving it unexplained is leaving the one route an attacker
+    # finds by accident. Aggressive — needs forbidden_chain + forbidden_bypass
+    # in auto_approve.
+    "forbidden": {"tool": "forbidden_chain",      "count": "checked",  "inherits": True, "wants": ("url",), "tag": "live"},
     # Chain the exploit validators over the injection points the earlier phases
     # discovered. Only wired into hunt.sh when --exploit is passed, and only runs
     # then because every sub-validator is itself approval-gated.
