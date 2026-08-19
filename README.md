@@ -127,7 +127,7 @@ until a human or a validator proves it.
 ## Quick start
 
 ```bash
-git clone https://github.com/iamsecure1920/EasyHunt-AI.git && cd Cordon-AI
+git clone https://github.com/iamsecure1920/Cordon-AI.git && cd Cordon-AI
 ./bootstrap.sh
 ```
 

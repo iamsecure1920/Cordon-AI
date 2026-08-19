@@ -129,7 +129,7 @@ else lives in the respective tool's own config (`~/.config/subfinder/…`,
 ### One command
 
 ```bash
-git clone https://github.com/iamsecure1920/EasyHunt-AI.git && cd Cordon-AI
+git clone https://github.com/iamsecure1920/Cordon-AI.git && cd Cordon-AI
 ./bootstrap.sh
 ```
 

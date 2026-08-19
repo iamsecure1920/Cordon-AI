@@ -42,7 +42,7 @@ cordon = "cordon.cli:main"
 cordon-mcp = "cordon.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/sobila/EasyHunt-AI"
+Homepage = "https://github.com/iamsecure1920/Cordon-AI"
 
 [tool.setuptools.packages.find]
 include = ["cordon*"]

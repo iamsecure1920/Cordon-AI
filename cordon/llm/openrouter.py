@@ -221,7 +221,7 @@ class LLMClient:
         self.api_key = os.environ.get(str(config.get("llm.api_key_env", "OPENROUTER_API_KEY")), "")
         self.max_retries = int(config.get("llm.max_retries", 4))
         self.demote_on_ratelimit = bool(config.get("llm.demote_on_ratelimit", True))
-        self.referer = str(config.get("llm.referer", "https://github.com/sobila/EasyHunt-AI"))
+        self.referer = str(config.get("llm.referer", "https://github.com/iamsecure1920/Cordon-AI"))
         self.title = str(config.get("llm.title", "Cordon AI"))
 
         tiers = config.section("llm.tiers")

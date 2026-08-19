@@ -302,7 +302,7 @@ def _build_jwt_provider(config: AuthConfig) -> Any:
         base_url=config.base_url,
         scopes_supported=ALL_SCOPES,
         resource_name="Cordon AI",
-        resource_documentation="https://github.com/sobila/EasyHunt-AI",
+        resource_documentation="https://github.com/iamsecure1920/Cordon-AI",
     )
     log.info(
         "auth: resource server for %s (issuer=%s, audience=%s)",
