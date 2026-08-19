@@ -332,6 +332,10 @@ async def pattern_scan(
         "problems": problems,
         "classes": summary,
         "candidates_total": sum(len(h) for h in classified.values()),
+        # The phase gate (phase.py 'count': 'count') reads this key — a match
+        # class with zero candidates is a legitimately empty phase, but the
+        # key must exist or EVERY pattern phase reports "produced nothing".
+        "count": sum(len(h) for h in classified.values()),
         "note": _note(len(urls), scan_bodies, blocked, failed),
         "next_step": (
             "A pattern match is a shape, not a bug. Run the validator named in "

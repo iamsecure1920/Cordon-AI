@@ -182,3 +182,78 @@ def test_subprocess_timeout_scales_with_input() -> None:
     assert big > 3000
     # No rate limit information falls back to the floor rather than crashing.
     assert subprocess_timeout_for(["a.com"], 0, minimum=600) == 600
+
+
+class TestPhaseKwargs:
+    """The kwarg phase.py hands a phase's tool must use the tool's OWN
+    targets_arg name. The scope gate refuses a call whose targets_arg key is
+    absent — a phase that passes ``target=`` to a tool that declares
+    ``targets_arg="urls"`` (forbidden_chain) fails with "no target supplied"
+    on every run, which reads exactly like a working phase until you look.
+    """
+
+    def test_forbidden_chain_gets_urls_not_target(self) -> None:
+        import easyhunt.mcp_server
+
+        easyhunt.mcp_server.load_capabilities()
+        from easyhunt.tools.base import REGISTRY
+
+        entry = REGISTRY["forbidden_chain"]
+        assert entry.targets_arg == "urls"
+        kwargs = phase._phase_kwargs(entry, "http://127.0.0.1:3000/a,http://127.0.0.1:3000/b", {}, {})
+        assert kwargs == {"urls": "http://127.0.0.1:3000/a,http://127.0.0.1:3000/b"}
+
+    def test_every_phase_tool_receives_its_own_targets_arg(self) -> None:
+        import easyhunt.mcp_server
+
+        easyhunt.mcp_server.load_capabilities()
+        from easyhunt.tools.base import REGISTRY
+
+        for name, spec in phase.PHASES.items():
+            tool = spec.get("tool")
+            entry = REGISTRY.get(tool)
+            assert entry is not None, f"phase {name} names tool {tool} which is not registered"
+            if entry.targets_arg is None:
+                continue
+            kwargs = phase._phase_kwargs(entry, "http://127.0.0.1:3000/", spec.get("extra") or {}, {})
+            # The tool must actually receive its declared target key, so the
+            # wrapper's scope gate sees the targets instead of refusing the call.
+            assert entry.targets_arg in kwargs, (
+                f"phase {name} would call {tool} without its target arg "
+                f"{entry.targets_arg!r}"
+            )
+
+
+class TestBrokenModuleFailsLoud:
+    """A capability module that fails with a bug (not a missing optional dep)
+    must be ERROR in the status and must stop build_server — a silently skipped
+    module is how tools disappear from the MCP surface while the report still
+    claims the scans ran."""
+
+    def test_syntax_error_module_is_error_not_skipped(self, tmp_path, monkeypatch) -> None:
+        import sys
+
+        import easyhunt.mcp_server as mcp_server
+
+        pkg = tmp_path / "brokenpkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "boom.py").write_text("def broken(:\n", encoding="utf-8")  # SyntaxError
+        sys.path.insert(0, str(tmp_path))
+        try:
+            monkeypatch.setattr(mcp_server, "CAPABILITY_MODULES", ["brokenpkg.boom"])
+            status = mcp_server.load_capabilities()
+            assert status["brokenpkg.boom"].startswith("error:")
+            assert mcp_server._module_failures(status)  # non-empty
+        finally:
+            sys.path.remove(str(tmp_path))
+
+    def test_import_error_is_skipped_not_error(self, monkeypatch) -> None:
+        import easyhunt.mcp_server as mcp_server
+
+        monkeypatch.setattr(
+            mcp_server, "CAPABILITY_MODULES", ["definitely_not_a_real_module_xyz"]
+        )
+        status = mcp_server.load_capabilities()
+        assert status["definitely_not_a_real_module_xyz"].startswith("skipped:")
+        assert not mcp_server._module_failures(status)

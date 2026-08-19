@@ -105,7 +105,20 @@ mcp: FastMCP = FastMCP(
 
 
 def load_capabilities() -> dict[str, str]:
-    """Import capability modules. Returns ``{module: status}``."""
+    """Import capability modules. Returns ``{module: status}``.
+
+    Two failure classes, handled differently on purpose:
+
+    * ``ImportError`` — an optional dependency (``bbot`` engine without the
+      bbot package, osmedeus engine without osmedeus). Tolerated: the module
+      is skipped and its tools are simply absent.
+    * anything else (SyntaxError, TypeError, a raised bug in our own code) —
+      this is a defect in the shipped product, not a missing option. It is
+      logged at ERROR and recorded, and :func:`build_server` refuses to start
+      with it. A module that fails to import must not silently serve a
+      reduced toolset: the agent calls ``nuclei_scan``, gets "tool not found",
+      and the report claims a scan that never ran.
+    """
     status: dict[str, str] = {}
     for module_name in CAPABILITY_MODULES:
         try:
@@ -114,10 +127,19 @@ def load_capabilities() -> dict[str, str]:
         except ImportError as exc:
             status[module_name] = f"skipped: {exc}"
             log.debug("capability module %s unavailable: %s", module_name, exc)
-        except Exception as exc:  # noqa: BLE001 — a broken module must not kill the server
+        except Exception as exc:  # noqa: BLE001
             status[module_name] = f"error: {exc}"
-            log.warning("capability module %s failed to load: %s", module_name, exc)
+            log.error(
+                "capability module %s FAILED TO LOAD: %s — the MCP server will "
+                "refuse to start until it is fixed.",
+                module_name, exc,
+            )
     return status
+
+
+def _module_failures(statuses: dict[str, str]) -> list[tuple[str, str]]:
+    """Modules whose load failed with a real bug (not a skipped optional dep)."""
+    return [(mod, status) for mod, status in statuses.items() if status.startswith("error:")]
 
 
 def register_registry_tools(server: FastMCP, auth_config: AuthConfig | None = None) -> int:
@@ -864,6 +886,15 @@ def build_server(
     from easyhunt.plugins.loader import load_all
 
     statuses = load_capabilities()
+    failures = _module_failures(statuses)
+    if failures:
+        listing = "; ".join(f"{mod}: {status}" for mod, status in failures)
+        raise RuntimeError(
+            "Refusing to start: capability module(s) failed to load with a bug, "
+            f"not a missing optional dependency. {listing} — fix the module "
+            "before serving; otherwise tools silently disappear from the MCP "
+            "surface and the report claims scans that never ran."
+        )
 
     # Rules and plugins load before registration, so a Python plugin's
     # @easyhunt_tool declarations are picked up in the same pass as builtins.

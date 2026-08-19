@@ -32,7 +32,7 @@ from easyhunt.control_plane.context import get_engagement
 from easyhunt.control_plane.sanitize import ArgPolicy
 from easyhunt.knowledge.findings import Evidence, Finding, Severity, Status
 from easyhunt.tools.base import ToolSpec, easyhunt_tool
-from easyhunt.tools.common import URL_PATTERN, register_spec, run_one
+from easyhunt.tools.common import URL_PATTERN, register_spec, run_one, split_targets
 
 log = logging.getLogger("easyhunt.tools.forbidden")
 
@@ -389,7 +389,7 @@ def _sample_urls(urls: list[str], cap: int) -> list[str]:
     ),
 )
 async def forbidden_chain(
-    urls: list[str],
+    urls: list[str] | str,
     max_candidates: int = 200,
     max_bypass: int = 15,
 ) -> dict[str, Any]:
@@ -400,12 +400,15 @@ async def forbidden_chain(
     ``max_bypass`` of them. Every bypass files its own finding; a clean pass is
     recorded as coverage evidence that the access decision held.
 
-    Give it the estate's live URLs (the pipeline passes the asset store). The
-    chain is what makes a 403 a *tested* access decision instead of a dead end
-    an operator has to revisit by hand.
+    Give it the estate's live URLs (the pipeline passes the asset store, which
+    arrives as a comma/newline-joined string). The chain is what makes a 403 a
+    *tested* access decision instead of a dead end an operator has to revisit
+    by hand.
     """
+    urls = split_targets(urls)
     if not urls:
-        return {"ok": True, "checked": 0, "candidates": 0, "bypassed": 0, "results": [], "count": 0}
+        return {"ok": True, "checked": 0, "candidates": 0, "bypassed": 0,
+                "results": [], "count": 0}
 
     from easyhunt.mcp_server import load_capabilities
     from easyhunt.tools.base import REGISTRY

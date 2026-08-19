@@ -173,6 +173,35 @@ findings (FP guard, live-tested). Payloads pass unescaped via `text_args`.
   HIGH finding with screenshot evidence; `hello-world` echoed back filed
   nothing.
 
+### Live-pipeline audit (the "does it actually work" pass)
+
+A real end-to-end run of the phase chain against the juice-shop lab found and
+fixed four wired-but-dead defects. These are the bugs that make the tool look
+credible in code and fail in reality:
+
+1. **phase.py handed every tool a `target=` kwarg** — a tool that declares
+   `targets_arg="urls"` (forbidden_chain) looked to the scope gate like a call
+   with no target, and its phase failed with "no target supplied" on every
+   run. Now uses the tool's own `targets_arg` name. Regression tests cover
+   every phase's kwarg construction.
+2. **A capability module that fails to import was silently skipped** — its
+   tools vanished from the MCP surface while the report still claimed the
+   scans ran. `build_server` now refuses to start with a module whose failure
+   is a bug (SyntaxError etc.), not a missing optional dependency.
+3. **pattern_scan never returned the `count` key its phase gate reads** — the
+   pattern phase reported "produced nothing" even when it found sink
+   candidates. Now returns `count` (plus `candidates_total`).
+4. **service_scan defaulted to `ports="80,443"`** — it ignored what port_scan
+   discovered, so any estate on 3000/8080/8443 reported "no services". It now
+   inherits the open_port assets from the store (falls back to 80,443 only
+   when nothing was discovered). Regression tests pin all three branches.
+
+Verified working end-to-end on the lab through the real control plane: probe,
+waf, cors, tls, endpoints (83 URLs), js, pattern, nuclei scan (Prometheus
+finding), forbidden, ports (2 open), content (`/api-docs`, `/metrics`), and
+exploit_chain (16 injection points tested). `easyhunt doctor`: 80/83 tools
+working, all 38 capability modules load.
+
 ---
 
 ## 1. What this is

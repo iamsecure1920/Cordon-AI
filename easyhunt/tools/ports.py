@@ -246,15 +246,29 @@ async def port_scan(target: str, ports: str = "top-100") -> dict[str, Any]:
     ],
 )
 async def service_scan(
-    target: str, ports: str = "80,443", scripts: str = "default,safe"
+    target: str, ports: str | None = None, scripts: str = "default,safe"
 ) -> dict[str, Any]:
     """Fingerprint services on specific ports with nmap -sV plus safe NSE scripts.
 
     scripts is restricted to default/safe/discovery/version/banner. Exploit,
     dos, brute, malware, and intrusive categories are refused.
+
+    ``ports`` defaults to what ``port_scan`` already discovered for this host
+    (the open_port assets in the store) and falls back to the web ports
+    ``80,443`` only when nothing was discovered. The old hardcoded default
+    silently reported "no services" on every estate that runs on 3000/8080/
+    8443 — exactly the ports port_scan exists to find. The chain is
+    ``ports -> services``; services must consume what ports produced.
     """
     engagement = get_engagement()
     host = split_targets(target)[0]
+    if not ports:
+        discovered = sorted({
+            int(a.attributes["port"]) for a in engagement.assets.all()
+            if a.kind == "open_port" and a.host == host
+            and isinstance(a.attributes.get("port"), int)
+        })
+        ports = ",".join(str(p) for p in discovered) if discovered else "80,443"
     selection = _check_nse(scripts)
 
     rules = engagement.scope.rules

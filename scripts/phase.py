@@ -58,6 +58,21 @@ from easyhunt.control_plane.scope import Scope  # noqa: E402
 MAX_INHERITED = 500
 
 
+def _phase_kwargs(entry: Any, passed: str, declared: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+    """Build the kwargs a phase hands its tool.
+
+    Uses the tool's OWN declared target-argument name, never a hardcoded
+    "target": a tool with targets_arg="urls" (forbidden_chain) fed a "target="
+    kwarg looks to the wrapper like a call with no target at all, and the scope
+    gate refuses it. The gate is the place a silent miss becomes a loud failure
+    — "no target supplied" on every run — which is exactly how a wired-but-dead
+    phase hides.
+    """
+    if entry.targets_arg:
+        return {entry.targets_arg: passed, **declared, **extra}
+    return {**declared, **extra}
+
+
 def _inherited_sample(available: list[str], cap: int) -> list[str]:
     """Take up to ``cap`` targets, spread across the store, never a prefix.
 
@@ -373,10 +388,7 @@ async def main() -> int:
     # phase's path was dropped and the tool scanned the workspace root, which
     # contains noseyparker's datastore of secret patterns (100 self-hits).
     declared = spec.get("extra") or {}
-    if entry.targets_arg:
-        kwargs = {"target": passed, **declared, **extra}
-    else:
-        kwargs = {**declared, **extra}
+    kwargs = _phase_kwargs(entry, passed, declared, extra)
     try:
         result = await entry.fn(**kwargs)
     except Exception as exc:  # noqa: BLE001
