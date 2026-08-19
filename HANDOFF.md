@@ -196,7 +196,7 @@ credible in code and fail in reality:
    inherits the open_port assets from the store (falls back to 80,443 only
    when nothing was discovered). Regression tests pin all three branches.
 
-**Amended 2026-08-19 — the estate-wide services pass.** The myfitnesspal run
+**Amended 2026-08-19 — the estate-wide services pass.** A live-estate run
 caught two more defects in the same chain, both invisible until a real estate
 was scanned:
 
@@ -220,7 +220,7 @@ finding), forbidden, ports (2 open), content (`/api-docs`, `/metrics`), and
 exploit_chain (16 injection points tested). `cordon doctor`: 80/83 tools
 working, all 38 capability modules load.
 
-**Amended 2026-08-19 — triage + CORS validation.** The myfitnesspal findings
+**Amended 2026-08-19 — triage + CORS validation.** That run's findings
 were triaged by hand (no OpenRouter key): 39 candidates → 2 survivors, 34
 dropped, 3 disproven. The one real lead was the estate-wide CORS misconfig
 (reflect any origin + credentials on www and api). Validating it by hand
@@ -233,7 +233,7 @@ exposed a gap in the tool, now closed:
    reflection (GET with an attacker Origin + OPTIONS preflight), then bounds
    impact by the host's auth model: a ``SameSite=None`` session cookie means
    potentially exploitable; SameSite=Lax/host-only cookies and bearer-token
-   auth mean the defect is config-level. Verified live against myfitnesspal:
+   auth mean the defect is config-level. Verified live against that estate:
    proven, all methods allowed, impact capped — matching the hand analysis.
 
 ---
