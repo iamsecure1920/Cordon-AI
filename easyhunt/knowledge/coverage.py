@@ -180,7 +180,8 @@ COVERAGE: list[dict[str, Any]] = [
     },
     {
         "class": "cors-misconfiguration", "title": "CORS Misconfiguration", "phase": "configuration",
-        "detection": "cors_audit (corscanner)", "validation": "cors_audit (reachability to authed data is the proof)",
+        "detection": "cors_audit (corscanner)",
+        "validation": "validate_findings (cors class: confirm reflection + credentials, then bound impact by auth model)",
         "payloads": [], "gf": [], "status": "auto",
         "bypass": "cors-misconfiguration",
     },

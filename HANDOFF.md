@@ -220,6 +220,22 @@ finding), forbidden, ports (2 open), content (`/api-docs`, `/metrics`), and
 exploit_chain (16 injection points tested). `easyhunt doctor`: 80/83 tools
 working, all 38 capability modules load.
 
+**Amended 2026-08-19 — triage + CORS validation.** The myfitnesspal findings
+were triaged by hand (no OpenRouter key): 39 candidates → 2 survivors, 34
+dropped, 3 disproven. The one real lead was the estate-wide CORS misconfig
+(reflect any origin + credentials on www and api). Validating it by hand
+exposed a gap in the tool, now closed:
+
+7. **CORS had no auto-validator.** `classify()` had no ``cors`` class, so a
+   ``reflect_origin with credentials`` finding fell to ``_validate_manual`` —
+   and because the secret markers include ``credential``, its title actually
+   misrouted to the *secret* validator. `_validate_cors` now confirms the
+   reflection (GET with an attacker Origin + OPTIONS preflight), then bounds
+   impact by the host's auth model: a ``SameSite=None`` session cookie means
+   potentially exploitable; SameSite=Lax/host-only cookies and bearer-token
+   auth mean the defect is config-level. Verified live against myfitnesspal:
+   proven, all methods allowed, impact capped — matching the hand analysis.
+
 ---
 
 ## 1. What this is
