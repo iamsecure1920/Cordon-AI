@@ -4,9 +4,9 @@
 
 **An agentic VAPT orchestrator where the control plane — not the model — is the security boundary.**
 
-[![Tests](https://img.shields.io/badge/tests-1%2C983-brightgreen)](#development)
-[![Tools](https://img.shields.io/badge/tools-82%20catalogued-blue)](#every-tool-it-drives)
-[![MCP](https://img.shields.io/badge/MCP-80%20tools-8A2BE2)](#every-tool-it-drives)
+[![Tests](https://img.shields.io/badge/tests-2%2C231-brightgreen)](#development)
+[![Tools](https://img.shields.io/badge/tools-85%20catalogued-blue)](#every-tool-it-drives)
+[![MCP](https://img.shields.io/badge/MCP-94%20tools-8A2BE2)](#every-tool-it-drives)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#quick-start)
 [![Sandbox](https://img.shields.io/badge/sandbox-read--only%20%C2%B7%20caps%20dropped-orange)](#why-this-is-not-another-scanner-wrapper)
 [![License](https://img.shields.io/badge/license-see%20LICENSE-lightgrey)](LICENSE)
@@ -190,7 +190,7 @@ touching the run:
 
 ## Every tool it drives
 
-**80 MCP tools** over **82 catalogued binaries**.
+**94 MCP tools** over **85 catalogued binaries**.
 `·` passive · `!` aggressive · `!!` exploit — the mode decides whether a human is consulted.
 
 | Category | Binaries |
@@ -227,7 +227,7 @@ grouped by phase.
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 1,983 tests
+.venv/bin/python -m pytest tests/ -q          # 2,231 tests
 .venv/bin/ruff check cordon/ tests/
 cordon doctor                                # executed, not just found on PATH
 ```

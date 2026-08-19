@@ -1,7 +1,7 @@
 # Cordon AI — Complete User Manual
 
 > **Cordon AI** is an agentic VAPT (Vulnerability Assessment and Penetration
-> Testing) orchestrator. It drives **80 MCP tools over 82 catalogued open-source
+> Testing) orchestrator. It drives **94 MCP tools over 85 catalogued open-source
 > security binaries** behind a mandatory, server-side control plane. The AI model
 > supplies *strategy*; the MCP server decides *what is permitted* and enforces it
 > in code; the sandboxed engines do the work. **The model never holds a shell.**
@@ -677,7 +677,7 @@ the live registry, not just against each other.
 
 ## 10. Every tool it drives
 
-**80 MCP tools** over **84 catalogued binaries**. The authoritative list is
+**94 MCP tools** over **85 catalogued binaries**. The authoritative list is
 generated from `cordon/install/recipes.py` into the
 [Master Tool Matrix in `tools.md`](tools.md#master-tool-matrix), with
 per-tool purpose and usage in the profiles below it. It is generated because
@@ -1119,7 +1119,7 @@ be decorative.
 ## 18. Development and testing
 
 ```bash
-.venv/bin/python -m pytest tests/ -q    # 1,958 tests across 49 files
+.venv/bin/python -m pytest tests/ -q    # 2,231 tests across 62 files
 .venv/bin/ruff check cordon/ tests/   # lint
 cordon doctor                         # executed, not just found on PATH
 ```
@@ -1185,7 +1185,7 @@ Cordon-AI/
 ├── skills/                 # 8 phase playbooks for the agent
 ├── rules/                  # detection packs — YAML, no code
 ├── scripts/                # hunt.sh, phase.py, summary.py, watch.sh, vet_payloads.py, …
-├── tests/                  # 1,958 tests across 49 files
+├── tests/                  # 2,231 tests across 62 files
 ├── payloads/               # vetted store (gitignored, rebuilt with vet_payloads.py)
 └── engagements/            # per-engagement workspaces (assets, findings, reports, audit)
 ```
@@ -1193,5 +1193,5 @@ Cordon-AI/
 ---
 
 *Cordon AI — Complete User Manual. Last updated 2026-08-14.*
-*Figures current as of this revision: 80 MCP tools, 82 catalogued binaries,*
-*79 working / 3 optional not installed, 1,958 tests, 85 install recipes.*
+*Figures current as of this revision: 94 MCP tools, 85 catalogued binaries,*
+*79 working / 3 optional not installed, 2,231 tests, 85 install recipes.*
