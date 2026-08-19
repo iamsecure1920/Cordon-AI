@@ -68,28 +68,75 @@ every script — and gave it a face. `2120 passed, 1 skipped`.
   observer wiring and observer-failure isolation (a crashing observer cannot
   break the audit trail).
 
-### The live dashboard (`easyhunt/tools/dashboard.py`)
+### The live dashboard (`easyhunt/tools/dashboard.py` + `dashboard/` React app)
 
 Turns any engagement workspace into a live ops view — the answer to "what
 has the run found, and what phase is it on right now":
 
 - **Data layer**: `collect_state()` reads status.jsonl (phase machine),
   findings.json (severity/status ledger, severity-sorted), assets.json
-  (discovered estate), and the brain's activity feed, into one JSON blob.
-  Audit phase slugs are canonicalized to pipeline labels exactly like the
-  animation (http_probe→probe, etc.).
-- **Two modes**: `easyhunt dashboard` writes a self-contained `dashboard.html`
-  (zero external deps — inline CSS/JS, embeddable in a report);
-  `easyhunt dashboard --serve` runs a stdlib ThreadingHTTPServer where the
-  page polls `/api/state` every 2s and re-renders — live phase pipeline with
-  running animations, findings table (severity + status badges), stat cards,
-  the brain's recent activity feed, and links to generated reports.
+  (discovered estate, grouped by kind), coverage.json (CoverageLedger),
+  audit.jsonl (tool usage), brain activity + learned FP lessons, and the
+  scope file, into one JSON blob. Audit phase slugs are canonicalized to
+  pipeline labels exactly like the animation (http_probe→probe, etc.).
+  `collect_state(root, workspace=name)` pins a specific engagement;
+  `?ws=<name>` on the API does the same.
+- **React SPA**: `dashboard/` is a Vite + React + TypeScript app
+  (react, react-dom, lucide-react only; `npm ci && npm run build` →
+  `dashboard/dist`). Views: Overview (stat cards + live phase pipeline),
+  Findings (search / severity / status / phase / tool / sort filters,
+  expandable detail rows), Assets (tabbed subdomains / endpoints / urls /
+  technologies / open ports / …), Coverage (per-class runtime status),
+  Activity (brain feed), Tools (what fired, from the audit trail), False
+  positives (dismissed + learned), Reports. Deep-linkable `/#view`, workspace
+  switcher in the top bar, 2s polling via `useLiveState`.
+- **Serve**: `easyhunt dashboard --serve` serves `dist/` with an SPA
+  fallback + `/api/state` + `/reports/*`; falls back to the legacy
+  dependency-free page when `dist` is absent. `--build` runs npm ci + vite
+  build; `--workspace NAME` pins the snapshot; `--port`/`--out` as before.
 - **MCP**: `dashboard_state` returns the same blob to the agent — "where is
   the scan, what has it found" without reading workspace files.
-- **CLI**: `easyhunt dashboard [--out path] [--serve] [--port N]`.
-- **Tests**: 6 new in `tests/test_dashboard.py` (phase mapping incl. the
+- **CLI**: `easyhunt dashboard [--build|--serve|--out path|--port N|--workspace NAME]`.
+- **Tests**: 11 in `tests/test_dashboard.py` (phase mapping incl. the
   canonical-slug fix, findings sorting/counting, full state blob, embedded
-  page render).
+  legacy page render, assets-by-kind, coverage, tool usage from audit,
+  false positives, workspace pinning).
+- **Playwright e2e**: `cd dashboard && npm run e2e` starts the server and
+  verifies every view renders against real data (uses system Chrome via
+  `playwright-core` — no browser download). 16 checks incl. filter clicks.
+
+### 403 access-control bypass (`easyhunt/tools/forbidden.py` + unKover)
+
+unKover (BruteLogic) — a 12-technique 403-bypass tester (IP-header spoofing,
+method tampering/case, protocol headers, Referer trust, path normalization /
+encoding, HTTP/1.0 downgrade, hop-by-hop, path suffix, API version prefix /
+swap) with wildcard-baseline FP filtering and a curl PoC on first success.
+
+- **Install**: recipe in `easyhunt/install/recipes.py` (git clone to
+  `/opt/unkover`, symlink to PATH). Pure bash + curl — no build.
+- **`forbidden_bypass(url, prefix=)`** — runs unKover, files a finding
+  (`needs_manual_review`, MEDIUM base → HIGH on admin-flavoured paths with
+  authz-relevant techniques), PoC as evidence, teaches the brain
+  (`access-control-bypass` class), records the coverage ledger. The
+  wildcard calibration is unKover's own — a 2xx on a 403 path is not a
+  soft-404. Refuses anything that is not 403.
+- **`forbidden_candidates(urls)`** — passive pre-check (one HEAD per URL)
+  returning the actual 403s, so you only feed the bypass tester real 403s.
+- **When to use**: any URL that returned 403 from probe / content discovery /
+  nuclei. A 403 is an access decision; these techniques find the routes
+  around it. Verified live against a purpose-built 403 lab.
+
+### The research advisor (`easyhunt/tools/research_guide.py`)
+
+`research_guidance(vuln_class, asset, evidence, stack)` — the "I found
+something / scanned clean, what do I do next" answer. Assembles into one
+actionable playbook: the brain's learned experience for the class on this
+stack, the technique-index entry (payloads/tools), the exact validators to
+run next (from the coverage matrix), WAF-tailored bypass payloads when a
+vendor is observed, a per-class evidence checklist, and canonical resources
+(PAT, PortSwigger, OWASP). With an LLM enabled it also produces a grounded
+step plan; without one the knowledge playbook is the answer. Sends no
+traffic. Fuzzy class names work (`sqli`, "request smuggling", `JWT`).
 
 ---
 

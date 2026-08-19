@@ -82,7 +82,7 @@ this machine.
 
 <!-- BEGIN GENERATED TOOL MATRIX -->
 
-**84 installable tools**, generated from `easyhunt/install/recipes.py` by `scripts/gen_tool_matrix.py`.
+**85 installable tools**, generated from `easyhunt/install/recipes.py` by `scripts/gen_tool_matrix.py`.
 Do not edit this table by hand — run the script.
 `easyhunt doctor` reports which of these are actually working on *this* machine.
 
@@ -129,6 +129,7 @@ Do not edit this table by hand — run the script.
 | `sqlmap` | exploit | pipx | GPL-2.0 | ✅ |
 | `ssrfmap` | exploit | git clone | MIT |  |
 | `sstimap` | exploit | git clone | GPL-3.0 |  |
+| `unkover` | exploit | git clone | MIT |  |
 | `xsstrike` | exploit | git clone | GPL-3.0 |  |
 | `corscanner` | http | pipx | MIT |  |
 | `graphql-cop` | http | git clone | MIT |  |

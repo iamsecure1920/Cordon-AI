@@ -77,6 +77,8 @@ CAPABILITY_MODULES = [
     "easyhunt.tools.auth_surface",
     "easyhunt.tools.sessions",
     "easyhunt.tools.smuggling_framework",
+    "easyhunt.tools.forbidden",
+    "easyhunt.tools.research_guide",
     "easyhunt.tools.llmsec",
     "easyhunt.tools.triage_tools",
     "easyhunt.tools.report_tools",

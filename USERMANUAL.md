@@ -103,7 +103,7 @@ installed manually.
 | Python | ≥ 3.11 | the control plane and ~14 tools |
 | Go | ≥ 1.21 (1.25 for httpx) | ~28 tools |
 | Rust + cargo | latest | findomain, feroxbuster, noseyparker, kingfisher |
-| Node.js | ≥ 20.20.0 | retire, promptfoo |
+| Node.js | ≥ 20.20.0 | retire, promptfoo, React dashboard build (`easyhunt dashboard --build`) |
 | Ruby | ≥ 2.7 | whatweb |
 
 ### Privileges
@@ -700,7 +700,7 @@ human is consulted before the call runs.
 | **DNS** | `dns_resolve` `cdn_check` `dns_permute`! |
 | **HTTP** | `http_probe` `waf_detect` `tls_audit` `cors_audit` |
 | **Endpoints** | `endpoint_discovery` `content_discovery`! `param_discovery`! `graphql_audit` `websocket_probe` `payload_catalog` `fuzz_compare` |
-| **Bypass** | `waf_bypass` `fingerprint_waf` `waf_vendors` |
+| **Bypass** | `waf_bypass` `fingerprint_waf` `waf_vendors` `forbidden_bypass`! `forbidden_candidates` |
 | **Prompts** | `exploit_prompt` `prompt_classes` |
 | **White-box** | `code_audit` `source_fetch` `semgrep_scan` |
 | **Handoff** | `burp_send`! (forwards scope-checked requests through the operator's Burp proxy for manual review) |
@@ -713,7 +713,7 @@ human is consulted before the call runs.
 | **Cloud** | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
 | **Contracts** | `contract_static_scan` `contract_toolchain` |
 | **LLM** | `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` |
-| **Method** | `wstg_lookup` `technique_lookup` `coverage_report` `hunt_plan` `auth_surface` `auth_crawl`! `session_register` `session_list` |
+| **Method** | `wstg_lookup` `technique_lookup` `coverage_report` `hunt_plan` `research_guidance` `auth_surface` `auth_crawl`! `session_register` `session_list` |
 | **Triage** | `triage_findings` `triage_taskflows` `triage_canary_preview` |
 | **Report** | `report_generate` `findings_list` `finding_detail` `finding_note` |
 | **Control** | `job_status` |
@@ -756,20 +756,46 @@ CLI: `easyhunt brain state` (one-shot snapshot), `easyhunt brain history
 ### The live dashboard
 
 See the whole run at a glance — findings so far, which phase is executing,
-recent activity, reports:
+which subdomains/endpoints were discovered, what the brain senses — from a
+**React + Vite + TypeScript** single-page app (`dashboard/`):
 
 ```bash
-easyhunt dashboard              # static snapshot -> dashboard.html (self-contained)
-easyhunt dashboard --serve      # live: http://127.0.0.1:8765, page auto-refreshes
+easyhunt dashboard --build      # first time: npm install + vite build -> dashboard/dist
+ easyhunt dashboard --serve      # live: http://127.0.0.1:8765, polls /api/state every 2s
+easyhunt dashboard              # static snapshot -> dashboard.html (legacy self-contained page)
 ```
 
-The page shows: stat cards (findings by severity/status, phases done, assets
-found), the full phase pipeline with each phase's state (pending / running /
-ok / empty / failed) and a scanning animation on the active phase, a
-severity-sorted findings table, the brain's sensed activity feed, and links
-to generated reports. `--serve` re-reads the workspace on every poll, so a
-running `hunt.sh` updates it in real time. The agent gets the same blob over
-MCP via `dashboard_state`.
+Views (sidebar; deep-linkable as `/#overview`, `/#findings`, `/#assets`, …):
+
+- **Overview** — stat cards (findings by severity/status, confirmed vs
+  candidates, false positives, phases done, assets, classes covered), the
+  full 14-phase pipeline with live state + scanning animation on the active
+  phase, and the brain's recent sensed activity.
+- **Findings** — severity-sorted table with **filters**: free-text search,
+  severity chips, status chips, phase + tool selects, sort (severity / CVSS /
+  asset / newest). Rows expand to show description, evidence, CVSS vector,
+  remediation, references. False positives are dimmed, never hidden.
+- **Assets** — tabbed by kind: subdomains, endpoints, URLs, technologies,
+  open ports, hosts, IPs, services, JS sinks — each with search + host filter
+  and source/tags/first-seen columns.
+- **Coverage** — the CoverageLedger: which of the 27 bug classes were
+  validated/detected/not attempted this run, with tool + note + completion bar.
+- **Activity** — the brain's live sensed feed, filterable by phase/tool/outcome.
+- **Tools** — every tool that actually fired (from the audit trail): calls,
+  phases, outcomes, findings, errors.
+- **False positives** — dismissed findings + brain-learned FP lessons.
+- **Reports** — links to generated reports.
+
+`--serve` re-reads the workspace on every poll, so a running `hunt.sh`
+updates the page in real time. The top bar has an **engagement workspace
+switcher** (deep-link as `/?ws=<workspace_name>`), a live status dot, and a
+last-updated clock. If `dashboard/dist` is missing, `--serve` falls back to
+the legacy dependency-free page, and `--build` compiles the React app
+(requires Node 18+). The agent gets the same blob over MCP via
+`dashboard_state`.
+
+Preview screenshots: `docs/dashboard-overview.png`, `docs/dashboard-findings.png`,
+`docs/dashboard-assets.png`.
 
 ### The coverage matrix (27 bug classes, two tiers)
 
@@ -786,6 +812,49 @@ MCP via `dashboard_state`.
 Integrity tests fail if a matrix row references a payload list, gf pack, or
 bypass technique that does not exist — a coverage table pointing at a missing
 list would be a false promise.
+
+### 403 access-control bypass (`forbidden_bypass`)
+
+A 403 is an access decision, and access decisions are where scans look clean
+until someone finds the route around them. `forbidden_bypass` runs **unKover**
+(BruteLogic) — twelve proven bypass techniques (IP-header spoofing, method
+tampering/case, protocol headers, Referer trust, path normalization and URL
+encoding, HTTP/1.0 downgrade, hop-by-hop header smuggling, path suffix
+injection, API version prefix/swap) against a URL that returned 403. unKover
+calibrates a wildcard baseline (so a soft-404 is not read as a bypass), stops
+at the first success, and returns a ready-to-run curl PoC:
+
+```bash
+forbidden_bypass(url="https://target/admin", prefix="/v2")
+# -> bypass=true, technique=ip_header_spoof, poc="curl -i -H 'X-Forwarded-For: 127.0.0.1' ..."
+```
+
+Findings are filed `needs_manual_review` (the technique is proven; impact
+depends on what the path protects), MEDIUM base → HIGH when the technique is
+authz-relevant and the path is admin-flavoured. The brain learns from every
+outcome. `forbidden_candidates(urls=[...])` pre-checks which URLs actually
+return 403 (one HEAD each) so you never feed it a false start. Install via the
+`unkover` recipe (`easyhunt install`).
+
+### The research advisor (`research_guidance`)
+
+When a scan produces a candidate — or comes back clean and you need to know
+what to try next — `research_guidance` answers "what do I do now" with one
+actionable playbook per class:
+
+```bash
+research_guidance(vuln_class="sql injection", asset="https://app/search?q=1",
+                  evidence="param echoes the value", stack="next.js, mysql")
+```
+
+It assembles: the **brain's learned experience** for that class on that stack,
+the **technique-index** payloads/tools, the exact **validators to run next**
+(from the coverage matrix — `sqli_validate` etc.), WAF-tailored bypass
+payloads when a vendor was observed, a per-class **evidence checklist** (what
+a submittable report needs), and canonical resources (PayloadsAllTheThings /
+PortSwigger / OWASP). With an LLM configured it also produces a grounded
+step-by-step plan; without one the knowledge playbook is the answer. Fuzzy
+class names work: `sqli`, "request smuggling", `JWT`. Sends no traffic.
 
 ### The payload store
 

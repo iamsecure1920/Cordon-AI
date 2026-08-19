@@ -181,6 +181,18 @@ _add(Recipe(tool="strix", method="manual", package="", category="engine", licens
                 "container sandbox, so install the image rather than a host binary: "
                 "docker pull usestrix/strix:latest"
             )))
+#: 403 access-bypass tester by BruteLogic (bash + curl only — no build, no
+#: runtime). Cloned so the script is pinned by git SHA rather than fetched from
+#: a mutable raw URL; the symlink puts it on PATH.
+_add(Recipe(tool="unkover", method="git", category="exploit", license="MIT",
+            package="https://github.com/BruteLogic/unKover", clone_to="/opt/unkover",
+            post_install="install -m 0755 /opt/unkover/unkover /usr/local/bin/unkover",
+            caveat=(
+                "403 access-bypass tester. Feed it URLs that returned 403 — it tests "
+                "12 bypass techniques (IP headers, method tampering, path "
+                "normalization, API version swap) and returns a curl PoC on the first "
+                "success. Wrapper: forbidden_bypass."
+            )))
 
 # --------------------------------------------------------------------------- #
 # Recon

@@ -92,6 +92,14 @@ def _latest_workspace(root: Path) -> Path | None:
     return workspaces[-1] if workspaces else None
 
 
+def _find_workspace(root: Path, name: str) -> Path | None:
+    eng = root / "engagements"
+    if not eng.is_dir():
+        return None
+    target = eng / name
+    return target if target.is_dir() else None
+
+
 def _phase_status(workspace: Path) -> dict[str, dict[str, Any]]:
     """Latest status per canonical phase from status.jsonl.
 
@@ -174,16 +182,197 @@ def _collect_findings(workspace: Path) -> dict[str, Any]:
     }
 
 
-def _collect_assets(workspace: Path) -> dict[str, int]:
+def _assets_items(workspace: Path) -> list[dict[str, Any]]:
     data = _read_json(workspace / "assets.json")
-    items = data if isinstance(data, list) else (data or {}).get("urls", [])
+    raw = data if isinstance(data, list) else (data or {}).get("urls", [])
+    return [i for i in raw if isinstance(i, dict)]
+
+
+def _collect_assets(workspace: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for item in items:
-        if not isinstance(item, dict):
-            continue
+    for item in _assets_items(workspace):
         kind = str(item.get("kind") or "other")
         counts[kind] = counts.get(kind, 0) + 1
     return counts
+
+
+def _collect_assets_detailed(workspace: Path) -> dict[str, Any]:
+    """Assets grouped by kind, each item flattened for the frontend.
+
+    Kinds seen in the wild: url, subdomain, endpoint, technology, js,
+    open_port, service, host, ip, sink_candidate. The dashboard renders each
+    kind as its own tab, so the raw store is grouped here rather than the UI.
+    """
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in _assets_items(workspace):
+        kind = str(item.get("kind") or "other")
+        grouped.setdefault(kind, []).append({
+            "value": item.get("value"),
+            "host": item.get("host"),
+            "source": item.get("source"),
+            "tags": item.get("tags") or [],
+            "first_seen": item.get("first_seen"),
+            "attributes": (item.get("attributes") or {}),
+        })
+    for kind in grouped:
+        grouped[kind].sort(key=lambda a: str(a.get("value") or ""))
+    return {"counts": {k: len(v) for k, v in grouped.items()}, "items": grouped}
+
+
+def _collect_coverage(workspace: Path) -> dict[str, Any]:
+    """The CoverageLedger (coverage.json): what each bug class actually saw."""
+    data = _read_json(workspace / "coverage.json") or {}
+    rows = data.get("rows") if isinstance(data, dict) else None
+    rows = rows or []
+    counts: dict[str, int] = {}
+    for r in rows:
+        st = str(r.get("status") or "not_attempted")
+        counts[st] = counts.get(st, 0) + 1
+    return {"total": len(rows), "by_status": counts, "rows": rows}
+
+
+def _collect_used_tools(workspace: Path) -> list[dict[str, Any]]:
+    """Every tool that actually fired in this engagement, from the audit trail.
+
+    Columns the Tools view shows: call count, phases, outcomes, findings
+    produced, last call. Tools that never ran are simply absent — the honest
+    version of "what did this run actually use".
+    """
+    tools: dict[str, dict[str, Any]] = {}
+    audit = workspace / "audit.jsonl"
+    try:
+        lines = audit.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if d.get("event") != "tool_call":
+            continue
+        name = str(d.get("tool") or "?")
+        entry = tools.setdefault(name, {
+            "tool": name, "calls": 0, "phases": set(),
+            "outcomes": set(), "findings": 0, "last_ts": None,
+            "errors": 0,
+        })
+        entry["calls"] += 1
+        entry["phases"].add(_canonical_phase(str(d.get("phase") or "?")))
+        outcome = str(d.get("outcome") or "ok")
+        entry["outcomes"].add(outcome)
+        if outcome in ("error", "failed", "refused", "denied"):
+            entry["errors"] += 1
+        entry["findings"] += int(d.get("findings") or d.get("output_count") or 0)
+        ts = d.get("ts")
+        if ts and (entry["last_ts"] is None or ts > entry["last_ts"]):
+            entry["last_ts"] = ts
+    # also fold in status.jsonl tool rows that never hit the audit (edge cases)
+    for line in _read_jsonl_lines(workspace / "status.jsonl"):
+        tool = line.get("tool")
+        if not tool or tool in tools:
+            continue
+        tools[tool] = {
+            "tool": tool, "calls": 1,
+            "phases": {_canonical_phase(str(line.get("phase") or "?"))},
+            "outcomes": {str(line.get("state") or "ok")},
+            "findings": int(line.get("findings") or 0),
+            "last_ts": line.get("at"), "errors": 0,
+        }
+    result = []
+    for entry in tools.values():
+        entry["phases"] = sorted(entry["phases"])
+        entry["outcomes"] = sorted(entry["outcomes"])
+        result.append(entry)
+    result.sort(key=lambda t: (-t["calls"], t["tool"]))
+    return result
+
+
+def _read_jsonl_lines(path: Path) -> list[dict[str, Any]]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+def _collect_false_positives(workspace: Path, root: Path) -> list[dict[str, Any]]:
+    """Findings the pipeline itself dismissed (triage drops, validator refutes)
+    plus the brain's learned FP lessons across engagements.
+
+    These matter to a reviewer: a class of finding that keeps getting dropped
+    is a lesson (the brain learns it), and a dropped finding is never deleted
+    — it is shown here so nothing disappears silently.
+    """
+    fplist = []
+    data = _read_json(workspace / "findings.json") or {}
+    findings = data.get("findings") if isinstance(data, dict) else []
+    for f in findings or []:
+        status = str(f.get("status") or "candidate")
+        notes = f.get("triage_notes") or f.get("extra") or {}
+        if status in ("false_positive", "dismissed") or (
+            isinstance(notes, dict) and notes.get("verdict") == "false_positive"
+        ):
+            fplist.append({
+                "id": f.get("id"), "title": f.get("title"),
+                "asset": f.get("asset"), "severity": f.get("severity"),
+                "source_tool": f.get("source_tool"),
+                "phase": _canonical_phase(str(f.get("phase") or "?")),
+                "status": status, "kind": "finding",
+                "reason": (notes.get("reason") if isinstance(notes, dict)
+                            else notes) or "triage dismissed",
+            })
+    # Brain lessons: (tool, rule, context) triples the brain learned to distrust.
+    cfg = Config.load(ROOT / "config.yaml") if (ROOT / "config.yaml").exists() else Config()
+    raw = cfg.path("memory.brain_store", "~/.easyhunt/neuron-brain.jsonl")
+    path = Path(os.path.expanduser(str(raw)))
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if d.get("kind") in ("fp_lesson", "lesson") and d.get("tool"):
+            ctx = d.get("context") or {}
+            fplist.append({
+                "id": None,
+                "title": f"Learned FP: {d.get('tool')} on {d.get('rule') or ctx.get('class') or '?'}",
+                "asset": None, "severity": "info",
+                "source_tool": d.get("tool"),
+                "phase": None, "status": "false_positive", "kind": "brain-lesson",
+                "reason": str(d.get("reason") or d.get("note") or "learned from triage"),
+                "count": d.get("count") or 1,
+                "context": ctx if isinstance(ctx, dict) else {},
+            })
+    return fplist
+
+
+def _collect_workspaces(root: Path) -> list[dict[str, Any]]:
+    """All engagement workspaces, newest first — powers the switcher."""
+    eng = root / "engagements"
+    if not eng.is_dir():
+        return []
+    out = []
+    for p in sorted(eng.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if not p.is_dir():
+            continue
+        fdata = _read_json(p / "findings.json") or {}
+        fs = fdata.get("findings") if isinstance(fdata, dict) else []
+        out.append({
+            "name": p.name,
+            "mtime": p.stat().st_mtime,
+            "findings": len(fs or []),
+        })
+    return out
 
 
 def _collect_activity(root: Path, limit: int = 60) -> list[dict[str, Any]]:
@@ -213,19 +402,27 @@ def _collect_activity(root: Path, limit: int = 60) -> list[dict[str, Any]]:
     return events
 
 
-def collect_state(root: Path | None = None) -> dict[str, Any]:
-    """One JSON blob describing the current engagement — the /api/state body."""
+def collect_state(root: Path | None = None, workspace: str | None = None) -> dict[str, Any]:
+    """One JSON blob describing the current engagement — the /api/state body.
+
+    ``workspace`` optionally pins an engagement by directory name (the UI's
+    workspace switcher); omitted means the newest workspace.
+    """
     root = Path(root) if root else Path(__file__).resolve().parent.parent.parent
-    workspace = _latest_workspace(root)
-    if workspace is None:
+    if workspace:
+        ws_path = _find_workspace(root, workspace)
+    else:
+        ws_path = _latest_workspace(root)
+    if ws_path is None:
         return {"workspace": None, "error": "no engagement workspace found"}
-    findings = _collect_findings(workspace)
-    phases = _phase_status(workspace)
+    findings = _collect_findings(ws_path)
+    phases = _phase_status(ws_path)
     running = [p for p, v in phases.items() if v["state"] == "running"]
     completed = [p for p, v in phases.items() if v["state"] == "ok"]
+    assets_detail = _collect_assets_detailed(ws_path)
     return {
-        "workspace": str(workspace),
-        "workspace_name": workspace.name,
+        "workspace": str(ws_path),
+        "workspace_name": ws_path.name,
         "generated_at": datetime.now(UTC).isoformat(),
         "scope": _read_json(root / "scope.yaml") or None,
         "phases": phases,
@@ -233,11 +430,16 @@ def collect_state(root: Path | None = None) -> dict[str, Any]:
         "running_phase": running[-1] if running else None,
         "completed_count": len(completed),
         "findings": findings,
-        "assets": _collect_assets(workspace),
+        "assets": assets_detail["counts"],
+        "assets_detail": assets_detail,
+        "coverage": _collect_coverage(ws_path),
+        "tools": _collect_used_tools(ws_path),
+        "false_positives": _collect_false_positives(ws_path, root),
+        "workspaces": _collect_workspaces(root),
         "activity": _collect_activity(root),
         "reports": sorted(
-            str(p.relative_to(workspace))
-            for p in (workspace / "reports").glob("*")
+            str(p.relative_to(ws_path))
+            for p in (ws_path / "reports").glob("*")
             if p.is_file()
         ),
     }
@@ -483,8 +685,24 @@ document.addEventListener("DOMContentLoaded", () => { tick(); setInterval(tick, 
 # --------------------------------------------------------------------------- #
 # serve mode — stdlib only, re-reads the workspace on every poll
 # --------------------------------------------------------------------------- #
+SPA_DIST = ROOT / "dashboard" / "dist"
+
+_MIME = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+    ".map": "application/json",
+}
+
+
 def _serve(root: Path, port: int) -> None:
     state_lock = threading.Lock()
+    spa = SPA_DIST
 
     def _fresh_state() -> dict[str, Any]:
         # The page polls every 2s; a full collect is a few small file reads,
@@ -492,6 +710,12 @@ def _serve(root: Path, port: int) -> None:
         # interleaving reads of the same files.
         with state_lock:
             return collect_state(root)
+
+    def _parse_ws(query: str) -> str | None:
+        for part in query.split("&"):
+            if part.startswith("ws="):
+                return part[3:]
+        return None
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args: Any) -> None:  # keep the console quiet
@@ -506,42 +730,87 @@ def _serve(root: Path, port: int) -> None:
             self.wfile.write(body)
 
         def do_GET(self) -> None:  # noqa: N802 (http.server API)
-            if self.path == "/api/state":
-                state = _fresh_state()
+            path, _, query = self.path.partition("?")
+            ws = _parse_ws(query)
+            if path == "/api/state":
+                state = collect_state(root, workspace=ws)
                 self._send(200, json.dumps(state).encode(), "application/json")
-            elif self.path == "/" or self.path == "/index.html":
-                state = _fresh_state()
-                page = _render_html(state).replace(
-                    "window.__live__ = false;", "window.__live__ = true;", 1
-                )
-                self._send(200, page.encode(), "text/html; charset=utf-8")
-            elif self.path.startswith("/reports/"):
-                name = Path(self.path).name
-                workspace = Path(_fresh_state()["workspace"])
-                target = (workspace / "reports" / name).resolve()
-                if target.is_file() and str(target).startswith(str(workspace.resolve())):
+            elif path.startswith("/reports/"):
+                name = Path(path).name
+                ws_path = ws and _find_workspace(root, ws)
+                ws_path = ws_path or Path(_fresh_state()["workspace"])
+                target = (ws_path / "reports" / name).resolve()
+                if target.is_file() and str(target).startswith(str(ws_path.resolve())):
                     self._send(200, target.read_bytes(),
                                "application/pdf" if target.suffix == ".pdf" else
                                "application/octet-stream")
                 else:
                     self._send(404, b"not found", "text/plain")
+            elif (spa / "index.html").is_file():
+                # React SPA: real files from dist, everything else -> index.html
+                rel = path.lstrip("/") or "index.html"
+                target = (spa / rel).resolve()
+                if target.is_file() and str(target).startswith(str(spa.resolve())):
+                    body = target.read_bytes()
+                    self._send(200, body, _MIME.get(target.suffix,
+                                                    "application/octet-stream"))
+                else:
+                    body = (spa / "index.html").read_bytes()
+                    self._send(200, body, "text/html; charset=utf-8")
+            elif path == "/" or path == "/index.html":
+                # Legacy fallback: the dependency-free snapshot page
+                state = _fresh_state()
+                page = _render_html(state).replace(
+                    "window.__live__ = false;", "window.__live__ = true;", 1
+                )
+                self._send(200, page.encode(), "text/html; charset=utf-8")
             else:
                 self._send(404, b"not found", "text/plain")
 
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"dashboard: http://127.0.0.1:{port}  (Ctrl-C to stop)", flush=True)
+    mode = "react" if (spa / "index.html").is_file() else "legacy-html"
+    print(f"dashboard: http://127.0.0.1:{port}  (mode: {mode}, Ctrl-C to stop)", flush=True)
+    if mode == "legacy-html":
+        print("dashboard: build the React app for the full UI: 'easyhunt dashboard --build'",
+              flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
 
 
+def _build_spa() -> int:
+    """npm ci + vite build for the React dashboard. Returns 0 on success."""
+    import shutil
+    import subprocess
+
+    pkg = ROOT / "dashboard" / "package.json"
+    if not pkg.is_file():
+        print(f"dashboard: no {pkg} — frontend source missing", file=sys.stderr)
+        return 1
+    npm = shutil.which("npm")
+    if not npm:
+        print("dashboard: npm not found — install Node 18+ to build the React UI",
+              file=sys.stderr)
+        return 1
+    for cmd in (["npm", "ci"], ["npm", "run", "build"]):
+        print(f"dashboard: running {' '.join(cmd)}", flush=True)
+        proc = subprocess.run(cmd, cwd=str(ROOT / "dashboard"),
+                              env={**os.environ, "npm_config_update_notifier": "false"})
+        if proc.returncode != 0:
+            return proc.returncode
+    print("dashboard: React build complete → dashboard/dist", flush=True)
+    return 0
+
+
 def dashboard(args: argparse.Namespace) -> int:
     root = Path(args.root) if getattr(args, "root", None) else ROOT
+    if getattr(args, "build", False):
+        return _build_spa()
     if getattr(args, "serve", False):
         _serve(root, int(args.port or 8765))
         return 0
-    state = collect_state(root)
+    state = collect_state(root, workspace=getattr(args, "workspace", None))
     if state.get("workspace") is None:
         print(f"dashboard: {state.get('error', 'no engagement workspace found')}",
               file=sys.stderr)
@@ -562,11 +831,14 @@ def dashboard(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="easyhunt dashboard",
-        description="Live engagement dashboard: phases, findings, activity, reports.",
+        description="Live engagement dashboard: phases, findings, assets, coverage.",
     )
     parser.add_argument("--out", help="output path (default dashboard.html)")
     parser.add_argument("--serve", action="store_true",
-                        help="run a live local server; the page polls /api/state")
+                        help="run a live local server; serves the React UI (or legacy page)")
+    parser.add_argument("--build", action="store_true",
+                        help="build the React dashboard (npm ci + vite build)")
     parser.add_argument("--port", default="8765", help="serve port (default 8765)")
+    parser.add_argument("--workspace", help="pin a workspace by name (default: newest)")
     parser.add_argument("--root", help="project root override (tests)")
     return parser

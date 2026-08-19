@@ -715,12 +715,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     dash = sub.add_parser(
         "dashboard", parents=[common],
-        help="live engagement dashboard: phases, findings, activity, reports",
+        help="live engagement dashboard: phases, findings, assets, coverage, activity",
     )
     dash.add_argument("--out", default="dashboard.html", help="output path")
     dash.add_argument("--serve", action="store_true",
-                      help="run a live local server; the page polls /api/state")
+                      help="run a live local server; serves the React UI (or legacy page)")
+    dash.add_argument("--build", action="store_true",
+                      help="build the React dashboard (npm ci + vite build)")
     dash.add_argument("--port", default="8765", help="serve port (default 8765)")
+    dash.add_argument("--workspace", help="pin a workspace by name (default: newest)")
     dash.set_defaults(func=cmd_dashboard)
 
     export = brain_sub.add_parser(

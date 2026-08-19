@@ -104,6 +104,7 @@ _SENDS_NOTHING: dict[str, str] = {
     "finding_note": "writes an analyst note into the findings store",
     "findings_list": "lists the findings store",
     "hunt_plan": "reads the asset store; its optional LLM call bills the model budget",
+    "research_guidance": "assembles knowledge (brain recall, technique index, coverage matrix); its optional LLM call bills the model budget",
     "job_status": "reads the in-process job registry",
     "jwt_inspect": "jwt_tool decodes offline; its replay and forge modes are denied",
     "llm_probe_catalog": "prints the static probe-family table",

@@ -7,7 +7,11 @@ from pathlib import Path
 
 from easyhunt.tools.dashboard import (
     _canonical_phase,
+    _collect_assets_detailed,
+    _collect_coverage,
+    _collect_false_positives,
     _collect_findings,
+    _collect_used_tools,
     _phase_status,
     _render_html,
     collect_state,
@@ -121,3 +125,79 @@ class TestRenderHtml:
         assert embedded is not None
         state = json.loads(embedded.group(1))
         assert state["findings"]["total"] == 2
+
+
+class TestCollectAssetsDetailed:
+    def test_groups_by_kind_with_fields(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        out = _collect_assets_detailed(ws)
+        assert out["counts"] == {"subdomain": 1, "url": 1}
+        assert out["items"]["subdomain"][0]["value"] == "x.example.com"
+        assert out["items"]["subdomain"][0]["host"] == "x.example.com"
+        # url item carries no host and survives the flatten
+        assert out["items"]["url"][0]["value"] == "https://x.example.com"
+        assert out["items"]["url"][0]["host"] is None
+
+
+class TestCollectCoverage:
+    def test_parses_ledger_rows(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        (ws / "coverage.json").write_text(json.dumps({"rows": [
+            {"class": "sql-injection", "status": "validated", "tool": "sqli_validate"},
+            {"class": "xxe", "status": "not_attempted", "tool": ""},
+        ]}), encoding="utf-8")
+        out = _collect_coverage(ws)
+        assert out["total"] == 2
+        assert out["by_status"] == {"validated": 1, "not_attempted": 1}
+        assert out["rows"][0]["class"] == "sql-injection"
+
+
+class TestCollectUsedTools:
+    def test_derives_tool_usage_from_audit(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        audit = [
+            {"event": "tool_call", "tool": "sqlmap", "phase": "exploit",
+             "outcome": "ok", "findings": 2, "ts": "2026-01-01T00:00:01"},
+            {"event": "tool_call", "tool": "sqlmap", "phase": "exploit",
+             "outcome": "error", "findings": 0, "ts": "2026-01-01T00:00:02"},
+            {"event": "tool_call", "tool": "dalfox", "phase": "http_probe",
+             "outcome": "ok", "findings": 0, "ts": "2026-01-01T00:00:03"},
+            {"event": "engagement_start", "tool": None},  # not a tool call
+        ]
+        (ws / "audit.jsonl").write_text(
+            "\n".join(json.dumps(a) for a in audit), encoding="utf-8")
+        tools = _collect_used_tools(ws)
+        by_name = {t["tool"]: t for t in tools}
+        assert by_name["sqlmap"]["calls"] == 2
+        assert by_name["sqlmap"]["errors"] == 1
+        assert by_name["sqlmap"]["findings"] == 2
+        assert by_name["sqlmap"]["phases"] == ["exploit"]
+        assert by_name["dalfox"]["phases"] == ["probe"]  # canonical slug
+        # most-called first
+        assert tools[0]["tool"] == "sqlmap"
+
+
+class TestCollectFalsePositives:
+    def test_finds_dismissed_findings_and_brain_lessons(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        # mark one finding dismissed with a triage note
+        data = json.loads((ws / "findings.json").read_text(encoding="utf-8"))
+        data["findings"][0]["status"] = "false_positive"
+        data["findings"][0]["triage_notes"] = {"reason": "matched inside cookie"}
+        (ws / "findings.json").write_text(json.dumps(data), encoding="utf-8")
+        out = _collect_false_positives(ws, tmp_path)
+        assert len(out) == 1
+        assert out[0]["status"] == "false_positive"
+        assert "cookie" in out[0]["reason"]
+
+
+class TestWorkspaceSwitching:
+    def test_pins_workspace_by_name(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        other = tmp_path / "engagements" / "older_20251231-000000"
+        other.mkdir(parents=True)
+        (other / "findings.json").write_text(json.dumps({"findings": []}), encoding="utf-8")
+        state = collect_state(tmp_path, workspace="older_20251231-000000")
+        assert state["workspace_name"] == "older_20251231-000000"
+        assert state["findings"]["total"] == 0
+        assert ws.name in {w["name"] for w in state["workspaces"]}

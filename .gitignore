@@ -65,3 +65,7 @@ brain.html
 brain.json
 dashboard.html
 dashboard.json
+
+# React dashboard build artifacts — source is dashboard/src, lockfile is committed
+/dashboard/node_modules/
+/dashboard/dist/
