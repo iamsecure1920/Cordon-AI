@@ -140,7 +140,10 @@ def _markdown(engagement: Any, summary: dict[str, Any], executive: str) -> str:
         "",
         "### Findings by severity",
         "",
-        _severity_table(engagement.findings.all()),
+        # Count only what the sections below actually present. Dropped and
+        # false-positive findings stay in findings.json for the audit trail but
+        # must not inflate the table a reader sees next to the status counts.
+        _severity_table(confirmed + review + candidates),
         "",
         f"- **Confirmed (reproducible PoC):** {len(confirmed)}",
         f"- **Needs manual review (unproven):** {len(review)}",

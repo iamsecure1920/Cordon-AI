@@ -236,3 +236,65 @@ class TestFindingsTools:
     async def test_report_tools_are_passive(self) -> None:
         for name in ("report_generate", "findings_list", "finding_detail", "finding_note"):
             assert REGISTRY[name].mode == "passive"
+
+
+class TestSeverityTableCountsPresentedOnly:
+    """Dropped and false-positive findings must not inflate the severity table."""
+
+    async def test_table_matches_the_sections_below_it(self, engagement) -> None:
+        engagement.findings.add(
+            Finding(
+                asset="https://www.example.com/review",
+                title="Lead kept for manual review",
+                severity=Severity.LOW,
+                status=Status.NEEDS_MANUAL_REVIEW,
+                source_tool="testssl",
+            )
+        )
+        engagement.findings.add(
+            Finding(
+                asset="https://www.example.com/dropped",
+                title="Public analytics key",
+                severity=Severity.MEDIUM,
+                status=Status.DROPPED,
+                source_tool="secrets",
+            )
+        )
+        engagement.findings.add(
+            Finding(
+                asset="https://www.example.com/fp",
+                title="Polyfill string literal",
+                severity=Severity.CRITICAL,
+                status=Status.FALSE_POSITIVE,
+                source_tool="js_analyze",
+            )
+        )
+        engagement.findings.add(
+            Finding(
+                asset="https://www.example.com/cand",
+                title="Untriaged candidate",
+                severity=Severity.INFO,
+                status=Status.CANDIDATE,
+                source_tool="nikto",
+            )
+        )
+
+        await generate_report(engagement, formats=["md"])
+        text = (engagement.reports_dir / "Report.md").read_text()
+        table = text[text.index("### Findings by severity") : text.index("## Confirmed findings")]
+
+        # Presented findings only: the low review lead and the info candidate
+        # (candidates have their own section). Dropped medium and FP critical
+        # must not inflate the table.
+        assert "| Low | 1 |" in table
+        assert "| Info | 1 |" in table
+        assert "| Medium |" not in table
+        assert "| Critical |" not in table
+
+        assert "- **Confirmed (reproducible PoC):** 0" in text
+        assert "- **Needs manual review (unproven):** 1" in text
+        assert "- **Untriaged candidates:** 1" in text
+        # The dropped and false-positive records are audit-only: kept in the
+        # JSON store but never rendered as findings.
+        assert "Public analytics key" not in text
+        assert "Polyfill string literal" not in text
