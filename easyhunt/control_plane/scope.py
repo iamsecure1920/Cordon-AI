@@ -277,6 +277,12 @@ class ScopeRules:
     max_concurrency: int = 5
     allow_aggressive: bool = True
     allow_exploitation: bool = True
+    #: Wall-clock ceiling (seconds) a scanner may plan against before it narrows
+    #: its selection. The nuclei sizing gate tiers DOWN severity until the full
+    #: target set fits ``rps x ceiling``; a 3600s default forces critical-only
+    #: on a large estate. Programs with no DoS text but a generous budget can
+    #: raise this so the full severity range actually fits.
+    scan_ceiling_seconds: float = 3600.0
     #: Whether the program's published policy permits creating test accounts.
     #: Default False because silence is not permission: of four programs read
     #: during this project, two explicitly allowed self-registration and two
@@ -300,9 +306,7 @@ class ScopeRules:
             # A header without a colon silently becomes junk on the wire, which
             # would look like compliance while providing none.
             if ":" not in header or not header.split(":", 1)[0].strip():
-                raise ValueError(
-                    f"required_headers entry {header!r} is not in 'Name: value' form"
-                )
+                raise ValueError(f"required_headers entry {header!r} is not in 'Name: value' form")
         return cls(
             wildcard_includes_apex=bool(data.get("wildcard_includes_apex", False)),
             deny_reserved_ips=bool(data.get("deny_reserved_ips", True)),
@@ -310,6 +314,7 @@ class ScopeRules:
             max_concurrency=int(data.get("max_concurrency", 5)),
             allow_aggressive=bool(data.get("allow_aggressive", True)),
             allow_exploitation=bool(data.get("allow_exploitation", True)),
+            scan_ceiling_seconds=float(data.get("scan_ceiling_seconds", 3600)),
             allow_self_registration=bool(data.get("allow_self_registration", False)),
             no_dos=bool(data.get("no_dos", True)),
             user_agent=str(data.get("user_agent") or cls.user_agent),
@@ -506,10 +511,14 @@ class Scope:
         """Content hash of the parts that decide access. Recorded in every audit line."""
         canonical = json.dumps(
             {
-                "in_scope": {k: sorted(map(str, self.raw.get("in_scope", {}).get(k, []) or []))
-                             for k in _LIST_KEYS},
-                "out_of_scope": {k: sorted(map(str, self.raw.get("out_of_scope", {}).get(k, []) or []))
-                                 for k in _LIST_KEYS},
+                "in_scope": {
+                    k: sorted(map(str, self.raw.get("in_scope", {}).get(k, []) or []))
+                    for k in _LIST_KEYS
+                },
+                "out_of_scope": {
+                    k: sorted(map(str, self.raw.get("out_of_scope", {}).get(k, []) or []))
+                    for k in _LIST_KEYS
+                },
                 "rules": self.raw.get("rules") or {},
             },
             sort_keys=True,
@@ -671,8 +680,11 @@ class Scope:
         # how good faith stops being assumed.
         for label, value, placeholder in (
             ("engagement.researcher_handle", self.researcher_handle, "your-handle"),
-            ("engagement.program_url", self.engagement.get("program_url"),
-             "https://hackerone.com/example/policy"),
+            (
+                "engagement.program_url",
+                self.engagement.get("program_url"),
+                "https://hackerone.com/example/policy",
+            ),
         ):
             if value and str(value).strip() == placeholder:
                 found.append(
@@ -745,7 +757,9 @@ class Scope:
                     }
                 )
 
-        return Verdict(**{**base.__dict__, "in_scope": True, "reason": "allowed", "matched": allowance})
+        return Verdict(
+            **{**base.__dict__, "in_scope": True, "reason": "allowed", "matched": allowance}
+        )
 
     def _match(self, target: Target, rs: _RuleSet) -> str | None:
         """Return the identifier of the first matching rule, or ``None``."""
@@ -859,6 +873,7 @@ class Scope:
                 "allow_exploitation": self.rules.allow_exploitation,
                 "allow_self_registration": self.rules.allow_self_registration,
                 "deny_reserved_ips": self.rules.deny_reserved_ips,
+                "scan_ceiling_seconds": self.rules.scan_ceiling_seconds,
                 "wildcard_includes_apex": self.rules.wildcard_includes_apex,
             },
         }

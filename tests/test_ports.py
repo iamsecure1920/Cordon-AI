@@ -144,3 +144,46 @@ class TestPortInheritance:
         asyncio.run(REGISTRY["service_scan"].fn(target="203.0.113.8"))
         argv = captured["argv"]
         assert argv[argv.index("-p") + 1] == "80,443"
+
+    def test_multi_host_merges_discovered_ports(self, engagement, monkeypatch) -> None:
+        """Estate-wide: several hosts each contribute their open ports to one pass."""
+        import easyhunt.tools.ports  # noqa: F401
+        from easyhunt.control_plane.context import get_engagement
+        from easyhunt.knowledge.findings import Asset
+        from easyhunt.tools.base import REGISTRY
+
+        store = get_engagement().assets
+        store.add_many([
+            Asset(
+                value="203.0.113.7:3000", kind="open_port", source="naabu",
+                host="203.0.113.7", attributes={"host": "203.0.113.7", "port": 3000},
+            ),
+            Asset(
+                value="203.0.113.7:8080", kind="open_port", source="naabu",
+                host="203.0.113.7", attributes={"host": "203.0.113.7", "port": 8080},
+            ),
+            Asset(
+                value="203.0.113.9:9090", kind="open_port", source="naabu",
+                host="203.0.113.9", attributes={"host": "203.0.113.9", "port": 9090},
+            ),
+        ])
+        captured: dict[str, object] = {}
+
+        async def fake_run_one(binary: str, argv: list[str], **kwargs: object):
+            captured["argv"] = argv
+            import types
+
+            run = types.SimpleNamespace(
+                ran=False, error="fake", exit_code=0, values=[], stdout="",
+            )
+            run.to_dict = lambda: {"binary": "nmap", "argv": argv, "ran": False}
+            return run
+
+        monkeypatch.setattr("easyhunt.tools.ports.run_one", fake_run_one)
+        asyncio.run(REGISTRY["service_scan"].fn(
+            target="203.0.113.7,203.0.113.9"
+        ))
+        argv = captured["argv"]
+        assert argv[argv.index("-p") + 1] == "3000,8080,9090"
+        # Both hosts must be handed to nmap.
+        assert "203.0.113.7" in argv and "203.0.113.9" in argv

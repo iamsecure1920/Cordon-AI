@@ -14,6 +14,7 @@ and produced nothing exits 2, not 0. That distinction is the whole reason this
 file exists: chaining phases multiplies the cost of a stage that reports success
 while testing nothing, and this project has found that defect seventeen times.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -58,7 +59,45 @@ from easyhunt.control_plane.scope import Scope  # noqa: E402
 MAX_INHERITED = 500
 
 
-def _phase_kwargs(entry: Any, passed: str, declared: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+def _phase_state(result: Any, key: str | None) -> str:
+    """Classify a phase's outcome from the tool's result dict.
+
+    The wrappers carry a ``status`` field that says what ``ok: false`` means:
+    ``PARTIAL`` / ``INCOMPLETE`` / ``UNTESTED`` are "I did not finish" or
+    "this was not applicable" — js_analyze blocked on half its bundles,
+    graphql_audit found no GraphQL endpoint, testssl timed out. Those are NOT
+    hard failures: the phase did work (or honestly reported an UNTESTED gap),
+    and the run summary must not scream "failed" at them.
+
+    ``failed``   — the tool said ok:false with no PARTIAL/UNTESTED status.
+    ``incomplete`` — the tool said it did not finish / was not applicable.
+    ``empty``    — the phase's gate key exists and is 0 (ran, found nothing).
+    ``ok``       — everything else.
+    """
+    result_status = result.get("status") if isinstance(result, dict) else None
+    not_finished = result_status in ("PARTIAL", "INCOMPLETE", "UNTESTED") or (
+        isinstance(result, dict) and result.get("complete") is False
+    )
+    declared_failure = (
+        isinstance(result, dict)
+        and result.get("ok") is False
+        and result_status in (None, "COMPLETE")
+    )
+    if declared_failure:
+        return "failed"
+    if not_finished:
+        return "incomplete"
+    produced = result.get(key) if key and isinstance(result, dict) else None
+    if isinstance(produced, list):
+        produced = len(produced)
+    if key is not None and not produced:
+        return "empty"
+    return "ok"
+
+
+def _phase_kwargs(
+    entry: Any, passed: str, declared: dict[str, Any], extra: dict[str, Any]
+) -> dict[str, Any]:
     """Build the kwargs a phase hands its tool.
 
     Uses the tool's OWN declared target-argument name, never a hardcoded
@@ -90,6 +129,7 @@ def _inherited_sample(available: list[str], cap: int) -> list[str]:
     step = len(available) / cap
     return [available[int(i * step)] for i in range(cap)]
 
+
 #: Phases that run ONCE over everything found, not once per target.
 #
 # hunt.sh loops per target, which is right for probing a host and wrong for
@@ -97,17 +137,35 @@ def _inherited_sample(available: list[str], cap: int) -> list[str]:
 # was handed 3 targets, then 4, then 6 ... then 12, failing the sizing gate every
 # single time as the set grew underneath it. Twelve refusals for one scan that
 # should have been sized once against the real total.
-GLOBAL_PHASES = frozenset({
-    "takeover", "scan", "ports", "services", "params", "content",
-    "nikto", "wapiti", "forbidden", "exploit", "plan", "report",
-})
+GLOBAL_PHASES = frozenset(
+    {
+        "takeover",
+        "scan",
+        "ports",
+        "services",
+        "params",
+        "content",
+        "nikto",
+        "wapiti",
+        "forbidden",
+        "exploit",
+        "plan",
+        "report",
+    }
+)
 
 PHASES: dict[str, dict[str, Any]] = {
-    "recon":     {"tool": "subdomain_enum",      "count": "subdomains"},
+    "recon": {"tool": "subdomain_enum", "count": "subdomains"},
     # Alterx permutation: generates new subdomain candidates from the observed
     # names and resolves them. Runs after recon, before resolve, so the whole
     # estate (real + permuted) is probed once.
-    "permute":   {"tool": "dns_permute",          "count": "new_hosts", "inherits": True, "wants": ("subdomain",), "max": 200000},
+    "permute": {
+        "tool": "dns_permute",
+        "count": "new_hosts",
+        "inherits": True,
+        "wants": ("subdomain",),
+        "max": 200000,
+    },
     # The DNS and HTTP probes write their targets to a `-l` list file, so the
     # inherited set is not bounded by argv length. On a 60k-subdomain estate the
     # old flat cap of 500 sampled the *alphabetically first* 500 names — all one
@@ -115,46 +173,98 @@ PHASES: dict[str, dict[str, Any]] = {
     # required probe then reported "nothing alive" for a target that had 60k
     # names. These phases must see the whole estate; the rate limiter, not a
     # sample, is what protects the target.
-    "resolve":   {"tool": "dns_resolve",         "count": "resolved", "inherits": True, "wants": ("subdomain",), "max": 200000},
+    "resolve": {
+        "tool": "dns_resolve",
+        "count": "resolved",
+        "inherits": True,
+        "wants": ("subdomain",),
+        "max": 200000,
+    },
     # Prefer resolved hosts over raw subdomains: resolve already filtered the
     # names that answer DNS, so probing them first is the cheap-to-expensive
     # ordering the chain is supposed to be. Subdomains are the fallback for a
     # run that starts at probe.
-    "probe":     {"tool": "http_probe",          "count": "live",     "inherits": True, "wants": ("host", "subdomain"), "max": 200000},
+    "probe": {
+        "tool": "http_probe",
+        "count": "live",
+        "inherits": True,
+        "wants": ("host", "subdomain"),
+        "max": 200000,
+    },
     # CDN/WAF posture: which hosts sit behind a CDN, which are direct origins.
     # Cheap and passive; answers "is this the origin or the edge" for every
     # later phase.
-    "cdn":       {"tool": "cdn_check",            "count": None,       "inherits": True, "wants": ("host",), "max": 200000},
-    "waf":       {"tool": "waf_detect",          "count": None,   "url": True},
-    "tls":       {"tool": "tls_audit",           "count": "checks"},
-    "cors":      {"tool": "cors_audit",          "count": None,   "url": True},
-    "endpoints": {"tool": "endpoint_discovery",  "count": "urls",     "inherits": True, "wants": ("subdomain",), "max": 200000},
-    "js":        {"tool": "js_analyze",          "count": None,       "inherits": True, "wants": ("url",), "tag": "live"},
+    "cdn": {
+        "tool": "cdn_check",
+        "count": None,
+        "inherits": True,
+        "wants": ("host",),
+        "max": 200000,
+    },
+    "waf": {"tool": "waf_detect", "count": None, "url": True},
+    "tls": {"tool": "tls_audit", "count": "checks"},
+    "cors": {"tool": "cors_audit", "count": None, "url": True},
+    "endpoints": {
+        "tool": "endpoint_discovery",
+        "count": "urls",
+        "inherits": True,
+        "wants": ("subdomain",),
+        "max": 200000,
+    },
+    "js": {"tool": "js_analyze", "count": None, "inherits": True, "wants": ("url",), "tag": "live"},
     # After js, before the global phases: it needs live URLs, and what it finds
     # (a signup form, a route table) is what the operator acts on next.
-    "auth":      {"tool": "auth_surface",        "count": "hosts_examined", "inherits": True, "wants": ("url",), "tag": "live"},
+    "auth": {
+        "tool": "auth_surface",
+        "count": "hosts_examined",
+        "inherits": True,
+        "wants": ("url",),
+        "tag": "live",
+    },
     # Secrets in the downloaded JS bundles: kingfisher/noseyparker/gitleaks.
     # Scan the workspace raw/ dir (where js_analyze dropped the bundles), not
     # the workspace root — the workspace lives inside the project's git repo,
     # and gitleaks pointed at a directory inside a repo walks the ENTIRE repo
     # history, reporting the project's own test fixtures as leaked secrets.
     # git_history=false keeps it to the files actually on disk.
-    "secrets":   {"tool": "secret_scan",          "count": None,       "extra": {"path": "raw", "git_history": False}},
+    "secrets": {
+        "tool": "secret_scan",
+        "count": None,
+        "extra": {"path": "raw", "git_history": False},
+    },
     # White-box pre-recon audit of source fetched into the workspace: semgrep
     # parsing rules + gitleaks merged into code-audit.json/.md. Global (runs
     # once over the workspace, not per target). With no source present it
     # degrades to a graceful empty result — source_fetch must run first.
-    "code_audit": {"tool": "code_audit",            "count": "count",    "extra": {"path": "source"}},
+    "code_audit": {"tool": "code_audit", "count": "count", "extra": {"path": "source"}},
     # gf pattern pass: classifies URLs by sink shape (ssrf, sqli, xss, lfi,
     # redirect, idor, debug...) using the vetted rules/gf/ pattern pack.
-    "pattern":   {"tool": "pattern_scan",         "count": "count",    "inherits": True, "wants": ("url",), "tag": "live"},
+    "pattern": {
+        "tool": "pattern_scan",
+        "count": "count",
+        "inherits": True,
+        "wants": ("url",),
+        "tag": "live",
+    },
     # GraphQL endpoint audit and WebSocket origin probe: API-surface checks.
     # They take ONE URL, so aim them at the program's focus assets (where the
     # APIs actually live), not at whatever sorted first in the estate.
-    "graphql":   {"tool": "graphql_audit",        "count": None,       "focus": True},
-    "websocket": {"tool": "websocket_probe",      "count": None,       "focus": True},
-    "takeover":  {"tool": "takeover_detect",     "count": None,       "inherits": True, "wants": ("subdomain",), "max": 200000},
-    "scan":      {"tool": "nuclei_scan",         "count": None,       "inherits": True, "wants": ("url",), "tag": "live"},
+    "graphql": {"tool": "graphql_audit", "count": None, "focus": True},
+    "websocket": {"tool": "websocket_probe", "count": None, "focus": True},
+    "takeover": {
+        "tool": "takeover_detect",
+        "count": None,
+        "inherits": True,
+        "wants": ("subdomain",),
+        "max": 200000,
+    },
+    "scan": {
+        "tool": "nuclei_scan",
+        "count": None,
+        "inherits": True,
+        "wants": ("url",),
+        "tag": "live",
+    },
     # Port and service discovery over the live hosts, then the two general
     # web scanners (nikto lead list, wapiti profile scan) and parameter
     # discovery (arjun/paramspider) to feed the exploit chain's injection
@@ -162,25 +272,51 @@ PHASES: dict[str, dict[str, Any]] = {
     # Port scan the hosts that actually answered HTTP (the live URLs' hosts),
     # not all 60k resolved names — naabu over the whole estate at the rate
     # ceiling takes days and mostly scans dead telemetry boxes.
-    "ports":     {"tool": "port_scan",            "count": "count",    "inherits": True, "wants": ("url",), "tag": "live", "want_hosts_of": True},
-    # service_scan takes ONE host; the focus URLs' hosts are the reward surface.
-    "services":  {"tool": "service_scan",         "count": "count",    "focus": True},
-    "params":    {"tool": "param_discovery",      "count": "count",    "focus": True},
-    "content":   {"tool": "content_discovery",    "count": "count",    "focus": True, "extra": {"wordlist": "juicy-paths"}},
-    "nikto":     {"tool": "nikto_scan",           "count": "items",    "focus": True},
-    "wapiti":    {"tool": "wapiti_scan",          "count": "candidates", "focus": True},
+    "ports": {
+        "tool": "port_scan",
+        "count": "count",
+        "inherits": True,
+        "wants": ("url",),
+        "tag": "live",
+        "want_hosts_of": True,
+    },
+    # service_scan consumes the estate: every host that port_scan found an
+    # open port on, in one nmap pass. Falling back to the focus host alone
+    # silently dropped ~28/29 of the estate ("no services" on 3000/8080/8443).
+    "services": {
+        "tool": "service_scan",
+        "count": "count",
+        "inherits": True,
+        "wants": ("open_port",),
+        "want_hosts_of": True,
+    },
+    "params": {"tool": "param_discovery", "count": "count", "focus": True},
+    "content": {
+        "tool": "content_discovery",
+        "count": "count",
+        "focus": True,
+        "extra": {"wordlist": "juicy-paths"},
+    },
+    "nikto": {"tool": "nikto_scan", "count": "items", "focus": True},
+    "wapiti": {"tool": "wapiti_scan", "count": "candidates", "focus": True},
     # Auto-chain 403-bypass: HEAD-pre-check the live estate for 403s, then fire
     # unKover's 12 access-bypass techniques at each. A 403 is an access
     # decision; leaving it unexplained is leaving the one route an attacker
     # finds by accident. Aggressive — needs forbidden_chain + forbidden_bypass
     # in auto_approve.
-    "forbidden": {"tool": "forbidden_chain",      "count": "checked",  "inherits": True, "wants": ("url",), "tag": "live"},
+    "forbidden": {
+        "tool": "forbidden_chain",
+        "count": "checked",
+        "inherits": True,
+        "wants": ("url",),
+        "tag": "live",
+    },
     # Chain the exploit validators over the injection points the earlier phases
     # discovered. Only wired into hunt.sh when --exploit is passed, and only runs
     # then because every sub-validator is itself approval-gated.
-    "exploit":   {"tool": "exploit_chain",        "count": "tested",    "inherits": True, "wants": ("url",)},
-    "report":    {"tool": "report_generate",     "count": None},
-    "plan":      {"tool": "hunt_plan",           "count": "actionable"},
+    "exploit": {"tool": "exploit_chain", "count": "tested", "inherits": True, "wants": ("url",)},
+    "report": {"tool": "report_generate", "count": None},
+    "plan": {"tool": "hunt_plan", "count": "actionable"},
 }
 
 
@@ -241,7 +377,9 @@ def emit(workspace: Path, record: dict[str, Any]) -> None:
     print(f"STATUS {line}", flush=True)
 
 
-async def _collect_job_result(entry: Any, eng: Engagement, result: dict[str, Any]) -> dict[str, Any]:
+async def _collect_job_result(
+    entry: Any, eng: Engagement, result: dict[str, Any]
+) -> dict[str, Any]:
     """Wait out a background job a tool returned, instead of cancelling it.
 
     Long tools (nuclei_scan, bbot, …) launch a job and return a ``job_id`` when
@@ -352,7 +490,7 @@ async def main() -> int:
         # _RuleSet.urls holds (host, path) pairs; rebuild the URL the tools
         # want, defaulting to https and a root path.
         focus = []
-        for host, path in (getattr(eng.scope, "_allow", None).urls or []):
+        for host, path in getattr(eng.scope, "_allow", None).urls or []:
             if not host:
                 continue
             scheme = "https://" if "://" not in host else ""
@@ -392,10 +530,16 @@ async def main() -> int:
     try:
         result = await entry.fn(**kwargs)
     except Exception as exc:  # noqa: BLE001
-        emit(eng.workspace, {
-            "phase": phase, "state": "error", "tool": spec["tool"],
-            "error": f"{type(exc).__name__}: {exc}", "seconds": round(time.time() - started, 1),
-        })
+        emit(
+            eng.workspace,
+            {
+                "phase": phase,
+                "state": "error",
+                "tool": spec["tool"],
+                "error": f"{type(exc).__name__}: {exc}",
+                "seconds": round(time.time() - started, 1),
+            },
+        )
         return 3
 
     result = await _collect_job_result(entry, eng, result)
@@ -416,34 +560,29 @@ async def main() -> int:
     produced = result.get(key) if key and isinstance(result, dict) else None
     if isinstance(produced, list):
         produced = len(produced)
-    incomplete = isinstance(result, dict) and result.get("complete") is False
     findings = len(result.get("findings", [])) if isinstance(result, dict) else 0
+    state = _phase_state(result, key)
 
-    # A wrapper saying `ok: false` has told us it failed. Reading past that in
-    # favour of a per-phase count is how js_analyze reported "no_urls" in 0.0
-    # seconds and this script printed a green tick over it — the exact defect the
-    # gate exists to catch, in the gate itself.
-    declared_failure = isinstance(result, dict) and result.get("ok") is False
-    state = "ok"
-    if declared_failure:
-        state = "failed"
-    elif incomplete:
-        state = "incomplete"
-    elif key is not None and not produced:
-        state = "empty"
-
-    emit(eng.workspace, {
-        "phase": phase, "state": state, "tool": spec["tool"], "seconds": took,
-        "produced": produced, "findings": findings,
-        # Where the input came from. "which hosts did this actually cover" is the
-        # first question anyone asks of a report, and a pipeline that silently
-        # scanned the wrong set is worse than one that scanned nothing.
-        "input": origin,
-        "assets": eng.assets.counts(),
-        "message": (result.get("message") or result.get("note") or "")[:180]
-        if isinstance(result, dict) else "",
-        "workspace": str(eng.workspace),
-    })
+    emit(
+        eng.workspace,
+        {
+            "phase": phase,
+            "state": state,
+            "tool": spec["tool"],
+            "seconds": took,
+            "produced": produced,
+            "findings": findings,
+            # Where the input came from. "which hosts did this actually cover" is the
+            # first question anyone asks of a report, and a pipeline that silently
+            # scanned the wrong set is worse than one that scanned nothing.
+            "input": origin,
+            "assets": eng.assets.counts(),
+            "message": (result.get("message") or result.get("note") or "")[:180]
+            if isinstance(result, dict)
+            else "",
+            "workspace": str(eng.workspace),
+        },
+    )
     # 0 = did its job, 2 = ran but produced nothing, 3 = said it failed.
     if state == "ok":
         return 0

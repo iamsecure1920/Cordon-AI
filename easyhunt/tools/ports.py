@@ -31,6 +31,7 @@ is slow. That is the constraint, not a bug.
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from typing import Any
 from xml.etree import ElementTree
 
@@ -44,8 +45,14 @@ from easyhunt.tools.common import HOST_PATTERN, PORT_PATTERN, register_spec, run
 __all__ = ["port_scan", "service_scan"]
 
 # NSE categories that are safe to run during reconnaissance.
-ALLOWED_NSE_CATEGORIES = {"default", "safe", "discovery", "version", "banner"}
-DENIED_NSE_CATEGORIES = {"exploit", "dos", "brute", "malware", "intrusive", "vuln"}
+#
+# ``safe`` is deliberately absent: it drags in broadcast-* scripts (which crash
+# nmap with the nse_nsock.cc:342 assertion and probe the LAN instead of the
+# target) and http-slowloris-check (which holds connections open and stalls the
+# whole scan at the engagement's rate limit). ``default`` is the curated
+# category that fingerprints without either failure mode.
+ALLOWED_NSE_CATEGORIES = {"default", "discovery", "version", "banner"}
+DENIED_NSE_CATEGORIES = {"safe", "exploit", "dos", "brute", "malware", "intrusive", "vuln"}
 
 NAABU = register_spec(
     ToolSpec(
@@ -89,7 +96,10 @@ NMAP = register_spec(
             value_patterns={
                 "-p": PORT_PATTERN,
                 "-T": re.compile(r"[0-4]"),
-                "--script": re.compile(r"[a-z0-9,._*-]{1,200}"),
+                # nmap's --script is an expression language: categories joined
+                # with and/or/not and parens. We use it to append
+                # "and not broadcast", so the pattern allows the operators.
+                "--script": re.compile(r"[a-z0-9,._*() -]{1,240}"),
             },
             numeric_caps={"--version-intensity": 7, "--max-rate": 500, "--max-retries": 3},
             allow_positional=True,
@@ -123,7 +133,15 @@ MASSCAN = register_spec(
 
 
 def _check_nse(scripts: str) -> str:
-    """Refuse NSE selections that reach beyond safe reconnaissance."""
+    """Refuse NSE selections that reach beyond safe reconnaissance.
+
+    The returned expression is always suffixed with ``and not broadcast``:
+    broadcast-* scripts (present in both the ``safe`` and ``default``
+    categories) send SSDP/multicast probes at the LAN rather than the target
+    and have a known nmap crash (``nse_nsock.cc:342`` assertion in
+    broadcast-upnp-info) that aborts the whole scan. An approved service scan
+    must probe the target, not the neighborhood.
+    """
     requested = {s.strip().lower() for s in scripts.split(",") if s.strip()}
     denied = requested & DENIED_NSE_CATEGORIES
     if denied:
@@ -137,7 +155,9 @@ def _check_nse(scripts: str) -> str:
     unknown = {s for s in requested if s in DENIED_NSE_CATEGORIES}
     if unknown:
         raise SanitizeError(f"unknown NSE selection {sorted(unknown)}", tool="nmap")
-    return ",".join(sorted(requested))
+    if not requested:
+        return ""
+    return ",".join(sorted(requested)) + " and not broadcast"
 
 
 @easyhunt_tool(
@@ -246,29 +266,60 @@ async def port_scan(target: str, ports: str = "top-100") -> dict[str, Any]:
     ],
 )
 async def service_scan(
-    target: str, ports: str | None = None, scripts: str = "default,safe"
+    target: str, ports: str | None = None, scripts: str = "default"
 ) -> dict[str, Any]:
     """Fingerprint services on specific ports with nmap -sV plus safe NSE scripts.
 
-    scripts is restricted to default/safe/discovery/version/banner. Exploit,
-    dos, brute, malware, and intrusive categories are refused.
+    scripts is restricted to default/discovery/version/banner. Exploit, dos,
+    brute, malware, intrusive, and safe-as-a-category are refused: the ``safe``
+    category pulls broadcast-* scripts (which crash nmap with the
+    nse_nsock.cc:342 assertion and probe the LAN instead of the target) and
+    http-slowloris-check (which holds connections open and stalls the whole
+    scan at the engagement's rate limit). ``default`` is the curated category
+    that fingerprints without either failure mode.
 
-    ``ports`` defaults to what ``port_scan`` already discovered for this host
-    (the open_port assets in the store) and falls back to the web ports
-    ``80,443`` only when nothing was discovered. The old hardcoded default
+    ``ports`` defaults to what ``port_scan`` already discovered for the
+    requested hosts (the open_port assets in the store) and falls back to the
+    web ports ``80,443`` only when nothing was discovered. ``target`` may name
+    several hosts — the service phase feeds it every host that has an
+    open_port asset, so one nmap pass fingerprints the whole estate instead of
+    the single focus host. The old design scanned one host's 80,443 and
     silently reported "no services" on every estate that runs on 3000/8080/
     8443 — exactly the ports port_scan exists to find. The chain is
     ``ports -> services``; services must consume what ports produced.
     """
     engagement = get_engagement()
-    host = split_targets(target)[0]
+    hosts = split_targets(target)
+    if not hosts:
+        hosts = []
+    requested = set(hosts)
+
+    # Inherit the store's discovery: ports are keyed per host, so merge the
+    # union of every open_port asset for the requested hosts into one list and
+    # fingerprint them in a single nmap pass. A superset applied to every host
+    # costs a few closed-port probes and buys one invocation.
+    discovered_by_host: dict[str, set[int]] = defaultdict(set)
+    for a in engagement.assets.all():
+        if a.kind == "open_port" and isinstance(a.attributes.get("port"), int):
+            discovered_by_host[a.host or ""].add(int(a.attributes["port"]))
+    inherited_ports: set[int] = set()
+    if requested:
+        for host in requested:
+            inherited_ports |= discovered_by_host.get(host, set())
+    else:
+        # No explicit hosts: inherit the whole estate's discovery, hosts and
+        # ports together, so a store-only call still scans something.
+        for host, ports_set in discovered_by_host.items():
+            if host:
+                hosts.append(host)
+            inherited_ports |= ports_set
     if not ports:
-        discovered = sorted({
-            int(a.attributes["port"]) for a in engagement.assets.all()
-            if a.kind == "open_port" and a.host == host
-            and isinstance(a.attributes.get("port"), int)
-        })
-        ports = ",".join(str(p) for p in discovered) if discovered else "80,443"
+        ports = ",".join(str(p) for p in sorted(inherited_ports)) if inherited_ports else "80,443"
+    if not hosts and not inherited_ports:
+        # Nothing to scan and no store to inherit from — refuse loudly instead
+        # of handing nmap an empty host list.
+        return {"ok": False, "hosts": [], "services": [], "count": 0,
+                "error": "no hosts supplied and no open_port assets in the store"}
     selection = _check_nse(scripts)
 
     rules = engagement.scope.rules
@@ -286,7 +337,7 @@ async def service_scan(
     ]
     if selection:
         argv += ["--script", selection]
-    argv.append(host)
+    argv.extend(hosts)
 
     run = await run_one("nmap", argv, timeout=1500, allow_codes=(0, 1))
 
@@ -294,25 +345,32 @@ async def service_scan(
     if output.exists():
         try:
             tree = ElementTree.parse(output)  # noqa: S314 — our own tool's output
-            for port in tree.iter("port"):
-                state = port.find("state")
-                service = port.find("service")
-                if state is None or state.get("state") != "open":
-                    continue
-                services.append(
-                    {
-                        "port": int(port.get("portid", 0)),
-                        "protocol": port.get("protocol"),
-                        "service": service.get("name") if service is not None else None,
-                        "product": service.get("product") if service is not None else None,
-                        "version": service.get("version") if service is not None else None,
-                        "extrainfo": service.get("extrainfo") if service is not None else None,
-                    }
-                )
+            for host_el in tree.iter("host"):
+                address = host_el.find("address")
+                host_addr = str(address.get("addr")) if address is not None else ""
+                for port in host_el.iter("port"):
+                    state = port.find("state")
+                    service = port.find("service")
+                    if state is None or state.get("state") != "open":
+                        continue
+                    services.append(
+                        {
+                            "host": host_addr,
+                            "port": int(port.get("portid", 0)),
+                            "protocol": port.get("protocol"),
+                            "service": service.get("name") if service is not None else None,
+                            "product": service.get("product") if service is not None else None,
+                            "version": service.get("version") if service is not None else None,
+                            "extrainfo": service.get("extrainfo") if service is not None else None,
+                        }
+                    )
         except ElementTree.ParseError:
             pass
 
     for service in services:
+        # The XML gives the host per port, so attribute each service to the host
+        # that actually runs it rather than the whole list.
+        host = service.get("host") or (hosts[0] if hosts else "")
         engagement.assets.add(
             Asset(
                 value=f"{host}:{service['port']}",
@@ -326,7 +384,7 @@ async def service_scan(
 
     return {
         "ok": True,
-        "host": host,
+        "hosts": hosts,
         "services": services,
         "count": len(services),
         "nse_scripts": selection,

@@ -31,7 +31,15 @@ class TestNormalization:
 
     @pytest.mark.parametrize(
         "raw",
-        ["", "   ", "not a host", "ftp://example.com", "exa mple.com", "localhost", "-bad.example.com"],
+        [
+            "",
+            "   ",
+            "not a host",
+            "ftp://example.com",
+            "exa mple.com",
+            "localhost",
+            "-bad.example.com",
+        ],
     )
     def test_unparseable_is_unknown(self, raw: str) -> None:
         assert normalize_target(raw).kind == "unknown"
@@ -309,3 +317,26 @@ class TestTemplatePlaceholdersAreCaught:
     def test_a_real_handle_does_not_warn(self, tmp_path) -> None:
         warnings = self._scope(tmp_path, researcher_handle="realperson").validate()
         assert not any("researcher_handle" in w for w in warnings)
+
+
+class TestScanCeilingRule:
+    """scan_ceiling_seconds must parse, default, and survive serialisation —
+    the nuclei sizing gate tiers severity down until the estate fits
+    rps x ceiling, so a hardcoded 3600s forced critical-only scans on large
+    estates (a coverage decision no operator ever made)."""
+
+    def test_default_is_3600(self) -> None:
+        from easyhunt.control_plane.scope import ScopeRules
+
+        assert ScopeRules.from_dict({}).scan_ceiling_seconds == 3600.0
+
+    def test_parses_explicit_value(self) -> None:
+        from easyhunt.control_plane.scope import ScopeRules
+
+        rules = ScopeRules.from_dict({"scan_ceiling_seconds": 21600})
+        assert rules.scan_ceiling_seconds == 21600.0
+
+    def test_survives_serialisation(self, scope: Scope) -> None:
+        scope.rules.scan_ceiling_seconds = 43200.0
+        d = scope.summary()
+        assert d["rules"]["scan_ceiling_seconds"] == 43200.0

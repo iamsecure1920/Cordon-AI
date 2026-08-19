@@ -60,9 +60,7 @@ def test_background_job_is_waited_out() -> None:
         job = jobs.launch(_slow_job, tool="nuclei_scan", phase="vuln_scan", targets=["x"])
         eng = SimpleNamespace(jobs=jobs)
         entry = SimpleNamespace(timeout=30)
-        result = await phase._collect_job_result(
-            entry, eng, {"job_id": job.id, "completed": False}
-        )
+        result = await phase._collect_job_result(entry, eng, {"job_id": job.id, "completed": False})
         assert result["completed"] is True
         assert result["ok"] is True
         assert result["count"] == 3
@@ -200,7 +198,9 @@ class TestPhaseKwargs:
 
         entry = REGISTRY["forbidden_chain"]
         assert entry.targets_arg == "urls"
-        kwargs = phase._phase_kwargs(entry, "http://127.0.0.1:3000/a,http://127.0.0.1:3000/b", {}, {})
+        kwargs = phase._phase_kwargs(
+            entry, "http://127.0.0.1:3000/a,http://127.0.0.1:3000/b", {}, {}
+        )
         assert kwargs == {"urls": "http://127.0.0.1:3000/a,http://127.0.0.1:3000/b"}
 
     def test_every_phase_tool_receives_its_own_targets_arg(self) -> None:
@@ -215,13 +215,28 @@ class TestPhaseKwargs:
             assert entry is not None, f"phase {name} names tool {tool} which is not registered"
             if entry.targets_arg is None:
                 continue
-            kwargs = phase._phase_kwargs(entry, "http://127.0.0.1:3000/", spec.get("extra") or {}, {})
+            kwargs = phase._phase_kwargs(
+                entry, "http://127.0.0.1:3000/", spec.get("extra") or {}, {}
+            )
             # The tool must actually receive its declared target key, so the
             # wrapper's scope gate sees the targets instead of refusing the call.
             assert entry.targets_arg in kwargs, (
-                f"phase {name} would call {tool} without its target arg "
-                f"{entry.targets_arg!r}"
+                f"phase {name} would call {tool} without its target arg {entry.targets_arg!r}"
             )
+
+    def test_services_phase_inherits_open_port_hosts_not_focus(self) -> None:
+        """services must consume what ports produced: every host with an open
+        port asset, not just the focus URL's host. The old focus:True wiring
+        scanned one host's 80,443 and reported "no services" on estates that
+        run on 3000/8080/8443 — the exact case port_scan exists to surface."""
+        spec = phase.PHASES["services"]
+        assert spec["tool"] == "service_scan"
+        assert spec.get("inherits") is True, "services must inherit the store"
+        assert spec.get("wants") == ("open_port",), "services consumes open_port assets"
+        assert spec.get("want_hosts_of") is True, (
+            "services needs hosts, not host:port values, for nmap"
+        )
+        assert spec.get("focus") is None or spec.get("focus") is False
 
 
 class TestBrokenModuleFailsLoud:
@@ -251,9 +266,52 @@ class TestBrokenModuleFailsLoud:
     def test_import_error_is_skipped_not_error(self, monkeypatch) -> None:
         import easyhunt.mcp_server as mcp_server
 
-        monkeypatch.setattr(
-            mcp_server, "CAPABILITY_MODULES", ["definitely_not_a_real_module_xyz"]
-        )
+        monkeypatch.setattr(mcp_server, "CAPABILITY_MODULES", ["definitely_not_a_real_module_xyz"])
         status = mcp_server.load_capabilities()
         assert status["definitely_not_a_real_module_xyz"].startswith("skipped:")
         assert not mcp_server._module_failures(status)
+
+
+class TestPhaseState:
+    """A phase's state must come from the tool's OWN status contract, not from
+    a bare `ok: false` read. PARTIAL/INCOMPLETE/UNTESTED are "did not finish"
+    or "not applicable" — js_analyze blocked on half its bundles, graphql_audit
+    found no GraphQL endpoint — and must never surface as a hard "failed".
+    """
+
+    def test_partial_is_incomplete_not_failed(self) -> None:
+        # js_analyze: some bundles blocked, 652 endpoints still stored.
+        r = {
+            "ok": False,
+            "status": "PARTIAL",
+            "complete": False,
+            "files_fetched": 30,
+            "files_scanned": 22,
+        }
+        assert phase._phase_state(r, None) == "incomplete"
+
+    def test_untested_is_incomplete_not_failed(self) -> None:
+        # graphql_audit on a non-GraphQL host: UNTESTED, honest, not a failure.
+        r = {"ok": False, "status": "UNTESTED", "complete": False, "error": "not_graphql"}
+        assert phase._phase_state(r, None) == "incomplete"
+
+    def test_incomplete_timeout_is_incomplete(self) -> None:
+        r = {"ok": False, "status": "INCOMPLETE", "complete": False, "error": "scan_incomplete"}
+        assert phase._phase_state(r, None) == "incomplete"
+
+    def test_ok_false_without_status_is_failed(self) -> None:
+        # A tool that returns ok:false with no PARTIAL/UNTESTED status really
+        # failed — the gate must still catch it (the js_analyze no_urls case).
+        r = {"ok": False, "error": "no_urls"}
+        assert phase._phase_state(r, None) == "failed"
+
+    def test_ok_false_with_complete_status_is_failed(self) -> None:
+        r = {"ok": False, "status": "COMPLETE", "complete": True}
+        assert phase._phase_state(r, None) == "failed"
+
+    def test_zero_gate_is_empty(self) -> None:
+        assert phase._phase_state({"ok": True, "count": 0}, "count") == "empty"
+
+    def test_gate_with_value_is_ok(self) -> None:
+        assert phase._phase_state({"ok": True, "count": 3}, "count") == "ok"
+        assert phase._phase_state({"ok": True, "urls": ["a", "b"]}, "urls") == "ok"

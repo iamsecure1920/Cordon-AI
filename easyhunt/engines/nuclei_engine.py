@@ -57,17 +57,48 @@ SPEC = register_spec(
         arg_policy=ArgPolicy(
             tool="nuclei",
             allowed_flags={
-                "-u", "-l", "-t", "-w", "-tags", "-etags", "-severity", "-es",
-                "-rate-limit", "-c", "-timeout", "-retries", "-jsonl", "-silent",
-                "-no-color", "-duc", "-nc", "-H", "-nh", "-ni", "-stats", "-me",
-                "-disable-update-check", "-header", "-follow-redirects", "-mhe",
+                "-u",
+                "-l",
+                "-t",
+                "-w",
+                "-tags",
+                "-etags",
+                "-severity",
+                "-es",
+                "-rate-limit",
+                "-c",
+                "-timeout",
+                "-retries",
+                "-jsonl",
+                "-silent",
+                "-no-color",
+                "-duc",
+                "-nc",
+                "-H",
+                "-nh",
+                "-ni",
+                "-stats",
+                "-me",
+                "-disable-update-check",
+                "-header",
+                "-follow-redirects",
+                "-mhe",
                 # -tl lists the selected templates locally and sends nothing to
                 # any target. It is how a scan is sized before it is launched.
                 "-tl",
             },
             boolean_flags={
-                "-jsonl", "-silent", "-no-color", "-duc", "-nc", "-stats", "-nh", "-ni",
-                "-disable-update-check", "-follow-redirects", "-tl",
+                "-jsonl",
+                "-silent",
+                "-no-color",
+                "-duc",
+                "-nc",
+                "-stats",
+                "-nh",
+                "-ni",
+                "-disable-update-check",
+                "-follow-redirects",
+                "-tl",
             },
             # -itags is deliberately absent: it re-enables dos/fuzz/intrusive.
             denied_flags={"-itags", "-headless", "-proxy", "-si", "-interactsh-server"},
@@ -108,11 +139,19 @@ def parse_nuclei_results(text: str, *, phase: str = "vuln_scan") -> list[Finding
         evidence: list[Evidence] = []
         if record.get("request"):
             evidence.append(
-                Evidence(kind="request", description="Nuclei request", excerpt=str(record["request"])[:4000])
+                Evidence(
+                    kind="request",
+                    description="Nuclei request",
+                    excerpt=str(record["request"])[:4000],
+                )
             )
         if record.get("response"):
             evidence.append(
-                Evidence(kind="response", description="Nuclei response", excerpt=str(record["response"])[:4000])
+                Evidence(
+                    kind="response",
+                    description="Nuclei response",
+                    excerpt=str(record["response"])[:4000],
+                )
             )
         if record.get("extracted-results"):
             evidence.append(
@@ -187,7 +226,6 @@ def _template_args(engagement: Any, templates: list[str] | None, workflow: str |
             if expanded.is_dir():
                 args += ["-t", str(expanded)]
     return args
-
 
 
 #: Requests per template, measured on a live estate: 5,148 templates produced
@@ -277,7 +315,7 @@ def _prioritize_targets(engagement: Any, targets: list[str]) -> list[str]:
     """
     focus = getattr(engagement.scope, "_allow", None)
     focus_hosts: set[str] = set()
-    for host, _path in (getattr(focus, "urls", []) or []):
+    for host, _path in getattr(focus, "urls", []) or []:
         if host:
             focus_hosts.add(host.lower())
 
@@ -301,7 +339,9 @@ def _prioritize_targets(engagement: Any, targets: list[str]) -> list[str]:
 
 
 async def _size_unattended_scan(
-    engagement: Any, targets: list[str], tags: str,
+    engagement: Any,
+    targets: list[str],
+    tags: str,
 ) -> tuple[list[str], str, dict[str, Any]] | None:
     """Pick the severity tier and target subset a scan can actually finish.
 
@@ -320,7 +360,13 @@ async def _size_unattended_scan(
     """
     rules = engagement.scope.rules
     rps = min(float(rules.max_rps or _OBSERVED_RPS), _OBSERVED_RPS)
-    ceiling = 3600.0
+    # The ceiling is a scope rule, not a constant: a 3600s default forces
+    # critical-only on a large estate (36k requests), which is a coverage
+    # decision the operator never made. Programs whose policy allows the wall
+    # clock (budget.enforce: false, a long window) raise it so the full
+    # severity range fits the target set instead of silently dropping to
+    # critical.
+    ceiling = float(getattr(rules, "scan_ceiling_seconds", 3600) or 3600)
     reachable = int(rps * ceiling)
     budget_remaining = engagement.budget.remaining().get("requests") or 0
     # With budget enforcement off the scope reports unlimited; the request
@@ -348,38 +394,68 @@ async def _size_unattended_scan(
             # This tier cannot fit even one target; try the next (tighter) one.
             continue
         if max_targets >= len(targets):
-            return targets, tier, {
-                "templates": count, "severity": tier, "truncated": False,
-            }
+            return (
+                targets,
+                tier,
+                {
+                    "templates": count,
+                    "severity": tier,
+                    "truncated": False,
+                },
+            )
         # The tier fits some targets but not all. The tightest tier is the last
         # word on what can fit; anything before it, keep trying to fit everyone.
         if tier == _SEVERITY_TIERS[-1]:
             ordered = _prioritize_targets(engagement, targets)
             kept = ordered[:max_targets]
-            return kept, tier, {
-                "templates": count, "severity": tier, "truncated": True,
-                "scanned": len(kept), "total": len(targets),
-            }
+            return (
+                kept,
+                tier,
+                {
+                    "templates": count,
+                    "severity": tier,
+                    "truncated": True,
+                    "scanned": len(kept),
+                    "total": len(targets),
+                },
+            )
     return None
 
 
 async def _count_templates(
-    engagement: Any, *, templates: list[str] | None, workflow: str | None,
-    tags: str | None, severity: str,
+    engagement: Any,
+    *,
+    templates: list[str] | None,
+    workflow: str | None,
+    tags: str | None,
+    severity: str,
 ) -> int | None:
     """How many templates would this selection load? Sends nothing to the target.
 
     ``-tl`` lists templates locally. It costs 30-60s, which is cheap against the
     multi-hour scan it prevents from starting blind.
     """
-    argv = ["-tl", "-silent", "-duc", "-disable-update-check", "-severity", severity,
-            "-etags", ",".join(sorted(DENIED_TAGS))]
+    argv = [
+        "-tl",
+        "-silent",
+        "-duc",
+        "-disable-update-check",
+        "-severity",
+        severity,
+        "-etags",
+        ",".join(sorted(DENIED_TAGS)),
+    ]
     argv += _template_args(engagement, templates, workflow)
     if tags:
         argv += ["-tags", tags]
     try:
         result = await guarded_run(
-            SPEC, argv, timeout=180, engagement=engagement, check=False, allow_codes=(0, 1),
+            SPEC,
+            argv,
+            timeout=180,
+            engagement=engagement,
+            check=False,
+            allow_codes=(0, 1),
         )
     except Exception:  # noqa: BLE001 — an estimate must never block the scan
         return None
@@ -388,8 +464,13 @@ async def _count_templates(
 
 
 async def _estimate_scan(
-    engagement: Any, *, targets: list[str], templates: list[str] | None,
-    workflow: str | None, tags: str | None, severity: str,
+    engagement: Any,
+    *,
+    targets: list[str],
+    templates: list[str] | None,
+    workflow: str | None,
+    tags: str | None,
+    severity: str,
 ) -> dict[str, Any]:
     """Predict request count and wall clock, and refuse what cannot finish."""
     count = await _count_templates(
@@ -448,16 +529,27 @@ async def _run(
     targets_file.write_text("\n".join(targets) + "\n", encoding="utf-8")
 
     argv: list[str] = [
-        "-l", str(targets_file),
-        "-jsonl", "-silent", "-nc", "-duc", "-disable-update-check",
+        "-l",
+        str(targets_file),
+        "-jsonl",
+        "-silent",
+        "-nc",
+        "-duc",
+        "-disable-update-check",
         # Rate limit and concurrency come from the engagement, not the caller.
-        "-rate-limit", str(max(1, int(rules.max_rps))),
-        "-c", str(max(1, min(concurrency, rules.max_concurrency))),
-        "-severity", severity,
+        "-rate-limit",
+        str(max(1, int(rules.max_rps))),
+        "-c",
+        str(max(1, min(concurrency, rules.max_concurrency))),
+        "-severity",
+        severity,
         # Excluded regardless of what the caller asked for.
-        "-etags", ",".join(sorted(DENIED_TAGS)),
-        "-timeout", "15",
-        "-retries", "1",
+        "-etags",
+        ",".join(sorted(DENIED_TAGS)),
+        "-timeout",
+        "15",
+        "-retries",
+        "1",
     ]
     argv += _template_args(engagement, templates, workflow)
     if tags:
@@ -519,17 +611,18 @@ async def _run(
         if verdict.status != "ok":
             verified = verdict.to_dict()
             engagement.audit.record(
-                "output_verification", tool="nuclei", status=verdict.status,
+                "output_verification",
+                tool="nuclei",
+                status=verdict.status,
                 hint=verdict.hint[:300],
             )
 
     return {
         "ok": not fatal,
         "error": "nuclei_failed" if fatal else None,
-        "message": (
-            f"nuclei did not run: {fatal}. Zero findings here means UNTESTED, "
-            "not clean."
-        ) if fatal else None,
+        "message": (f"nuclei did not run: {fatal}. Zero findings here means UNTESTED, not clean.")
+        if fatal
+        else None,
         "targets": len(targets),
         "raw_output": str(result.output_path) if result.output_path else None,
         "exit_code": result.exit_code,
@@ -567,10 +660,12 @@ async def _run(
             )
             if result.timed_out
             else ""
-        ) + (
+        )
+        + (
             "All results are CANDIDATES. Run triage, then validate the survivors "
             "with a PoC before any of them is reported as confirmed."
-        ) + (
+        )
+        + (
             f"\nOutput verification: {verified['hint']}"
             if verified and verified.get("hint")
             else ""
@@ -648,8 +743,12 @@ async def nuclei_scan(
     # budget gate waved it through because it was comparing against 500. A gate
     # fed a constant cannot protect anything.
     feasibility = await _estimate_scan(
-        engagement, targets=targets, templates=templates, workflow=workflow,
-        tags=tags, severity=severity,
+        engagement,
+        targets=targets,
+        templates=templates,
+        workflow=workflow,
+        tags=tags,
+        severity=severity,
     )
     if feasibility.get("infeasible"):
         if explicit_selection:
@@ -684,8 +783,12 @@ async def nuclei_scan(
             }
         targets, severity, sizing = sized
         feasibility = await _estimate_scan(
-            engagement, targets=targets, templates=templates, workflow=workflow,
-            tags=tags, severity=severity,
+            engagement,
+            targets=targets,
+            templates=templates,
+            workflow=workflow,
+            tags=tags,
+            severity=severity,
         )
 
     job = engagement.jobs.launch(

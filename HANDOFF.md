@@ -196,6 +196,24 @@ credible in code and fail in reality:
    inherits the open_port assets from the store (falls back to 80,443 only
    when nothing was discovered). Regression tests pin all three branches.
 
+**Amended 2026-08-19 — the estate-wide services pass.** The myfitnesspal run
+caught two more defects in the same chain, both invisible until a real estate
+was scanned:
+
+5. **The `services` phase was `focus: True`** — it aimed service_scan at the
+   program's focus host only, so 59 discovered ports across 29 hosts sat
+   unfingerprinted (the run reported 2 services; 192 ports found). The phase
+   now inherits `open_port` assets and passes every host that has one, and
+   service_scan accepts multiple hosts, merges their discovered ports, and
+   fingerprints them in one nmap pass — 102 services on the live run.
+6. **The `default,safe` NSE selection crashes and hangs nmap on real estates.**
+   The `safe` category pulls broadcast-* scripts, which crash nmap with the
+   known `nse_nsock.cc:342` assertion (and probe the LAN, not the target),
+   and http-slowloris-check, which holds connections open and stalls the
+   whole scan at the engagement's rate limit. `safe` is now refused outright
+   and every selection is suffixed `and not broadcast`. Verified live:
+   `default and not broadcast` is deterministic, `safe` hangs at exit 124.
+
 Verified working end-to-end on the lab through the real control plane: probe,
 waf, cors, tls, endpoints (83 URLs), js, pattern, nuclei scan (Prometheus
 finding), forbidden, ports (2 open), content (`/api-docs`, `/metrics`), and
