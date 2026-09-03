@@ -4,7 +4,7 @@
 
 **An agentic VAPT orchestrator where the control plane — not the model — is the security boundary.**
 
-[![Tests](https://img.shields.io/badge/tests-2%2C263-brightgreen)](#development)
+[![Tests](https://img.shields.io/badge/tests-2%2C268-brightgreen)](#development)
 [![Tools](https://img.shields.io/badge/tools-83%20catalogued-blue)](#every-tool-it-drives)
 [![MCP](https://img.shields.io/badge/MCP-101%20tools-8A2BE2)](#every-tool-it-drives)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#quick-start)
@@ -158,7 +158,9 @@ cordon scope validate
 cordon doctor             # expect 0 broken
 ```
 
-In Claude Code: `/cordon`.
+In any MCP-capable AI agent CLI: `/cordon`, or `cordon connect` prints the
+exact registration for Claude Code, Cursor, Windsurf, Gemini CLI, Copilot, or
+any stdio client.
 
 ### Running an engagement
 
@@ -189,8 +191,10 @@ touching the run:
 ### Phase-sliced MCP servers
 
 One MCP server per engagement phase. Each exposes only that phase's tools plus
-the shared control surface (scope, jobs, task graph, status), so an agent does
-not page through 101 tools to do recon:
+the shared control surface — `scope_check`, `job_status`, `job_list`/
+`job_fetch`/`job_cancel`, `fetch_slice`, the task graph, brain recall/state,
+`cordon_status`, `cordon_capabilities`, `audit_tail`, `rules_list` — so an
+agent does not page through 101 tools to do recon:
 
 | Server | Surface |
 | --- | --- |
@@ -263,7 +267,7 @@ grouped by phase.
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 2,263 tests
+.venv/bin/python -m pytest tests/ -q          # 2,268 tests
 .venv/bin/ruff check cordon/ tests/
 cordon doctor                                # executed, not just found on PATH
 ```

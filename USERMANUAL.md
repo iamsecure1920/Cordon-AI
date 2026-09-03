@@ -704,6 +704,13 @@ human is consulted before the call runs.
 | **workflow** | `engagement_new` `engagement_attach` `pipeline_status` `run_phase`! `run_pipeline`! `report_generate` `findings_list` `finding_detail` `finding_note` `hunt_plan` `program_scope_fetch` `triage_findings` `triage_taskflows` `triage_canary_preview` `coverage_report` `wstg_lookup` `technique_lookup` `research_guidance` `exploit_prompt` `prompt_classes` `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! `contract_static_scan` `contract_toolchain` |
 | **Control** | `job_status` |
 
+Every phase server also carries the shared control surface: `scope_check`,
+`job_list`/`job_fetch`/`job_cancel`, `fetch_slice`, the task graph
+(`taskgraph_next`/`taskgraph_update`/`taskgraph_view`), `memory_recall`,
+`graph_recall`, brain recall/state/history, `dashboard_state`, `audit_tail`,
+`rules_list`, `cordon_status`, `cordon_capabilities`. A tool not listed in
+this table is full-server-only.
+
 ---
 
 ## 12. Knowledge layer (WSTG, PAT, coverage, payloads)
@@ -1105,7 +1112,7 @@ be decorative.
 ## 18. Development and testing
 
 ```bash
-.venv/bin/python -m pytest tests/ -q    # 2,263 tests across 65 files
+.venv/bin/python -m pytest tests/ -q    # 2,268 tests across 65 files
 .venv/bin/ruff check cordon/ tests/   # lint
 cordon doctor                         # executed, not just found on PATH
 ```
@@ -1162,16 +1169,16 @@ Cordon-AI/
 ├── cordon/
 │   ├── mcp_server.py       # the only door — registers all capabilities
 │   ├── control_plane/      # scope, sanitize, budget, ratelimit, approval, sandbox, audit, auth, pins, jobs, context
-│   ├── tools/              # ~28 capability modules, one decorator, no privileged path
+│   ├── tools/              # 34 capability modules, one decorator, no privileged path
 │   ├── engines/            # bbot, nuclei, jaeles, semgrep, osmedeus, strix
 │   ├── knowledge/          # findings, WSTG, techniques, coverage, payloads, graphs, memory
-│   ├── install/            # 74 recipes, identity-verified
+│   ├── install/            # 86 recipes, identity-verified
 │   ├── llm/                # openrouter, summarize, triage
 │   └── report/             # synthesize, templates, graphs
 ├── skills/                 # 8 phase playbooks for the agent
 ├── rules/                  # detection packs — YAML, no code
 ├── scripts/                # hunt.sh, phase.py, summary.py, watch.sh, vet_payloads.py, …
-├── tests/                  # 2,263 tests across 65 files
+├── tests/                  # 2,268 tests across 65 files
 ├── payloads/               # vetted store (gitignored, rebuilt with vet_payloads.py)
 └── engagements/            # per-engagement workspaces (assets, findings, reports, audit)
 ```
@@ -1180,4 +1187,4 @@ Cordon-AI/
 
 *Cordon AI — Complete User Manual. Last updated 2026-09-03.*
 *Figures current as of this revision: 101 MCP tools, 83 catalogued binaries,*
-*2,263 tests, 74 install recipes.*
+*2,268 tests, 86 install recipes.*
