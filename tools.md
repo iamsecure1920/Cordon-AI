@@ -1,12 +1,12 @@
 # Cordon AI — Complete Tool Reference
 
 > **Researched from 53 official GitHub repositories.**
-> Deep profiles for 54 of the 82 catalogued tools: what each does, how to install
+> Deep profiles for 52 of the 83 catalogued tools: what each does, how to install
 > it, how to use it, and what it depends on.
-> Last updated: 2026-07-30
+> Last updated: 2026-09-03
 >
 > Not the authoritative catalogue — `cordon/tools/common.py` is, and
-> `cordon doctor` reports what is actually installed and working. The 28 tools
+> `cordon doctor` reports what is actually installed and working. The 33 tools
 > without a profile here are catalogued and governed like the rest; they just
 > have no long-form writeup yet.
 
@@ -75,7 +75,8 @@ pipeline. The per-tool commands used to be copied into this section by hand,
 which is how the matrix below ended up missing 32 tools — the recipes in
 `cordon/install/recipes.py` are the source of truth and are what actually
 runs. Read them there, or run `cordon doctor` to see what is working on
-this machine.
+this machine. The full suite is driven through the MCP surface
+(101 tools over the catalogue), not by calling binaries directly.
 
 
 ## Master Tool Matrix

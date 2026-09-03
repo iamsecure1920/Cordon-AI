@@ -12,7 +12,7 @@ Authorized testing only: owned assets, in-scope bug bounty programs, or org
 assets with documented written approval.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 from cordon.errors import (
     ApprovalRequired,

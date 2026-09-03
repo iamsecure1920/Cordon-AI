@@ -20,6 +20,15 @@ re-check scope yourself, and you must not try to work around a refusal.
 2. If the user has no scope file, help them write one from the program's policy
    page. Do not invent scope entries, and do not proceed on a verbal "it's fine".
 
+## Two ways to run
+
+- **Resumable pipeline (preferred for full engagements):**
+  `engagement_new(name=..., scope_path=...)`, then `run_pipeline()` runs every
+  phase in order and writes results to the engagement workspace — a crashed or
+  interrupted run resumes with `engagement_attach(...)` + `pipeline_status()`
+  rather than restarting. `run_phase(phase="scan")` runs a single phase.
+- **Manual loop (for targeted hunts):** drive the phases below yourself.
+
 ## The loop
 
 Run phases in order, but let the task graph pull you forward: after each phase,
@@ -30,7 +39,7 @@ call `taskgraph_next()` and work its queue rather than re-deriving a plan.
 | 1. Recon | `bbot_scan(target, preset="subdomain-enum")` | Passive. One call replaces most of a recon pipeline. |
 | 2. Resolve | `dns_resolve`, `http_probe` | Turns names into live services. |
 | 3. Expand | `endpoint_discovery`, `js_analyze`, `tls_info` | Archives and bundles are free leads. |
-| 4. Scan | `nuclei_scan` | Aggressive — will prompt for approval. |
+| 4. Scan | `nuclei_scan(target="auto")` | Aggressive — will prompt for approval. `"auto"` inherits every live URL. |
 | 5. Takeover | `takeover_verify` on every dangling CNAME | Never report an unverified candidate. |
 | 6. Triage | `triage_findings` | Cuts noise. Cannot confirm anything. |
 | 7. Validate | `validate_findings` | The only automatic route to "confirmed". |

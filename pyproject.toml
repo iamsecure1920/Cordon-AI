@@ -4,17 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cordon"
-version = "2.0.0"
-description = "Agentic VAPT orchestrator: MCP control plane over open-source security engines"
+version = "2.1.0"
+description = "Agentic VAPT orchestrator: 101 MCP tools over 83 security engines, gated by a mandatory control plane"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Cordon AI" }]
-keywords = ["security", "vapt", "bugbounty", "mcp", "recon"]
+keywords = ["security", "vapt", "bugbounty", "mcp", "recon", "agentic"]
 classifiers = [
   "Intended Audience :: Information Technology",
   "Topic :: Security",
+  "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
+  "Framework :: AsyncIO",
 ]
 dependencies = [
   "fastmcp>=2.10",

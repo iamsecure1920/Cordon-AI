@@ -148,9 +148,12 @@ anything else, tools are running on the host with no isolation.
 
 Everything needed is in the project directory. Nothing lives outside it except:
 
-- `~/.claude/skills/` — deployed by `install.sh` from `skills/`, regenerated on
-  the new machine.
-- MCP registration — re-done by `install.sh`.
+- `~/.claude/skills/` — deployed by `install.sh` from `skills/` for
+  Claude Code; other agent CLIs read `skills/` from the repo via the MCP
+  server's `cordon` skill surface. Regenerated on the new machine.
+- MCP registration — re-done by `install.sh`, or pasted from
+  `cordon connect` (Claude Code, Cursor, Windsurf, Gemini CLI, Copilot,
+  any stdio client).
 - `$OPENROUTER_API_KEY` — a secret; move it yourself, do not put it in the folder.
 - `payloads/` — gitignored, rebuilt with one command (§4). Not redistributed
   because the upstream repo declares no license.

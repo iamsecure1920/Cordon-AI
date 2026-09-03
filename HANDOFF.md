@@ -44,10 +44,42 @@ validator *outcomes* and feeds the lessons back into planning. `2112 passed,
   run; `hunt_plan` returns a `learned` list; MCP tools `brain_recall` /
   `brain_learn`. Methods and outcomes only — never credentials or bodies.
 
+**Amended 2026-09-03 — the v2 agent-native rebuild.** The Step-1 full-repo
+review rebuilt the agent surface and the live engagement exercised it end to
+end. The suite collects 2,268 tests across 65 files.
+
+- **Phase-sliced MCP servers**: six servers (recon / probe / endpoints /
+  scan / exploit / workflow) slice the surface at registration time only —
+  every tool still runs the identical scope → sanitize → budget → rate →
+  approval → audit chain. Every registered tool is reachable from a phase
+  server (strix_deep, burp_send, session/account tools used to be
+  full-server-only). Tests pin this (`test_every_registered_tool_is_reachable`).
+- **Resumable MCP workflow**: `engagement_new`/`engagement_attach`,
+  `run_phase`, `run_pipeline`, `pipeline_status` run phases in-process with
+  structured results written to the workspace, so a run can be resumed.
+- **Scope-gate sentinel fix**: the gate now lets the `auto`/`-`
+  asset-store sentinels through so tools resolve them against discovered
+  assets (resolved targets are still scope-checked). Previously the literal
+  string was gate-checked and every unattended nuclei scan was refused.
+- **Typed output schemas** (`cordon/control_plane/schemas.py`) register
+  machine-readable result shapes per tool.
+- **HackerOne scope fetcher** (`program_scope_fetch`) writes a reviewable
+  scope scaffold from a program's policy page — never a fabricated
+  authorization. Live use hit the login-wall; the fallback is the
+  operator-transcribed scope file.
+- **Fixed along the way**: dalfox `--worker` clamp to its own 20-ceiling,
+  rate declarations for offline tools, `proxy`/`verify` client-kwarg
+  handling, job eviction under `max_jobs`, LLM rate-limit precedence,
+  `fuzz_diff` empty-body comparison.
+- **Counts today**: 101 MCP tools, 83 catalogued binaries, 86 install
+  recipes (85 installable), 2,268 tests, 65 test files.
+- **Known environmental trap**: a live `OPENROUTER_API_KEY` flips
+  `hunt_plan` into LLM mode; the test config now points `llm.api_key_env`
+  at a non-existent var so the suite is hermetic.
+
 **Amended 2026-08-18 (second pass) — the brain senses and animates.** The
 first pass made the brain *learn*; this pass made it *sense* — connected to
 every script — and gave it a face. `2120 passed, 1 skipped`.
-
 - **Sensing**: `AuditLog.observe(fn)` — a tap on the single chokepoint every
   tool call passes. `Engagement` registers `brain.sense`, so every phase/tool
   in every script reaches the brain with zero per-tool changes. The brain keeps

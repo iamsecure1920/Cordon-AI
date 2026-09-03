@@ -1,8 +1,10 @@
 # Cordon AI — documentation index
 
-Start with **`../CLAUDE.md`** (project root). Claude CLI loads it automatically
+Start with **`../CLAUDE.md`** (project root). Claude Code loads it automatically
 at session start; a human should read it first too. It carries the hard
-invariants, and those govern everything else here.
+invariants, and those govern everything else here. Other agent CLIs (Cursor,
+Windsurf, Gemini CLI, Copilot) get the same orientation from `llms.txt` and the
+`cordon` skill via the MCP server.
 
 ## The documents
 

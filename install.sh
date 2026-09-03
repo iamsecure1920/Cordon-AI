@@ -185,6 +185,8 @@ fi
 if [ "${REGISTER_MCP}" = "yes" ]; then
 step "MCP registration"
 
+# `cordon connect` prints ready-to-paste registration for every stdio
+# MCP client (Claude Code, Cursor, Windsurf, Gemini CLI, Copilot, generic).
 if have claude; then
     if claude mcp list 2>/dev/null | grep -q cordon; then
         ok "cordon already registered"
@@ -200,9 +202,10 @@ if have claude; then
         printf "      --scope %s/scope.yaml${NC}\n" "${CORDON_DIR}"
     fi
 else
-    warn "claude CLI not found — install it, then run:"
-    printf "    ${DIM}claude mcp add cordon --transport stdio -- \\\\\n"
-    printf "      %s/bin/python -m cordon.mcp_server${NC}\n" "${VENV_DIR}"
+    warn "no agent CLI found on PATH — run 'cordon connect' for"
+    warn "copy-paste registration (Claude Code, Cursor, Windsurf, Gemini CLI,"
+    warn "Copilot, or any stdio MCP client)."
+    printf "    ${DIM}%s/bin/cordon connect${NC}\n" "${VENV_DIR}"
 fi
 fi
 

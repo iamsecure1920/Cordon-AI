@@ -39,9 +39,9 @@ the user the target is out of scope and stop.
 
 ## 2. What this is
 
-An orchestrator that drives 85 catalogued open-source security tools through a custom MCP
-server. You supply strategy; the MCP server supplies enforcement; the engines
-supply execution.
+An orchestrator that drives 83 catalogued open-source security tools through 101 MCP
+tools on a custom MCP server. You supply strategy; the MCP server supplies
+enforcement; the engines supply execution.
 
 ```
 L5  Strategy    ← you, the Claude CLI: what to test and why
@@ -80,8 +80,9 @@ scope.yaml before running" means you cannot proceed.
 
 ## 4. Working rhythm
 
-1. **Recon passively first.** `recon_passive` costs the target nothing and often
-   answers the question. Escalate to active only when passive is exhausted.
+1. **Recon passively first.** `subdomain_enum` (or `bbot_scan` with a
+   passive preset) costs the target nothing and often answers the question.
+   Escalate to active only when passive is exhausted.
 2. **Probe before scanning.** `http_probe` tells you what is actually alive.
    Scanning dead hosts burns budget and rate limit for nothing.
 3. **Scan with intent.** Pick nuclei templates that match the observed stack.

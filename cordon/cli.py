@@ -310,7 +310,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print("\nMCP registration")
     claude = shutil.which("claude")
     if not claude:
-        print(f"  {yellow}!{reset} claude CLI not found; register manually (see README)")
+        print(f"  {yellow}!{reset} no agent CLI found; run `cordon connect` for copy-paste registration")
     else:
         try:
             proc = subprocess.run(  # noqa: S603

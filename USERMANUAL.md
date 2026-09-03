@@ -762,8 +762,8 @@ Views (sidebar; deep-linkable as `/#overview`, `/#findings`, `/#assets`, …):
 
 - **Overview** — stat cards (findings by severity/status, confirmed vs
   candidates, false positives, phases done, assets, classes covered), the
-  full 14-phase pipeline with live state + scanning animation on the active
-  phase, and the brain's recent sensed activity.
+  canonical 14-phase pipeline strip with live state + scanning animation on
+  the active phase, and the brain's recent sensed activity.
 - **Findings** — severity-sorted table with **filters**: free-text search,
   severity chips, status chips, phase + tool selects, sort (severity / CVSS /
   asset / newest). Rows expand to show description, evidence, CVSS vector,
@@ -936,9 +936,12 @@ Each phase appends to `status.jsonl`:
 {"phase":"probe","state":"ok","tool":"http_probe","seconds":4.1,"produced":248,"findings":0}
 ```
 
-### Interactive (Claude CLI)
+### Interactive (any MCP-capable AI agent CLI)
 
-Load the `cordon` skill, then drive individual MCP tools. The working rhythm:
+Load the `cordon` skill, then drive individual MCP tools — through `cordon
+serve` (full surface) or any `cordon serve --phase <name>` phase server. Two ways to
+run: the resumable MCP pipeline (`engagement_new` → `run_pipeline`, resumed
+with `engagement_attach` + `pipeline_status`), or the manual working rhythm:
 
 1. **Recon passively first** — costs the target nothing.
 2. **Probe before scanning** — scanning dead hosts burns budget for nothing.
@@ -953,7 +956,9 @@ cordon doctor              # health check — run first, always
 cordon doctor --fix        # repair what is present but broken
 cordon install             # add missing tools
 cordon install --core      # minimum viable pipeline only
-cordon serve               # MCP server, stdio
+cordon serve               # MCP server, stdio (full surface)
+cordon serve --phase recon # per-phase servers: probe, endpoints, scan, exploit, workflow
+cordon connect             # copy-paste registration for any agent CLI
 cordon scope validate      # check the authorization file
 ./bootstrap.sh               # fresh machine
 python3 scripts/vet_payloads.py --fetch    # build the vetted payload store

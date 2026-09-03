@@ -23,6 +23,15 @@ from cordon.tools.hunt_plan import hunt_plan
 
 pytestmark = pytest.mark.asyncio
 
+
+@pytest.fixture(autouse=True)
+def _agent_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    # hunt_plan must take its deterministic agent-mode branch here — a live
+    # OPENROUTER_API_KEY on the developer's machine flipped it into LLM mode
+    # and the response shape changed under the suite.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+
+
 HOST = "www.example.com"
 
 

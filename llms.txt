@@ -2,8 +2,10 @@
 
 > Agentic VAPT orchestrator: an LLM decides what to test, a control plane
 > decides what is allowed (scope, sanitize, budget, rate, approval, audit) and
-> enforces it in code, and 80+ catalogued open-source security tools execute
+> enforces it in code, and 83 catalogued open-source security tools execute
 > inside a sandbox. The security boundary is the MCP server, never the prompt.
+> 101 MCP tools, sliced into six per-phase MCP servers (recon, probe,
+> endpoints, scan, exploit, workflow) plus the full server.
 
 ## Key facts
 
@@ -23,8 +25,10 @@
   chains per-target phases (recon → permute → resolve → probe → cdn → waf →
   tls → cors → endpoints → js → auth) and global phases (secrets, code_audit,
   pattern, graphql, websocket, takeover, scan, ports, services, params,
-  content, nikto, wapiti, exploit, plan, report); each phase must prove it did
-  something or the chain stops.
+  content, nikto, wapiti, forbidden, exploit, plan, report); each phase must
+  prove it did something or the chain stops. The same phases run through MCP
+  as `run_pipeline`/`run_phase`, with every result written to the engagement
+  workspace so a run can resume.
 - **Exploitation** runs only with `--exploit`, only when `scope.yaml` sets
   `allow_exploitation: true`, and every validator it drives is individually
   approval-gated.
@@ -67,7 +71,7 @@
 - `scripts/` — hunt.sh (pipeline), phase.py (phase gate), summary.py,
   vet_payloads.py, fetch_wstg.py, fetch_pat.py.
 - `rules/` — semgrep, nuclei, jaeles, gf pattern packs, custom rules.
-- `tests/` — 2,000+ tests including rate-declaration and control-plane guards.
+- `tests/` — 2,268 tests including rate-declaration and control-plane guards.
 
 ## Commands
 
