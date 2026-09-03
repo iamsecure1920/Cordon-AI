@@ -42,8 +42,8 @@ Vetting the actual contents found real problems:
 ```
 payloads/
 ├── A/            38 files, 65 MB   discovery wordlists
-├── B/            20 files, 5.9 MB  injection payloads (3 currently consumed)
-├── _quarantine/   4 files, 200 KB  never auto-run
+├── B/            24 files, 6 MB    injection payloads (4 xss lists consumed)
+├── unique/        2 files           derived deduplicated unions (see §4)
 └── manifest.json                   provenance, hashes, tool mapping
 ```
 
@@ -51,18 +51,29 @@ payloads/
 Normal scope and rate limits apply, no extra gate. 38 files.
 
 **Tier B — injection payloads.** These are attacks. Aggressive mode plus the
-approval gate, same as any other aggressive tool. 20 files, of which **3 have a
-consumer today** — see §4.
+approval gate, same as any other aggressive tool. 24 files, of which **4 have a
+consumer today** (the xss lists) — see §4.
 
 **Tier C — quarantined.** Destructive or exfiltrating. Copied intact so a human
-can inspect them, never wired into any tool. 4 files:
+can inspect them, never wired into any tool. **Currently empty.**
 
-| File | Reason |
-|---|---|
-| `SQL.txt` | 6 `xp_cmdshell` RCE statements |
-| `all_attacks.txt` | 2 `xp_cmdshell` RCE statements |
-| `sqli2.txt` | 7 RCE statements **and** a `burpcollaborator.net` callback |
-| `xss.txt` | `GH0ST.xss.ht` callback — steals `document.domain` to a third party |
+Four files that the classifier's destructive/callback detectors flag are
+deliberately kept in tier B instead — the operator-approved exception
+(`FORCE_TIER_B` in `scripts/vet_payloads.py`): these are advanced payloads
+that recent testing wants available, and tier B already sits behind the
+exploitation approval gate. Their dangerous-content reasons are still recorded
+on every manifest entry, so the exception is visible, never silent:
+
+| File | Risk still recorded | Reachable via |
+|---|---|---|
+| `SQL.txt` | 6 `xp_cmdshell` RCE statements | sqlmap-style reference (no consumer; see §4) |
+| `all_attacks.txt` | 2 `xp_cmdshell` RCE statements | sqlmap-style reference (no consumer; see §4) |
+| `sqli2.txt` | 7 RCE statements **and** a `burpcollaborator.net` callback | sqlmap-style reference (no consumer; see §4) |
+| `xss.txt` | `GH0ST.xss.ht` callback — steals `document.domain` to a third party | `xss_validate(payload_list="xss-advanced")` — approval-gated |
+
+The detectors themselves are unchanged: any file not named in the exception
+set that carries destructive statements or third-party callbacks is still
+quarantined on fetch.
 
 Note that quarantine **does not rewrite** anything. Silently "cleaning" an
 attack string produces something that looks safe and isn't; the file is moved
@@ -125,22 +136,40 @@ see §6.
 
 ### Tier B is deliberately unmapped
 
-Injection payloads (`xss`, `allsqli`, `ssti`, …) have **no aliases**. They are not
-discovery wordlists, and `content_discovery` must not be able to reach them by
-naming one.
+Injection payloads (`xss`, `allsqli`, `ssti`, …) have **no aliases in
+config.yaml**. They are not discovery wordlists, and `content_discovery` must
+not be able to reach them by naming one.
 
-Tier B lists reach exactly one consumer: `xss_validate` passes three of them
-(`xsspollygots`, `xsswafbypss`, `vulJs`) to dalfox via `--custom-payload`, behind
-the approval gate that every exploit-mode tool sits behind. That is the only
-`allow_tier_b=True` in the server.
+Tier B lists reach exactly one consumer: `xss_validate` passes them to dalfox
+via `--custom-payload`, behind the approval gate that every exploit-mode tool
+sits behind. The named lists are `xss-polyglots`, `xss-waf-bypass`,
+`xss-js-frameworks`, and — since the operator approved the advanced set —
+`xss-advanced` (`xss.txt`, with its recorded third-party-callback markers).
+That is the only `allow_tier_b=True` in the server.
 
-The remaining 17 have **no consumer**. This document previously claimed sqlmap
-was the second one; it is not, and it cannot be made one — sqlmap accepts no
-payload-wordlist flag at all, `--tamper` is in the tool's `denied_flags` because
-it loads executable Python, and `-v` is verbosity. So 17 tier B lists are
-fetched, vetted, hashed and unreachable. Recorded here rather than implied away:
-either a consumer gets added deliberately, or they should be dropped from the
-fetch.
+The remaining tier B files have **no consumer**. This document previously
+claimed sqlmap was a second one; it is not, and it cannot be made one — sqlmap
+accepts no payload-wordlist flag at all, `--tamper` is in the tool's
+`denied_flags` because it loads executable Python, and `-v` is verbosity. The
+SQL-shaped lists (`allsqli`, `blindsqli`, `sqli2`, `SQL`, `all_attacks`) are
+fetched, vetted, hashed and reference-only until a consumer gets added
+deliberately. Recorded here rather than implied away.
+
+### Derived deduplicated files
+
+The store ships with heavy duplication (measured: tier A holds 3.6M lines for
+2.9M unique payloads). `scripts/dedupe_payloads.py --build` derives two
+consolidated files that are resolvable by name and never modify the pinned
+originals:
+
+| Name | Tier | Contents |
+|---|---|---|
+| `discovery-unique` | A | every tier A payload exactly once, normalized |
+| `injection-unique` | B | every tier B payload exactly once, normalized |
+
+`payload_catalog` lists them flagged `derived: true`; `content_discovery`
+accepts `discovery-unique` by name. They are millions of lines — use them
+deliberately, never as a default.
 
 ### The GET-only constraint is structural
 

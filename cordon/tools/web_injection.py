@@ -17,7 +17,7 @@ promote.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 import httpx
@@ -303,7 +303,7 @@ def _candidate_for(url: str, cls: str, spec: dict[str, Any], excerpt: str) -> Fi
 async def web_injection_probe(
     target: str,
     parameter: str,
-    bug_class: str = "open-redirect",
+    bug_class: Literal["open-redirect", "crlf", "lfi", "xxe", "hpp"] = "open-redirect",
     regex_bypass: bool = False,
 ) -> dict[str, Any]:
     """Detect open redirect, CRLF, LFI, XXE or HPP in one parameter.

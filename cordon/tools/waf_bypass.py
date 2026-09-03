@@ -17,7 +17,7 @@ it has always been.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from cordon.knowledge import waf
 from cordon.tools.base import cordon_tool
@@ -41,8 +41,8 @@ __all__ = ["waf_bypass", "fingerprint_waf", "waf_vendors"]
 )
 async def waf_bypass(
     vendor: str,
-    vuln_class: str,
-    level: str = "all",
+    vuln_class: Literal["xss", "sqli", "cmdi", "ssti", "ssrf", "path_traversal"] = "xss",
+    level: Literal["all", "basic", "intermediate", "advanced"] = "all",
     max_payloads: int = 50,
 ) -> dict[str, Any]:
     """Ordered WAF-bypass payloads for (vendor, vuln_class), basic → advanced.

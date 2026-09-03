@@ -62,7 +62,11 @@ class Case:
     url: str
     status: int | None = None
     mime: str | None = None
-    body: bytes | str = b""
+    #: ``None`` = body not captured (e.g. a silent ffuf run); ``b""`` = an
+    #: empty body that WAS captured. The distinction is what lets
+    #: :func:`diff_case` report "cannot compare" instead of quietly calling two
+    #: absent bodies identical.
+    body: bytes | str | None = None
     duration_ms: float | None = None
     headers: dict[str, str] = field(default_factory=dict)
     payload: str = ""
@@ -73,7 +77,7 @@ class Case:
 
     @property
     def hash(self) -> str:
-        return body_hash(self.body)
+        return body_hash(self.body or b"")
 
 
 @dataclass
@@ -261,10 +265,12 @@ def diff_case(baseline: Case, case: Case, *, include_text: bool = True) -> FuzzR
 
     text_diff = ""
     warning = ""
-    if include_text and _is_textual_mime(case.mime) and _is_textual_mime(baseline.mime):
+    if include_text and baseline.body is not None and case.body is not None and _is_textual_mime(case.mime) and _is_textual_mime(baseline.mime):
         left = baseline.body.decode("utf-8", errors="replace") if isinstance(baseline.body, bytes) else baseline.body
         right = case.body.decode("utf-8", errors="replace") if isinstance(case.body, bytes) else case.body
         text_diff = _bounded_text_diff(left, right)
+    elif baseline.body is None or case.body is None:
+        warning = "body not captured on one or both sides — text diff skipped"
     else:
         warning = "binary or unknown mime — text diff skipped"
 

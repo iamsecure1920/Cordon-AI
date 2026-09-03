@@ -17,6 +17,7 @@ instead of an error.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -367,6 +368,7 @@ def in_scope_only(values: Iterable[str], *, phase: str, tool: str) -> tuple[list
 def store_assets(
     values: Iterable[str], *, kind: str, source: str, tags: list[str] | None = None,
     hosts: dict[str, str] | None = None,
+    attributes: dict[str, dict[str, Any]] | None = None,
 ) -> int:
     """Persist discovered assets.
 
@@ -375,13 +377,19 @@ def store_assets(
     would return the path itself; the caller that knows where the value was
     found (the bundle that served it) passes the binding so the exploit chain
     does not resolve every endpoint against every live host.
+
+    ``attributes`` optionally attaches per-value scalars (title, tech,
+    content_length, status…) so later phases — ``recon_review`` ranking hosts
+    for manual testing — can consume probe results without re-probing.
     """
     engagement = get_engagement()
+    attrs = attributes or {}
     return engagement.assets.add_many(
         Asset(
             value=value, kind=kind, source=source,
             host=(hosts or {}).get(value) or host_of(value),
             tags=list(tags or []),
+            attributes=dict(attrs.get(value) or {}),
         )
         for value in values
     )
@@ -495,11 +503,16 @@ def _verify_nmap(argv: list[str], exit_code: int, stdout: str) -> VerifyVerdict:
 
 
 def _verify_nuclei(argv: list[str], exit_code: int, stdout: str) -> VerifyVerdict:
-    # Empty JSON ([] or {"results":[]}) with exit 0 is nuclei saying "nothing
-    # matched" — but an empty result file can also mean the template library was
-    # not found (nuclei exits 0 with a warning to stderr).
-    empty_result = not stdout.strip() or ("{" in stdout and "results" in stdout and "}" in stdout)
-    if empty_result:
+    # A result carrying findings is a result. The check below must only look at
+    # genuinely empty output — the previous heuristic treated any stdout that
+    # merely *contained* the strings "{" and "results" and "}" as empty, so a
+    # successful scan printing real findings was reported UNTESTED.
+    try:
+        parsed = json.loads(stdout.strip()) if stdout.strip() else None
+    except json.JSONDecodeError:
+        parsed = None
+    has_results = bool(parsed) if isinstance(parsed, (list, dict)) else bool(stdout.strip())
+    if not has_results:
         return VerifyVerdict(
             "suspicious",
             "nuclei returned an empty result set — verify the template library "
@@ -535,6 +548,10 @@ def _verify_dalfox(argv: list[str], exit_code: int, stdout: str) -> VerifyVerdic
 
 
 def _verify_ffuf(argv: list[str], exit_code: int, stdout: str) -> VerifyVerdict:
+    # The check asks "did this run produce output I can read". ffuf writes its
+    # results to the file given by -o when -of json is set, so stdout silence is
+    # expected there — the wrapper reads the output file, not stdout. Only a
+    # run with NO -o whose stdout is empty is suspicious.
     if not stdout.strip() and "-o" not in " ".join(argv):
         return VerifyVerdict(
             "empty",

@@ -69,3 +69,7 @@ dashboard.json
 # React dashboard build artifacts — source is dashboard/src, lockfile is committed
 /dashboard/node_modules/
 /dashboard/dist/
+
+# Command Code agent session data (settings, learned taste) — local to this
+# machine, never part of the project.
+.commandcode/

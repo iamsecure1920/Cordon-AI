@@ -66,11 +66,23 @@ TIER_A = {
 
 TIER_B = {
     "xss.txt", "xsspollygots.txt", "xsswafbypss.txt", "sqli2.txt",
-    "allsqli.txt", "blindsqli.txt", "SQL.txt", "sqldb.txt", "sqlDB.txt",
+    "allsqli.txt", "blindsqli.txt", "SQL.txt", "sqldb.txt",
     "ssti.txt", "ssrf.txt", "lfi.txt", "crlf.txt", "xml.txt", "xor.txt",
     "all_attacks.txt", "jwt-secrets.txt", "pl.txt", "vulJs.txt",
     "android_all_permissions.txt", "github-dork.txt", "bambda.txt",
 }
+
+#: Operator-approved exception set. These four files carry content the
+#: destructive/callback detectors normally quarantine — ``xp_cmdshell`` RCE
+#: statements and third-party callback domains — and are deliberately kept in
+#: tier B (injection payloads, approval-gated) rather than quarantined:
+#: advanced payloads that recent testing wants available. The detectors still
+#: fire on any OTHER file, so the quarantine remains absolute for everything
+#: not named here. The dangerous-content reasons are recorded on the manifest
+#: entry either way — the exception is visible, never silent.
+FORCE_TIER_B: frozenset[str] = frozenset(
+    {"SQL.txt", "all_attacks.txt", "sqli2.txt", "xss.txt"}
+)
 
 # ── Dangerous-content detectors ──────────────────────────────────────────────
 
@@ -258,6 +270,16 @@ def classify(path: Path) -> FileVerdict:
             verdict.reasons.append(
                 f"{len(state)} state-changing path(s) — GET/HEAD only, never POST/PUT/DELETE"
             )
+
+    # The operator-approved exception: files named in FORCE_TIER_B stay in
+    # tier B even though the detectors above quarantined them. Their dangerous
+    # reasons are still recorded above, so the manifest says exactly why the
+    # file is risky while keeping it available behind the approval gate.
+    if path.name in FORCE_TIER_B:
+        verdict.tier = "B"
+        verdict.reasons.append(
+            "operator-approved tier-B exception (advanced payloads; approval-gated)"
+        )
     return verdict
 
 

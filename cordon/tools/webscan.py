@@ -772,13 +772,18 @@ def _flatten_testssl(data: Any, *, depth: int = 0) -> list[dict[str, Any]]:
     The shape changes with the target: a single-IP scan puts the records straight
     into ``scanResult``, a multi-IP scan nests them under per-target objects with
     a dozen category keys. Walking for the record shape survives both.
+
+    The early return on the first record hit was a bug: a dict carrying *one*
+    matching subrecord anywhere stopped the walk, so a nested scanResult with
+    dozens of checks returned exactly the first one and tls_audit reported
+    "checks: 1" for a host with fifty results. Every record must be collected.
     """
     out: list[dict[str, Any]] = []
     if depth > 6:
         return out
     if isinstance(data, dict):
         if "id" in data and "severity" in data:
-            return [{k: data.get(k) for k in ("id", "severity", "finding")}]
+            out.append({k: data.get(k) for k in ("id", "severity", "finding")})
         for value in data.values():
             out.extend(_flatten_testssl(value, depth=depth + 1))
     elif isinstance(data, list):

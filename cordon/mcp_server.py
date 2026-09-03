@@ -53,6 +53,7 @@ CAPABILITY_MODULES = [
     "cordon.engines.osmedeus_engine",
     "cordon.engines.strix_engine",
     "cordon.tools.recon",
+    "cordon.tools.recon_review",
     "cordon.tools.dns",
     "cordon.tools.http_probe",
     "cordon.tools.endpoints",
@@ -83,6 +84,8 @@ CAPABILITY_MODULES = [
     "cordon.tools.llmsec",
     "cordon.tools.triage_tools",
     "cordon.tools.report_tools",
+    "cordon.tools.workflow",
+    "cordon.tools.program_scope",
     # Catalog-only entries: no wrapper, but doctor and the report know them.
     "cordon.tools.extra_specs",
 ]
@@ -102,6 +105,16 @@ mcp: FastMCP = FastMCP(
         "direction to follow."
     ),
 )
+
+
+def make_tool_key(name: str) -> str:
+    """Stable registry key for one tool name.
+
+    FastMCP keys components as ``name@version``; with no version, tools are
+    keyed by name alone. One registry name therefore maps to exactly one MCP
+    surface name — the invariant a duplicate would break.
+    """
+    return f"{name}@"
 
 
 def load_capabilities() -> dict[str, str]:
@@ -142,16 +155,34 @@ def _module_failures(statuses: dict[str, str]) -> list[tuple[str, str]]:
     return [(mod, status) for mod, status in statuses.items() if status.startswith("error:")]
 
 
-def register_registry_tools(server: FastMCP, auth_config: AuthConfig | None = None) -> int:
+def register_registry_tools(
+    server: FastMCP,
+    auth_config: AuthConfig | None = None,
+    *,
+    phase: str | None = None,
+) -> int:
     """Expose every decorator-registered capability to FastMCP.
 
     When auth is enabled each tool also carries the OAuth scope its risk tier
     requires, so a token is a hard ceiling on what can be invoked — checked
     before the control plane's own gates, not instead of them.
+
+    ``phase`` slices the surface to one phase server's tool set (see
+    :mod:`cordon.phase_servers`). The slicing is registration-time only —
+    every registered tool still runs through the identical control-plane
+    chain, so a phase server is a smaller surface, never a weaker one.
     """
     auth_config = auth_config or AuthConfig()
+    from cordon.phase_servers import tools_for_phase
+
+    allowed_names: set[str] | None = None
+    if phase:
+        allowed_names = set(tools_for_phase(phase) or [])
     count = 0
+    seen_keys: dict[str, str] = {}
     for tool in registered_tools():
+        if allowed_names is not None and tool.name not in allowed_names:
+            continue
         annotations = {
             "readOnlyHint": tool.mode == "passive",
             "destructiveHint": tool.mode == "exploit",
@@ -165,14 +196,46 @@ def register_registry_tools(server: FastMCP, auth_config: AuthConfig | None = No
         if auth_config.enabled and auth_config.enforce_tool_scopes:
             required = scopes_for_tool(tool.name, tool.mode)
             description += f"\n\nRequires OAuth scope: {', '.join(required)}"
-        server.tool(
-            tool.fn,
-            name=tool.name,
-            description=description,
-            tags={tool.phase, tool.mode, *tool.tags},
-            annotations=annotations,
-            auth=auth_checks_for(tool.name, tool.mode, auth_config) or None,
-        )
+
+        # Tool-name collisions are a config bug (the same tool name registered
+        # twice), not something to resolve by "last one wins" — FastMCP logs a
+        # warning and the earlier definition silently disappears from the
+        # surface while the report still claims it. Deterministic surface: the
+        # registry's insertion order decides, and the loser is refused loudly.
+        key = make_tool_key(tool.name)
+        existing = seen_keys.get(key)
+        if existing is not None:
+            raise RuntimeError(
+                f"duplicate tool name {tool.name!r} — registered by both "
+                f"{existing} and {tool.origin or 'unknown'}. Tool names are the "
+                "MCP surface's contract with the agent; a silent shadowing would "
+                "remove a tool mid-engagement."
+            )
+        seen_keys[key] = tool.origin or "unknown"
+
+        # Per-tool timeout. Long scanners declare their own ceiling on the
+        # decorator; until now the server never read it, so a hung tool held
+        # the MCP session for the FastMCP default instead of its declared bound.
+        timeout = tool.timeout or 0
+        if timeout > 0:
+            server.tool(
+                tool.fn,
+                name=tool.name,
+                description=description,
+                tags={tool.phase, tool.mode, *tool.tags},
+                annotations=annotations,
+                auth=auth_checks_for(tool.name, tool.mode, auth_config) or None,
+                timeout=timeout,
+            )
+        else:
+            server.tool(
+                tool.fn,
+                name=tool.name,
+                description=description,
+                tags={tool.phase, tool.mode, *tool.tags},
+                annotations=annotations,
+                auth=auth_checks_for(tool.name, tool.mode, auth_config) or None,
+            )
         count += 1
     return count
 
@@ -333,19 +396,12 @@ async def approval_respond(token: str, decision: str, note: str | None = None) -
 # --------------------------------------------------------------------------- #
 # Jobs and slicing
 # --------------------------------------------------------------------------- #
-
-
-@mcp.tool(
-    name="job_status",
-    description="Poll a background scan launched by a *_launch tool.",
-    tags={"control", "jobs"},
-    annotations={"readOnlyHint": True, "openWorldHint": False},
-)
-async def job_status(job_id: str) -> dict[str, Any]:
-    try:
-        return {"ok": True, **get_engagement().jobs.status(job_id)}
-    except Exception as exc:  # noqa: BLE001
-        return _err(exc)
+#
+# ``job_status`` lives in cordon/tools/report_tools.py — the fuller version
+# that polls, waits, and lists. This module used to declare a second, thinner
+# ``job_status`` under the same name; FastMCP shadowed one with the other with
+# only a log warning, so the surface depended on import order. One name, one
+# tool: the registry version is the only one.
 
 
 @mcp.tool(
@@ -880,8 +936,13 @@ def build_server(
     scope_path: str | None = None,
     config_path: str | None = None,
     workspace: str | None = None,
+    phase: str | None = None,
 ) -> FastMCP:
-    """Load capabilities, optionally open an engagement, and return the server."""
+    """Load capabilities, optionally open an engagement, and return the server.
+
+    ``phase`` slices the registered surface to one phase server (see
+    :mod:`cordon.phase_servers`) — registration-time only, same control plane.
+    """
     from cordon.config import Config
     from cordon.plugins.loader import load_all
 
@@ -895,6 +956,14 @@ def build_server(
             "before serving; otherwise tools silently disappear from the MCP "
             "surface and the report claims scans that never ran."
         )
+
+    if phase:
+        from cordon.phase_servers import phase_server_names, tools_for_phase
+
+        if tools_for_phase(phase) is None:
+            raise RuntimeError(
+                f"unknown phase server {phase!r}; known: {', '.join(phase_server_names())}"
+            )
 
     # Rules and plugins load before registration, so a Python plugin's
     # @cordon_tool declarations are picked up in the same pass as builtins.
@@ -915,7 +984,7 @@ def build_server(
         mcp.auth = provider
         log.info("auth enabled: mode=%s base_url=%s", auth_config.mode, auth_config.base_url)
 
-    registered = register_registry_tools(mcp, auth_config)
+    registered = register_registry_tools(mcp, auth_config, phase=phase)
 
     # Second pass over everything on the server, including the control-plane
     # tools declared by decorator at import time. Without it those would be
@@ -966,6 +1035,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scope", default=os.environ.get("CORDON_SCOPE"))
     parser.add_argument("--config", default=os.environ.get("CORDON_CONFIG"))
     parser.add_argument("--workspace", default=None)
+    from cordon.phase_servers import phase_server_names
+
+    parser.add_argument(
+        "--phase",
+        default=os.environ.get("CORDON_PHASE"),
+        choices=phase_server_names(),
+        help="slice the surface to one phase server (default: full surface)",
+    )
     parser.add_argument("--transport", default="stdio", choices=["stdio", "http"])
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
@@ -988,7 +1065,10 @@ def main(argv: list[str] | None = None) -> int:
         assert_bind_is_safe(args.host, transport=args.transport, auth=auth_config)
 
         server = build_server(
-            scope_path=args.scope, config_path=args.config, workspace=args.workspace
+            scope_path=args.scope,
+            config_path=args.config,
+            workspace=args.workspace,
+            phase=args.phase,
         )
     except CordonError as exc:
         print(f"cordon: {exc}", file=sys.stderr)

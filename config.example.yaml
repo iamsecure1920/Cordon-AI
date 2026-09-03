@@ -29,11 +29,11 @@ approval:
       # discovery
       - bbot_scan_active
       - dns_permute
-      # port_scan / service_scan deliberately absent. Programs commonly
-      # exclude "attacks against infrastructure" (AT&T does, verbatim),
-      # which makes port scanning both unrewarded and outside the
-      # invitation. Add them back only for a program that scopes
-      # infrastructure explicitly.
+      # port_scan / service_scan deliberately absent. Many programs
+      # exclude "attacks against infrastructure" verbatim, which makes
+      # port scanning both unrewarded and outside the invitation. Add
+      # them back only for a program that scopes infrastructure
+      # explicitly.
       - content_discovery
       - param_discovery
       - waf_detect
@@ -449,6 +449,15 @@ payloads:
   # construction — ffuf's -X is not on the argument allowlist, so it cannot issue
   # anything but a read method.
   lists:
+    # ── Derived deduplicated files (scripts/dedupe_payloads.py --build) ─────
+    # The union of every tier A list with all duplicates removed. Millions of
+    # lines: use it deliberately (a program rate ceiling makes this a
+    # multi-day run against one host), never as a default.
+    discovery-unique:
+      file: discovery-unique.txt
+      tools: [ffuf, feroxbuster]
+      purpose: Every tier A (discovery) payload exactly once, deduplicated across
+        all vetted wordlists.
     # ── ffuf / feroxbuster: content discovery ──────────────────────────────
     admin:
       file: admin.txt

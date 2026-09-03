@@ -123,7 +123,16 @@ class JobManager:
         return job
 
     def _evict(self) -> None:
-        """Drop the oldest finished jobs once the table is full."""
+        """Keep the table within ``max_jobs``.
+
+        Finished jobs are dropped oldest-first when the table is full, but the
+        eviction sweep *stops* when it runs out of finished jobs — so a burst
+        of long-running scans could grow the table past ``max_jobs`` with
+        nothing evictable, and the limiter it was meant to bound silently
+        stopped binding. The manager now refuses a new job when the table is
+        full of running work, so the ceiling is the ceiling; long scans are
+        meant to be polled, not accumulated.
+        """
         if len(self._jobs) < self.max_jobs:
             return
         finished = [
@@ -132,6 +141,14 @@ class JobManager:
         ]
         for job in sorted(finished, key=lambda j: j.finished_at or 0)[: max(1, len(finished) // 4)]:
             self._jobs.pop(job.id, None)
+        if len(self._jobs) >= self.max_jobs:
+            # Everything still in flight: no silent unbounded growth.
+            raise CordonError(
+                f"job table is full ({self.max_jobs} running jobs). Wait for one "
+                "to finish — poll job_status/job_list — before launching more.",
+                code="job_table_full",
+                max_jobs=self.max_jobs,
+            )
 
     def get(self, job_id: str) -> Job:
         job = self._jobs.get(job_id)

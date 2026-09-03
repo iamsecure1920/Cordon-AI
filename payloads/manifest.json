@@ -75,13 +75,14 @@
     },
     {
       "name": "SQL.txt",
-      "tier": "C",
+      "tier": "B",
       "kind": "injection",
       "lines": 288,
       "sha256": "79e01a1cf18993d1ea0fd0ba0e7bedcad7e1091cc4e3c0a43f50957ab848f3b9",
       "get_only": false,
       "reasons": [
-        "6 destructive/RCE statement(s) \u2014 would damage a live target"
+        "6 destructive/RCE statement(s) \u2014 would damage a live target",
+        "operator-approved tier-B exception (advanced payloads; approval-gated)"
       ],
       "destructive": 6,
       "callbacks": [],
@@ -127,13 +128,14 @@
     },
     {
       "name": "all_attacks.txt",
-      "tier": "C",
+      "tier": "B",
       "kind": "injection",
       "lines": 466,
       "sha256": "b97f723024b5e3b863a5d1d62aced856b40b23253c139a8049d58cf81cd8155f",
       "get_only": false,
       "reasons": [
-        "2 destructive/RCE statement(s) \u2014 would damage a live target"
+        "2 destructive/RCE statement(s) \u2014 would damage a live target",
+        "operator-approved tier-B exception (advanced payloads; approval-gated)"
       ],
       "destructive": 2,
       "callbacks": [],
@@ -681,14 +683,15 @@
     },
     {
       "name": "sqli2.txt",
-      "tier": "C",
+      "tier": "B",
       "kind": "injection",
       "lines": 361,
       "sha256": "caa72fc1e3af4917cb35424037ed6ce2b37a3f478d9f337d783e0898ee472ed9",
       "get_only": false,
       "reasons": [
         "1 third-party callback(s) (xxx.burpcollaborator.net) \u2014 target data would leave to infrastructure we do not control",
-        "7 destructive/RCE statement(s) \u2014 would damage a live target"
+        "7 destructive/RCE statement(s) \u2014 would damage a live target",
+        "operator-approved tier-B exception (advanced payloads; approval-gated)"
       ],
       "destructive": 7,
       "callbacks": [
@@ -794,13 +797,14 @@
     },
     {
       "name": "xss.txt",
-      "tier": "C",
+      "tier": "B",
       "kind": "injection",
       "lines": 2669,
       "sha256": "ea12da3a31498263f043ac1b3e649c1fad21aa3caf93fa483a1a224fa6f5b46b",
       "get_only": false,
       "reasons": [
-        "1 third-party callback(s) (GH0ST.xss.ht) \u2014 target data would leave to infrastructure we do not control"
+        "1 third-party callback(s) (GH0ST.xss.ht) \u2014 target data would leave to infrastructure we do not control",
+        "operator-approved tier-B exception (advanced payloads; approval-gated)"
       ],
       "destructive": 0,
       "callbacks": [

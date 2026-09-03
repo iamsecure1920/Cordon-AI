@@ -237,12 +237,26 @@ def cordon_tool(
             verdicts: list[dict[str, Any]] = []
             try:
                 if targets_arg is not None:
+                    # "auto"/""/"-" are the inherit-from-asset-store sentinels
+                    # (see tools.common.targets_or_assets). They are not
+                    # targets: scope-checking them literally would refuse the
+                    # call before the tool can resolve them against the
+                    # engagement's discovered assets — and the resolved
+                    # targets are themselves scope-checked inside the wrapper.
+                    sentinel = {t.strip().lower() for t in targets if t.strip().lower() in {"auto", "-"}}
+                    checkable = [t for t in targets if t.strip().lower() not in {"auto", "-"}]
                     if not targets:
                         raise CordonError(
                             f"{tool_name}: no target supplied to a scope-checked tool",
                             tool=tool_name,
                         )
-                    verdicts = [v.to_dict() for v in engagement.scope.assert_all_in_scope(targets)]
+                    if checkable:
+                        verdicts = [v.to_dict() for v in engagement.scope.assert_all_in_scope(checkable)]
+                    elif not sentinel:
+                        raise CordonError(
+                            f"{tool_name}: no target supplied to a scope-checked tool",
+                            tool=tool_name,
+                        )
             except Exception as exc:
                 refuse(exc, getattr(exc, "details", {}).get("refused"))
                 raise

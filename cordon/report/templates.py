@@ -21,23 +21,9 @@ __all__ = [
     "NEEDS_REVIEW_INTRO",
     "NO_POC_NOTE",
     "PARTIAL_BANNER",
-    "SECTION_TITLES",
     "closing_statement",
     "severity_guidance",
 ]
-
-SECTION_TITLES = {
-    "authorization": "Authorization",
-    "executive": "Executive summary",
-    "confirmed": "Confirmed findings",
-    "needs_review": "Needs manual review",
-    "untriaged": "Untriaged candidates",
-    "scope": "Scope",
-    "methodology": "Methodology",
-    "tools": "Tool inventory",
-    "coverage": "Coverage and cost",
-    "audit": "Audit trail",
-}
 
 CONFIRMED_INTRO = (
     "Each finding below was reproduced with a proof of concept. The steps are "
@@ -66,11 +52,6 @@ PARTIAL_BANNER = (
     "> **PARTIAL REPORT** — the run stopped early: {reason}. Coverage is "
     "incomplete; treat the absence of a finding as unknown, not as evidence of "
     "absence."
-)
-
-UNTRIAGED_INTRO = (
-    "Raised by a scanner and not yet examined. Included for completeness — these "
-    "have had no analysis applied and should not be read as findings."
 )
 
 AUDIT_NOTE = (

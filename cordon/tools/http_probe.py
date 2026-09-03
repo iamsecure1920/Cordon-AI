@@ -40,22 +40,32 @@ HTTPX = register_spec(
             tool="httpx",
             allowed_flags={
                 "-l", "-u", "-json", "-silent", "-nc", "-duc", "-title", "-tech-detect",
-                "-status-code", "-content-length", "-web-server", "-ip", "-cname",
+                "-status-code", "-content-length", "-content-type", "-web-server", "-ip", "-cname",
                 "-follow-redirects", "-timeout", "-threads", "-rl", "-retries", "-ports",
                 "-H", "-o", "-favicon", "-jarm", "-location", "-cdn", "-mc", "-fc",
+                "-screenshot", "-ss", "-srd", "-system-chrome", "-esb",
+                "-no-screenshot-full-page", "-st",
             },
             boolean_flags={
                 "-json", "-silent", "-nc", "-duc", "-title", "-tech-detect", "-status-code",
-                "-content-length", "-web-server", "-ip", "-cname", "-follow-redirects",
-                "-favicon", "-jarm", "-location", "-cdn",
+                "-content-length", "-content-type", "-web-server", "-ip", "-cname", "-follow-redirects",
+                "-favicon", "-jarm", "-location", "-cdn", "-screenshot", "-ss",
+                "-system-chrome", "-esb", "-no-screenshot-full-page",
             },
-            value_patterns={"-u": HOST_PATTERN, "-ports": re.compile(r"[0-9,\-]{1,64}")},
+            value_patterns={
+                "-u": HOST_PATTERN,
+                "-ports": re.compile(r"[0-9,\-]{1,64}"),
+                "-srd": re.compile(r"[A-Za-z0-9._/-]{1,512}"),
+            },
             # -threads is a worker count, not a rate: httpx holds a worker for the
             # full connect timeout, so a 60k-host estate at 20 rps and a 5s
             # timeout needs ~100 workers to actually reach the ceiling (the old
             # cap of 50 left it at ~10 rps, and 8 left it at ~1-2 rps). The
             # engagement's -rl stays the binding control.
-            numeric_caps={"-timeout": 30, "-threads": 100, "-rl": 150, "-retries": 2},
+            numeric_caps={
+                "-timeout": 30, "-threads": 100, "-rl": 150, "-retries": 2,
+                "-st": 15,
+            },
         ),
     )
 )
@@ -99,12 +109,20 @@ WAFW00F = register_spec(
     name="http_probe", tags={"recon", "http"}, estimated_requests=100,
 )
 async def http_probe(
-    target: str, ports: str | None = None, follow_redirects: bool = True
+    target: str,
+    ports: str | None = None,
+    follow_redirects: bool = True,
+    screenshots: bool = False,
+    max_screenshots: int = 25,
 ) -> dict[str, Any]:
     """Probe hosts for live HTTP services: status, title, tech, server, IP.
 
     One request per host per scheme, at the engagement's rate limit. Rule-packs
     are evaluated against each response, so native detections surface here.
+    Content-length and content-type are reported per host — the two scalars
+    that separate a real application from a parked page or an error shell —
+    and ``screenshots=True`` captures render-time evidence of the most
+    interesting hosts (requires a headless browser where httpx runs).
     """
     engagement = get_engagement()
     # Called with no target, this probes whatever recon found. That is the
@@ -120,6 +138,7 @@ async def http_probe(
         "-l", str(targets_file),
         "-json", "-silent", "-nc", "-duc",
         "-title", "-tech-detect", "-status-code", "-content-length",
+        "-content-type",
         "-web-server", "-ip", "-cname", "-cdn", "-location",
         # Liveness probing does not need a 10s wait or a retry per dead name.
         # On a 60k-host estate the dead names dominate the runtime: each one
@@ -165,6 +184,7 @@ async def http_probe(
             "tech": record.get("tech") or [],
             "server": record.get("webserver"),
             "content_length": record.get("content_length"),
+            "content_type": record.get("content_type"),
             # httpx's "host" is the hostname it was given, not an address —
             # the resolved address is "host_ip", with "a" as the record list.
             # Reading "host" here put hostnames into a field the asset store and
@@ -175,9 +195,26 @@ async def http_probe(
             else record.get("cname"),
             "cdn": record.get("cdn_name"),
             "final_url": record.get("final_url") or record.get("location"),
+            "favicon_hash": record.get("hash"),
+            "tls": record.get("tls"),
         }
         live.append(entry)
-        store_assets([url], kind="url", source="httpx", tags=["live"])
+        store_assets(
+            [url],
+            kind="url",
+            source="httpx",
+            tags=["live"],
+            attributes={
+                url: {
+                    "title": entry["title"],
+                    "tech": entry["tech"],
+                    "content_length": entry["content_length"],
+                    "content_type": entry["content_type"],
+                    "status": entry["status"],
+                    "server": entry["server"],
+                }
+            },
+        )
         for tech in entry["tech"]:
             technologies[str(tech)] = technologies.get(str(tech), 0) + 1
             store_assets([str(tech)], kind="technology", source="httpx")
@@ -224,6 +261,48 @@ async def http_probe(
     engagement.assets.save(engagement.workspace / "assets.json")
     engagement.findings.save()
 
+    # Screenshots: a second, bounded httpx pass over the most interesting
+    # hosts. Ranked by content-length (real applications are larger than
+    # parked/error pages), capped so a 60k-host estate does not become a
+    # screenshot campaign. Degrades cleanly when no headless browser exists.
+    shots: list[dict[str, Any]] = []
+    if screenshots and live:
+        ranked = sorted(
+            live,
+            key=lambda e: (int(e.get("content_length") or 0), -len(e.get("tech") or [])),
+            reverse=True,
+        )[: max(1, min(max_screenshots, 50))]
+        shot_dir = engagement.workspace / "evidence" / "screenshots"
+        shot_dir.mkdir(parents=True, exist_ok=True)
+        shot_targets = engagement.raw_path("httpx-shots", "txt")
+        shot_targets.write_text("\n".join(e["url"] for e in ranked) + "\n", encoding="utf-8")
+        shot_run = await run_one(
+            "httpx",
+            [
+                "-l", str(shot_targets),
+                "-silent", "-nc", "-duc",
+                "-screenshot", "-system-chrome", "-esb",
+                "-srd", str(shot_dir),
+                "-st", "10",
+                "-threads", str(max(1, min(engagement.scope.rules.max_concurrency, 10))),
+                "-rl", str(max(1, int(engagement.scope.rules.max_rps))),
+                "-timeout", "10",
+            ],
+            timeout=600,
+        )
+        if shot_run.ran:
+            for png in sorted(shot_dir.glob("*.png")):
+                host = png.stem
+                for entry in ranked:
+                    if host in entry["url"]:
+                        shots.append({"url": entry["url"], "screenshot": str(png)})
+                        break
+            if not shots:
+                shots = [
+                    {"url": e["url"], "screenshot": None}
+                    for e in ranked
+                ]
+
     # httpx buffers its JSON output, so a kill at the timeout discards everything
     # it had found. Measured: 764 hosts at 5 rps, ~35% of them dead names each
     # costing a 15s connect timeout, ran past the 800s ceiling and returned zero
@@ -246,6 +325,7 @@ async def http_probe(
         "services": live,
         "technologies": dict(sorted(technologies.items(), key=lambda kv: -kv[1])),
         "rule_matches": rule_hits,
+        "screenshots": shots,
         "tools": [run.to_dict()],
         "next_step": (
             "Crawl the interesting services with endpoint_discovery, then scan "

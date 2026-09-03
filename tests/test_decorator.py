@@ -97,6 +97,33 @@ class TestScopeEnforcement:
     async def test_untargeted_tool_needs_no_scope_check(self, engagement) -> None:
         assert (await REGISTRY["t_untargeted"].fn())["ok"]
 
+    async def test_auto_sentinel_passes_the_scope_gate(self, engagement) -> None:
+        # "auto"/"-" are the inherit-from-asset-store sentinels
+        # (tools.common.targets_or_assets). They are not targets: the gate
+        # must let them through so the tool can resolve them against the
+        # engagement's discovered assets — and those resolved targets are
+        # scope-checked by the wrapper itself. Gate-checking the literal
+        # string "auto" used to refuse every unattended scan.
+        assert (await REGISTRY["t_passive"].fn(target="auto"))["ok"]
+        assert (await REGISTRY["t_passive"].fn(target="-"))["ok"]
+
+    async def test_sentinel_mixed_with_an_out_of_scope_target_is_still_refused(self, engagement) -> None:
+        with pytest.raises(OutOfScopeError):
+            await REGISTRY["t_passive"].fn(target="auto, evil.example.net")
+        assert TOUCHED == []
+
+    async def test_sentinel_mixed_with_an_in_scope_target_runs(self, engagement) -> None:
+        result = await REGISTRY["t_passive"].fn(target="auto, www.example.com")
+        assert result["hosts"] == ["auto, www.example.com"]
+
+    async def test_only_sentinel_never_masquerades_as_no_target(self, engagement) -> None:
+        # A bare junk target that is not the sentinel must still be refused.
+        # (not-a-real-host.example.com would match the fixture's *.example.com
+        # wildcard, so use a domain clearly outside the test scope.)
+        with pytest.raises(OutOfScopeError):
+            await REGISTRY["t_passive"].fn(target="attacker-owned.example.net")
+        assert TOUCHED == []
+
 
 class TestSanitizeEnforcement:
     async def test_injection_in_a_non_target_argument_is_refused(self, engagement) -> None:

@@ -30,6 +30,7 @@ from typing import Any
 
 from cordon.control_plane.context import get_engagement
 from cordon.control_plane.sanitize import ArgPolicy
+from cordon.errors import OutOfScopeError
 from cordon.knowledge.findings import Evidence, Finding, Severity, Status
 from cordon.tools.base import ToolSpec, cordon_tool
 from cordon.tools.common import URL_PATTERN, register_spec, run_one, split_targets
@@ -330,23 +331,34 @@ async def forbidden_candidates(urls: list[str]) -> dict[str, Any]:
     if not urls:
         return {"ok": True, "candidates": [], "checked": 0, "count": 0}
 
-    import httpx as _httpx  # the Python client — this tool's own HTTP, not a catalog binary
+    # Every HEAD goes through the central network gate: scope check, one
+    # rate-limit token, and an audit record per URL. This used to fire raw
+    # httpx requests with no scope check and no limiter charge — a passive
+    # tool sending ungoverned, unaudited traffic at whatever it was handed.
+    from cordon.control_plane.net import HttpRequest, http_request
 
     checked: list[dict[str, Any]] = []
-    async with _httpx.AsyncClient(
-        timeout=10.0,
-        follow_redirects=False,
-        # Deliberate: pre-checking may hit self-signed lab or internal hosts,
-        # exactly like unkover's own curl -sk.
-        verify=False,  # noqa: S501
-    ) as client:
-        for url in urls:
-            try:
-                r = await client.head(url)
-            except Exception as exc:  # noqa: BLE001 — a dead URL is not a candidate
-                log.debug("forbidden_candidates HEAD %s failed: %s", url, exc)
-                continue
-            checked.append({"url": url, "status": r.status_code})
+    for url in urls:
+        try:
+            r = await http_request(
+                HttpRequest(
+                    url=url,
+                    method="HEAD",
+                    timeout=10.0,
+                    follow_redirects=False,
+                    client_kwargs={
+                        # Deliberate: pre-checking may hit self-signed lab or
+                        # internal hosts, exactly like unkover's own curl -sk.
+                        "verify": False,  # noqa: S501
+                    },
+                )
+            )
+        except OutOfScopeError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — a dead URL is not a candidate
+            log.debug("forbidden_candidates HEAD %s failed: %s", url, exc)
+            continue
+        checked.append({"url": url, "status": r.status_code})
     candidates = [c for c in checked if c["status"] == 403]
     return {
         "ok": True,

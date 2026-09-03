@@ -69,6 +69,36 @@ class PayloadStore:
         if manifest_path.is_file():
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
             self._manifest = {entry["name"]: entry for entry in data.get("files", [])}
+        self._load_derived()
+
+    def _load_derived(self) -> None:
+        """Merge the derived deduplicated files (``unique/``) into the manifest.
+
+        The derived manifest maps each consolidated file to its on-disk path
+        under ``unique/``; the store root may sit in the image, so the
+        manifest's relative ``path`` is resolved against the store root.
+        """
+        derived = self.root / "unique" / "manifest.json"
+        if not derived.is_file():
+            return
+        try:
+            data = json.loads(derived.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        for entry in data.get("files", []):
+            name = str(entry.get("name") or "")
+            if not name:
+                continue
+            copy = dict(entry)
+            copy["_path"] = copy.pop("path", None)
+            copy["derived"] = True
+            self._manifest[name] = copy
+
+    def _path_for(self, entry: dict[str, Any]) -> Path:
+        """Resolve an entry to its file path — vetted tiers or derived."""
+        if entry.get("_path"):
+            return self.root / str(entry["_path"])
+        return self.root / entry["tier"] / entry["name"]
 
     @property
     def available(self) -> bool:
@@ -90,9 +120,24 @@ class PayloadStore:
         return entry
 
     def resolve(self, name: str, *, allow_tier_b: bool = False) -> PayloadList:
-        """Look up one list by name, enforcing its tier."""
+        """Look up one list by name, enforcing its tier.
+
+        Names resolve against the config aliases first; derived deduplicated
+        files (``unique/*``) also resolve by their own filename, so
+        ``payload_catalog``'s ``derived: true`` entries are usable, not just
+        listable.
+        """
         alias = self._aliases.get(name)
+        derived_entry: dict[str, Any] | None = None
         if alias is None:
+            # Derived files are keyed by filename; accept both the bare name
+            # ("injection-unique") and the filename ("injection-unique.txt").
+            candidate = self._manifest.get(name)
+            if candidate is None and not name.endswith(".txt"):
+                candidate = self._manifest.get(f"{name}.txt")
+            if candidate and candidate.get("derived"):
+                derived_entry = candidate
+        if alias is None and derived_entry is None:
             raise PayloadError(
                 f"unknown payload list {name!r}. Known lists: "
                 f"{', '.join(sorted(self._aliases))}"
@@ -103,7 +148,7 @@ class PayloadStore:
                 "python3 scripts/vet_payloads.py --fetch"
             )
 
-        filename = alias["file"]
+        filename = alias["file"] if alias else derived_entry["name"]
         entry = self._entry(filename)
         tier = entry["tier"]
 
@@ -120,11 +165,12 @@ class PayloadStore:
                 "wordlist. It belongs to an approval-gated exploitation tool."
             )
 
-        path = self.root / tier / filename
+        path = self._path_for(entry)
         if not path.is_file():
             raise PayloadError(
                 f"{name!r} is in the manifest but missing from disk at {path}. "
-                "Re-run: python3 scripts/vet_payloads.py --fetch"
+                "Re-run: python3 scripts/vet_payloads.py --fetch "
+                "(and scripts/dedupe_payloads.py --build for derived lists)"
             )
 
         return PayloadList(
@@ -134,12 +180,17 @@ class PayloadStore:
             lines=int(entry.get("lines", 0)),
             kind=entry.get("kind", "wordlist"),
             get_only=bool(entry.get("get_only", False)),
-            tools=tuple(alias.get("tools", ())),
-            purpose=alias.get("purpose", ""),
+            tools=tuple((alias or {}).get("tools", ())),
+            purpose=(alias or {}).get("purpose", "") or entry.get("purpose", ""),
         )
 
     def catalog(self, *, tool: str | None = None) -> list[dict[str, Any]]:
-        """Every resolvable list, optionally filtered to one tool."""
+        """Every resolvable list, optionally filtered to one tool.
+
+        Derived deduplicated files (``unique/*.txt``) are included when no
+        ``tool`` filter is given, flagged ``derived: True`` so a caller can
+        tell the consolidated lists from the vetted originals.
+        """
         listed: list[dict[str, Any]] = []
         for name, alias in sorted(self._aliases.items()):
             if tool and tool not in alias.get("tools", ()):
@@ -156,6 +207,21 @@ class PayloadStore:
                 "tools": list(alias.get("tools", ())),
                 "purpose": alias.get("purpose", ""),
             })
+
+        if tool is None:
+            for name, entry in sorted(self._manifest.items()):
+                if not entry.get("derived") or entry["tier"] == "C":
+                    continue
+                listed.append({
+                    "name": name,
+                    "file": name,
+                    "tier": entry["tier"],
+                    "lines": entry.get("lines", 0),
+                    "get_only": bool(entry.get("get_only", False)),
+                    "tools": [],
+                    "purpose": entry.get("purpose", ""),
+                    "derived": True,
+                })
         return listed
 
 

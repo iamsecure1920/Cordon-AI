@@ -81,7 +81,7 @@ rules:
   max_concurrency: 5
   # Aggressive tools additionally require per-call human approval.
   allow_aggressive: true
-  allow_exploitation: true
+  allow_exploitation: false  # set true only when the program's policy authorizes exploitation
   # Whether the program's policy permits creating test accounts. Creating an
   # account is a state change on the target, so this defaults to false and only
   # the program's own words — transcribed here — may turn it on. Silence is not

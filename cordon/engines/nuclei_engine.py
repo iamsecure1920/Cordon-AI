@@ -404,19 +404,32 @@ async def _size_unattended_scan(
                 },
             )
         # The tier fits some targets but not all. The tightest tier is the last
-        # word on what can fit; anything before it, keep trying to fit everyone.
+        # word on what can fit in ONE pass — but a truncated single pass
+        # leaves the rest of the estate permanently unscanned, which is the
+        # failure this gate exists to prevent wearing a different shape.
+        # Rather than stopping at "scanned 216 of 3,097", batch the estate:
+        # the same ceiling admits repeated passes until every live URL has
+        # been covered at this tier. The caller runs the batches in sequence;
+        # each batch is a scan of its own with honest per-batch coverage.
         if tier == _SEVERITY_TIERS[-1]:
             ordered = _prioritize_targets(engagement, targets)
-            kept = ordered[:max_targets]
+            batches = [
+                ordered[i : i + max_targets]
+                for i in range(0, len(ordered), max_targets)
+            ]
+            first, rest = batches[0], batches[1:]
             return (
-                kept,
+                first,
                 tier,
                 {
                     "templates": count,
                     "severity": tier,
                     "truncated": True,
-                    "scanned": len(kept),
+                    "scanned": len(first),
                     "total": len(targets),
+                    "batches_total": len(batches),
+                    "remaining_batches": [b for b in rest],
+                    "per_batch_seconds": int(max_targets * per_target / rps),
                 },
             )
     return None
@@ -791,6 +804,13 @@ async def nuclei_scan(
             severity=severity,
         )
 
+    # When the sizing gate batched a large estate, the returned ``targets`` is
+    # only the first batch. Run the remaining batches in sequence — each is a
+    # job of its own with honest per-batch coverage — so "scan everything
+    # live" actually means it instead of silently scanning a prefix.
+    remaining_batches: list[list[str]] = list((sizing or {}).get("remaining_batches") or [])
+    scanned_findings: list[dict[str, Any]] = []
+
     job = engagement.jobs.launch(
         lambda j: _run(
             j,
@@ -816,15 +836,68 @@ async def nuclei_scan(
         if not explicit_selection and "sizing" in locals():
             result["selection"] = {"tags": tags, "severity": severity}
             result["sizing"] = sizing
-        return result
-    return {
-        "job_id": job.id,
-        "completed": False,
-        "status": payload.get("status"),
-        "progress": payload.get("progress"),
-        "error": payload.get("error"),
-        "next_step": (
-            f"Still scanning. Poll job_status('{job.id}'), then pull results with "
-            f"fetch_slice('{job.id}', path='findings', where='high|critical')."
-        ),
-    }
+    else:
+        return {
+            "job_id": job.id,
+            "completed": False,
+            "status": payload.get("status"),
+            "progress": payload.get("progress"),
+            "error": payload.get("error"),
+            "next_step": (
+                f"Still scanning. Poll job_status('{job.id}'), then pull results with "
+                f"fetch_slice('{job.id}', path='findings', where='high|critical')."
+            ),
+        }
+    first_batch = result
+    scanned_findings.extend(first_batch.get("findings") or [])
+
+    for batch_index, batch in enumerate(remaining_batches, start=1):
+        batch_label = batch_index + 1
+        batch_total = (sizing or {}).get("batches_total")
+        batch_job = engagement.jobs.launch(
+            lambda j, b=batch, label=batch_label, total=batch_total: _run(
+                j,
+                targets=b,
+                templates=templates,
+                workflow=workflow,
+                tags=tags,
+                severity=severity,
+                concurrency=concurrency,
+                sizing={**sizing, "batch": label, "batches_total": total},
+            ),
+            tool="nuclei_scan",
+            phase="vuln_scan",
+            targets=batch,
+        )
+        batch_payload = await engagement.jobs.wait(
+            batch_job.id, timeout=max(0.0, min(wait_seconds, 300))
+        )
+        if batch_payload.get("ready") and batch_payload.get("ok"):
+            batch_result = batch_payload.get("result") or {}
+            scanned_findings.extend(batch_result.get("findings") or [])
+            engagement.audit.record(
+                "nuclei_batch",
+                batch=batch_index + 1,
+                of=(sizing or {}).get("batches_total"),
+                targets=len(batch),
+                findings=len(batch_result.get("findings") or []),
+            )
+        else:
+            engagement.audit.record(
+                "nuclei_batch_incomplete",
+                batch=batch_index + 1,
+                of=(sizing or {}).get("batches_total"),
+                targets=len(batch),
+                error=str(batch_payload.get("error") or batch_payload.get("status")),
+            )
+
+    first_batch["findings"] = scanned_findings
+    first_batch["count"] = len(scanned_findings)
+    first_batch["batches_run"] = 1 + len(remaining_batches)
+    if remaining_batches:
+        first_batch["note"] = (
+            f"Scanned the full estate in {first_batch['batches_run']} batches "
+            f"({first_batch.get('sizing', {}).get('batches_total')} planned). "
+            "Findings above are the union of all batches."
+        )
+    return first_batch

@@ -317,7 +317,12 @@ class LLMClient:
                     last_error = exc
                     status = getattr(exc, "status_code", None)
                     message = str(exc).lower()
-                    rate_limited = status == 429 or "rate" in message and "limit" in message
+                    # ``and`` means: BOTH must hold. The old ``or`` here
+                    # classified every error mentioning "rate" or "limit" — a
+                    # 401 whose body says "rate limits are lower for trial
+                    # accounts" — as rate limiting and burned all retries on
+                    # an auth failure that can never succeed.
+                    rate_limited = status == 429 or ("rate" in message and "limit" in message)
 
                     if status in {400, 401, 403} and not rate_limited:
                         raise LLMError(

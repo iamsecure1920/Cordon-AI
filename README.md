@@ -4,9 +4,9 @@
 
 **An agentic VAPT orchestrator where the control plane — not the model — is the security boundary.**
 
-[![Tests](https://img.shields.io/badge/tests-2%2C231-brightgreen)](#development)
-[![Tools](https://img.shields.io/badge/tools-85%20catalogued-blue)](#every-tool-it-drives)
-[![MCP](https://img.shields.io/badge/MCP-94%20tools-8A2BE2)](#every-tool-it-drives)
+[![Tests](https://img.shields.io/badge/tests-2%2C263-brightgreen)](#development)
+[![Tools](https://img.shields.io/badge/tools-83%20catalogued-blue)](#every-tool-it-drives)
+[![MCP](https://img.shields.io/badge/MCP-101%20tools-8A2BE2)](#every-tool-it-drives)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#quick-start)
 [![Sandbox](https://img.shields.io/badge/sandbox-read--only%20%C2%B7%20caps%20dropped-orange)](#why-this-is-not-another-scanner-wrapper)
 [![License](https://img.shields.io/badge/license-see%20LICENSE-lightgrey)](LICENSE)
@@ -186,11 +186,47 @@ touching the run:
 {"phase":"cors","state":"failed","tool":"cors_audit","message":"killed at the timeout — UNTESTED, not clean"}
 ```
 
+### Phase-sliced MCP servers
+
+One MCP server per engagement phase. Each exposes only that phase's tools plus
+the shared control surface (scope, jobs, task graph, status), so an agent does
+not page through 101 tools to do recon:
+
+| Server | Surface |
+| --- | --- |
+| `cordon serve --phase recon` | subdomain enum, DNS, CDN, TLS, whois, ASN |
+| `cordon serve --phase probe` | liveness, tech fingerprint, WAF/CORS posture, `recon_review` (ranks hosts worth a human's login/signup) |
+| `cordon serve --phase endpoints` | gau/waybackurls/katana crawling, arjun/paramspider params, content discovery, JS analysis |
+| `cordon serve --phase scan` | nuclei, jaeles, ports, services, general scanners |
+| `cordon serve --phase exploit` | every injection validator + the auto-chain |
+| `cordon serve --phase workflow` | engagements, resumable pipeline, findings, reports |
+
+Slicing happens at registration time only — every tool still runs through the
+identical scope → sanitize → budget → rate → approval → audit chain.
+
+### Running it inside any AI agent CLI
+
+Cordon speaks MCP stdio, which Claude Code, Cursor, Windsurf, Gemini CLI,
+GitHub Copilot and any other MCP client already understand. Pick the agent and
+the phase, and `cordon connect` prints the exact registration (or runs it for
+CLIs that support one-line registration):
+
+```bash
+# The agent you use is auto-detected; prints the registration for it
+cordon connect --phase recon
+
+# Or target one explicitly; Cursor/Windsurf/Gemini/Copilot print the config
+# JSON for their mcp.json, Claude Code registers directly
+cordon connect --agent claude --phase probe
+cordon connect --agent cursor --phase scan --print-only
+cordon connect --agent generic   # raw stdio command for any MCP client
+```
+
 ---
 
 ## Every tool it drives
 
-**94 MCP tools** over **85 catalogued binaries**.
+**101 MCP tools** over **83 catalogued binaries**.
 `·` passive · `!` aggressive · `!!` exploit — the mode decides whether a human is consulted.
 
 | Category | Binaries |
@@ -227,7 +263,7 @@ grouped by phase.
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q          # 2,231 tests
+.venv/bin/python -m pytest tests/ -q          # 2,263 tests
 .venv/bin/ruff check cordon/ tests/
 cordon doctor                                # executed, not just found on PATH
 ```

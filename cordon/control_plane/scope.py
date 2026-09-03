@@ -276,7 +276,12 @@ class ScopeRules:
     max_rps: float = 5.0
     max_concurrency: int = 5
     allow_aggressive: bool = True
-    allow_exploitation: bool = True
+    #: Default False: exploitation is a decision the program must authorize in
+    #: writing, and the shipped templates no longer opt in on the operator's
+    #: behalf. A template that said ``allow_exploitation: true`` meant the very
+    #: first engagement a user copied the file into ran sqlmap without them
+    #: ever reading that line.
+    allow_exploitation: bool = False
     #: Wall-clock ceiling (seconds) a scanner may plan against before it narrows
     #: its selection. The nuclei sizing gate tiers DOWN severity until the full
     #: target set fits ``rps x ceiling``; a 3600s default forces critical-only
@@ -313,7 +318,7 @@ class ScopeRules:
             max_rps=float(data.get("max_rps", 5)),
             max_concurrency=int(data.get("max_concurrency", 5)),
             allow_aggressive=bool(data.get("allow_aggressive", True)),
-            allow_exploitation=bool(data.get("allow_exploitation", True)),
+            allow_exploitation=bool(data.get("allow_exploitation", False)),
             scan_ceiling_seconds=float(data.get("scan_ceiling_seconds", 3600)),
             allow_self_registration=bool(data.get("allow_self_registration", False)),
             no_dos=bool(data.get("no_dos", True)),

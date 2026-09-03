@@ -569,6 +569,9 @@ async def content_discovery(
     # compare one scalar; body-hash clustering catches the catch-all page even
     # when its length drifts between requests, and labels each cluster as
     # distinct vs catch-all so a report can say what was actually discovered.
+    # The baseline is the soft-404 probe responses (``baseline["sizes"]``), and
+    # ``label_clusters`` needs a Case to compare against — so the baseline
+    # probe's bodies are built into Case objects rather than discarded.
     from cordon.tools.fuzz_diff import Case, group_cases, label_clusters
 
     cluster_view: dict[str, Any] = {"counts": {"distinct": 0, "catch_all": 0, "unclassified": 0}}
@@ -583,7 +586,13 @@ async def content_discovery(
             for r in results
             if r.get("url")
         ]
-        clusters = group_cases(cases, baseline=None)
+        baseline_case = Case(
+            url=fuzz_url.replace("FUZZ", "<baseline>"),
+            status=sorted(baseline["statuses"])[0] if baseline["statuses"] else None,
+            body="",
+            headers={},
+        )
+        clusters = group_cases(cases, baseline=baseline_case)
         # Label a cluster as the catch-all when every member's length sits in
         # the soft-404 baseline size set (the probe's random-string pages) —
         # body hashes are usually absent from a silent ffuf run, so length is
@@ -596,10 +605,26 @@ async def content_discovery(
                 and cluster.length_max in baseline["sizes"]
             ):
                 cluster.different_from_baseline = False
-        cluster_view = label_clusters(clusters, baseline=None)
+        cluster_view = label_clusters(clusters, baseline=baseline_case)
 
     found = [r["url"] for r in results if r.get("url")]
     kept, dropped = in_scope_only(found, phase="endpoints", tool="content_discovery")
+
+    # Drop soft-404 clusters from the kept set, and count what was removed so
+    # the ``dropped`` figure stays truthful. ``catch_all`` is populated by
+    # label_clusters, which labels a cluster as the catch-all when its members'
+    # body hashes match the baseline's — so this can only fire when ffuf was
+    # run without -s and returned real bodies.
+    if cluster_view.get("catch_all"):
+        catch_all_urls = {
+            u
+            for c in cluster_view["catch_all"]
+            for u in c.get("sample_urls", [])
+        }
+        before = len(kept)
+        kept = [u for u in kept if u not in catch_all_urls]
+        dropped += before - len(kept)
+
     store_assets(kept, kind="url", source="ffuf", tags=["brute-forced"])
 
     # A wordlist run that found nothing is verified before it reads as clean:

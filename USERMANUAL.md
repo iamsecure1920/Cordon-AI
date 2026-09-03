@@ -1,7 +1,7 @@
 # Cordon AI — Complete User Manual
 
 > **Cordon AI** is an agentic VAPT (Vulnerability Assessment and Penetration
-> Testing) orchestrator. It drives **94 MCP tools over 85 catalogued open-source
+> Testing) orchestrator. It drives **101 MCP tools over 83 catalogued open-source
 > security binaries** behind a mandatory, server-side control plane. The AI model
 > supplies *strategy*; the MCP server decides *what is permitted* and enforces it
 > in code; the sandboxed engines do the work. **The model never holds a shell.**
@@ -677,11 +677,11 @@ the live registry, not just against each other.
 
 ## 10. Every tool it drives
 
-**94 MCP tools** over **85 catalogued binaries**. The authoritative list is
+**101 MCP tools** over **83 catalogued binaries**. The authoritative list is
 generated from `cordon/install/recipes.py` into the
 [Master Tool Matrix in `tools.md`](tools.md#master-tool-matrix), with
 per-tool purpose and usage in the profiles below it. It is generated because
-the hand-maintained version drifted to 53 of 85 tools without anything
+the hand-maintained version drifted to 53 of 83 tools without anything
 failing.
 
 For what is working on *this* machine — executed inside the container it will
@@ -696,26 +696,12 @@ human is consulted before the call runs.
 
 | Phase | Tools |
 |---|---|
-| **Recon** | `subdomain_enum` `asn_lookup` `whois_lookup` `tls_info` `bbot_scan` `bbot_scan_active`! `osmedeus_flow`! |
-| **DNS** | `dns_resolve` `cdn_check` `dns_permute`! |
-| **HTTP** | `http_probe` `waf_detect` `tls_audit` `cors_audit` |
-| **Endpoints** | `endpoint_discovery` `content_discovery`! `param_discovery`! `graphql_audit` `websocket_probe` `payload_catalog` `fuzz_compare` |
-| **Bypass** | `waf_bypass` `fingerprint_waf` `waf_vendors` `forbidden_bypass`! `forbidden_candidates` |
-| **Prompts** | `exploit_prompt` `prompt_classes` |
-| **White-box** | `code_audit` `source_fetch` `semgrep_scan` |
-| **Handoff** | `burp_send`! (forwards scope-checked requests through the operator's Burp proxy for manual review) |
-| **JavaScript** | `js_analyze` |
-| **Ports** | `port_scan`! `service_scan`! |
-| **Takeover** | `takeover_detect`! `takeover_verify` `takeover_poc_plan` `takeover_confirm`!! |
-| **Vuln scan** | `nuclei_scan`! `jaeles_scan`! `nikto_scan`! `wapiti_scan`! `semgrep_scan` |
-| **Exploit** | `authz_compare`!! `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `smuggling_canary_probe`! `web_injection_probe`!! `exploit_chain`!! `strix_deep`!! `oob_listener`! `validate_findings`!! `poc_record` |
-| **Secrets** | `secret_scan` `secret_validate`! `jwt_inspect` `source_fetch` |
-| **Cloud** | `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! |
-| **Contracts** | `contract_static_scan` `contract_toolchain` |
-| **LLM** | `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` |
-| **Method** | `wstg_lookup` `technique_lookup` `coverage_report` `hunt_plan` `research_guidance` `auth_surface` `auth_crawl`! `session_register` `session_list` |
-| **Triage** | `triage_findings` `triage_taskflows` `triage_canary_preview` |
-| **Report** | `report_generate` `findings_list` `finding_detail` `finding_note` |
+| **recon** | `subdomain_enum` `dns_permute`! `dns_resolve` `cdn_check` `tls_info` `asn_lookup` `whois_lookup` `bbot_scan` `bbot_scan_active`! `osmedeus_flow`! |
+| **probe** | `http_probe` `waf_detect` `tls_audit` `cors_audit` `fingerprint_waf` `waf_bypass` `waf_vendors` `recon_review` |
+| **endpoints** | `endpoint_discovery` `param_discovery`! `content_discovery`! `payload_catalog` `js_analyze` `graphql_audit` `websocket_probe` `fuzz_compare` `upload_surface` |
+| **scan** | `nuclei_scan`! `jaeles_scan`! `port_scan`! `service_scan`! `nikto_scan`! `wapiti_scan`! `pattern_scan` `secret_scan` `secret_validate`! `source_fetch` `semgrep_scan` `code_audit` `forbidden_chain`! `forbidden_candidates` `forbidden_bypass`! |
+| **exploit** | `exploit_chain`!! `web_injection_probe`!! `sqli_validate`!! `xss_validate`!! `ssrf_probe`!! `ssti_probe`!! `cmdi_probe`!! `nosqli_probe`!! `smuggling_probe`!! `smuggling_canary_probe`! `validate_findings`!! `guided_validate`! `browser_verify`! `authz_compare`!! `takeover_detect`! `takeover_verify` `takeover_poc_plan` `takeover_confirm`!! `poc_record` `oob_listener`! `jwt_inspect` `auth_crawl`! `auth_surface` `llm_redteam`! `llm_scan_config`! `llm_probe_catalog` `strix_deep`!! `burp_send`! `session_register` `session_list` `account_register`! |
+| **workflow** | `engagement_new` `engagement_attach` `pipeline_status` `run_phase`! `run_pipeline`! `report_generate` `findings_list` `finding_detail` `finding_note` `hunt_plan` `program_scope_fetch` `triage_findings` `triage_taskflows` `triage_canary_preview` `coverage_report` `wstg_lookup` `technique_lookup` `research_guidance` `exploit_prompt` `prompt_classes` `cloud_audit`! `cloud_asset_discovery`! `cloud_attack_paths`! `cloud_permissions`! `k8s_posture`! `contract_static_scan` `contract_toolchain` |
 | **Control** | `job_status` |
 
 ---
@@ -1119,7 +1105,7 @@ be decorative.
 ## 18. Development and testing
 
 ```bash
-.venv/bin/python -m pytest tests/ -q    # 2,231 tests across 62 files
+.venv/bin/python -m pytest tests/ -q    # 2,263 tests across 65 files
 .venv/bin/ruff check cordon/ tests/   # lint
 cordon doctor                         # executed, not just found on PATH
 ```
@@ -1179,19 +1165,19 @@ Cordon-AI/
 │   ├── tools/              # ~28 capability modules, one decorator, no privileged path
 │   ├── engines/            # bbot, nuclei, jaeles, semgrep, osmedeus, strix
 │   ├── knowledge/          # findings, WSTG, techniques, coverage, payloads, graphs, memory
-│   ├── install/            # 85 recipes, identity-verified
+│   ├── install/            # 74 recipes, identity-verified
 │   ├── llm/                # openrouter, summarize, triage
 │   └── report/             # synthesize, templates, graphs
 ├── skills/                 # 8 phase playbooks for the agent
 ├── rules/                  # detection packs — YAML, no code
 ├── scripts/                # hunt.sh, phase.py, summary.py, watch.sh, vet_payloads.py, …
-├── tests/                  # 2,231 tests across 62 files
+├── tests/                  # 2,263 tests across 65 files
 ├── payloads/               # vetted store (gitignored, rebuilt with vet_payloads.py)
 └── engagements/            # per-engagement workspaces (assets, findings, reports, audit)
 ```
 
 ---
 
-*Cordon AI — Complete User Manual. Last updated 2026-08-14.*
-*Figures current as of this revision: 94 MCP tools, 85 catalogued binaries,*
-*79 working / 3 optional not installed, 2,231 tests, 85 install recipes.*
+*Cordon AI — Complete User Manual. Last updated 2026-09-03.*
+*Figures current as of this revision: 101 MCP tools, 83 catalogued binaries,*
+*2,263 tests, 74 install recipes.*

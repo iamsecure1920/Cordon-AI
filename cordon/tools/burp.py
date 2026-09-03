@@ -40,6 +40,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from cordon.control_plane.context import get_engagement
+from cordon.errors import OutOfScopeError
 from cordon.tools.base import cordon_tool
 from cordon.tools.common import split_targets
 
@@ -147,82 +148,83 @@ async def burp_send(
     if body is not None and "Content-Type" not in request_headers:
         request_headers["Content-Type"] = "application/x-www-form-urlencoded"
 
+    # Every request goes through the central network gate: scope is re-checked
+    # per URL (the decorator checked the list, this checks each request), a
+    # rate-limit token is charged, and an ``http_request`` audit record lands
+    # for every request — refused ones included.
+    #
     # Burp's MITM certificate is self-signed by design; verifying against the
     # system store would reject every proxied TLS connection. The proxy is a
     # local loopback listener the operator configured, so this is the one place
     # verification is disabled deliberately.
+    from cordon.control_plane.net import HttpRequest, http_request
+
     results: list[dict[str, Any]] = []
-    try:
-        async with httpx.AsyncClient(
-            # httpx >= 0.28: a single proxy URL applies to every scheme; the
-            # dict form was removed. Burp terminates TLS itself, so verification
-            # against the system store would reject every proxied connection —
-            # its CA is the configured trust anchor here.
-            proxy=proxy,
-            verify=False,  # noqa: S501 — Burp's CA is the configured trust anchor
-            timeout=60.0,
-        ) as client:
-            for url in targets:
-                parsed = urlsplit(url)
-                if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                    results.append(
-                        {
-                            "target": url,
-                            "ok": False,
-                            "error": "bad_target",
-                            "message": f"{url!r} is not an absolute http(s) URL",
-                        }
-                    )
-                    continue
-                try:
-                    response = await client.request(
-                        method, url, headers=request_headers, content=body
-                    )
-                except httpx.ConnectError:
-                    return {
-                        "ok": False,
-                        "error": "burp_not_running",
-                        "message": (
-                            f"no proxy listening at {proxy}. Burp is the handoff "
-                            "target — start it (Proxy → Options → listen on "
-                            "127.0.0.1:8080, or set tools.burp.proxy_url in "
-                            "config.yaml) and retry."
-                        ),
-                    }
-                except httpx.HTTPError as exc:
-                    log.debug("burp handoff failed for %s: %s", url, exc)
-                    results.append(
-                        {
-                            "target": url,
-                            "ok": False,
-                            "error": "proxy_error",
-                            "message": f"request failed through {proxy}: {type(exc).__name__}",
-                        }
-                    )
-                    continue
-                engagement.audit.record(
-                    "burp_handoff", url=url, method=method,
-                    proxy=proxy, status_code=response.status_code,
+    for url in targets:
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            results.append(
+                {
+                    "target": url,
+                    "ok": False,
+                    "error": "bad_target",
+                    "message": f"{url!r} is not an absolute http(s) URL",
+                }
+            )
+            continue
+        try:
+            response = await http_request(
+                HttpRequest(
+                    url=url,
+                    method=method,
+                    headers=request_headers,
+                    content=body,
+                    timeout=60.0,
+                    client_kwargs={
+                        # httpx >= 0.28: a single proxy URL applies to every
+                        # scheme. Burp's CA is the configured trust anchor.
+                        "proxy": proxy,
+                        "verify": False,  # noqa: S501 — Burp's CA is the configured trust anchor
+                    },
                 )
-                results.append(
-                    {
-                        "target": url,
-                        "ok": True,
-                        "status_code": response.status_code,
-                        "headers": dict(response.headers),
-                        "body": response.text[:100_000],
-                    }
-                )
-    except httpx.ConnectError:
-        return {
-            "ok": False,
-            "error": "burp_not_running",
-            "message": (
-                f"no proxy listening at {proxy}. Burp is the handoff target — "
-                "start it (Proxy → Options → listen on 127.0.0.1:8080, or set "
-                "tools.burp.proxy_url in config.yaml) and retry."
-            ),
-        }
+            )
+        except OutOfScopeError:
+            raise
+        except httpx.ConnectError:
+            return {
+                "ok": False,
+                "error": "burp_not_running",
+                "message": (
+                    f"no proxy listening at {proxy}. Burp is the handoff "
+                    "target — start it (Proxy → Options → listen on "
+                    "127.0.0.1:8080, or set tools.burp.proxy_url in "
+                    "config.yaml) and retry."
+                ),
+            }
+        except httpx.HTTPError as exc:
+            log.debug("burp handoff failed for %s: %s", url, exc)
+            results.append(
+                {
+                    "target": url,
+                    "ok": False,
+                    "error": "proxy_error",
+                    "message": f"request failed through {proxy}: {type(exc).__name__}",
+                }
+            )
+            continue
+        engagement.audit.record(
+            "burp_handoff", url=url, method=method,
+            proxy=proxy, status_code=response.status_code,
+        )
+        results.append(
+            {
+                "target": url,
+                "ok": True,
+                "status_code": response.status_code,
+                "headers": dict(response.headers),
+                "body": response.text[:100_000],
+            }
+        )
 
     forwarded = [r for r in results if r.get("ok")]
     return {
