@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "source": "Curated, vetted subset of the tomnomnom/gf pattern idiom and community Gf-Patterns. Each pattern file uses gf's native format — {\"flags\": \"HnriP\", \"patterns\": [...]} — so the same files can be dropped into ~/.gf/ and used with the real gf binary. The flags select PCRE (P) and case-insensitive (i) matching, which both grep -P and Python re honor.",
+  "version": 2,
+  "source": "Union of Cordon's curated sink regexes with the community Gf-Patterns libraries (1ndianl33t/Gf-Patterns, mrofisr/gf-patterns), deduplicated per class with parameter-shaped forms preferred over bare substrings. Each pattern file uses gf's native format — {\"flags\": \"HnriP\", \"patterns\": [...]} — so the same files can be dropped into ~/.gf/ and used with the real gf binary. The flags select PCRE (P) and case-insensitive (i) matching, which both grep -P and Python re honor.",
   "patterns": [
     {
       "name": "xss",
@@ -71,6 +71,34 @@
       "severity": "medium",
       "validator": "cloud_asset_discovery",
       "purpose": "Cloud storage bucket references: S3, GCS, Azure Blob, CloudFront, DigitalOcean Spaces, R2."
+    },
+    {
+      "name": "takeovers",
+      "class": "takeover",
+      "severity": "high",
+      "validator": "takeover_verify",
+      "purpose": "Dangling-CNAME / unclaimed-service fingerprints: parked pages, 'not registered', 'no such app' signatures served by platforms whose claim expired."
+    },
+    {
+      "name": "sensitive-files",
+      "class": "exposure",
+      "severity": "medium",
+      "validator": "validate_findings",
+      "purpose": "Sensitive files and interesting extensions: .env, .git, backups, config files, credentials and their URL paths."
+    },
+    {
+      "name": "debug-pages",
+      "class": "exposure",
+      "severity": "low",
+      "validator": "validate_findings",
+      "purpose": "Stack traces, routing errors, phpinfo and other debug pages that leak implementation detail."
+    },
+    {
+      "name": "php-errors",
+      "class": "exposure",
+      "severity": "low",
+      "validator": "validate_findings",
+      "purpose": "PHP error strings, uncaught-exception lines, and include_path leakage in response bodies."
     }
   ]
 }

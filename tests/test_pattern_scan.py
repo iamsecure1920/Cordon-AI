@@ -38,7 +38,7 @@ class TestPackValidity:
         known = {
             "xss_validate", "ssrf_probe", "sqli_validate", "ssti_probe",
             "cmdi_probe", "authz_compare", "validate_findings",
-            "cloud_asset_discovery",
+            "cloud_asset_discovery", "takeover_verify",
         }
         assert {p.validator for p in GF_PATTERNS} <= known
 

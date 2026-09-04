@@ -549,8 +549,12 @@ installed — `pip install 'cordon-ai[llm]'`. `doctor` now reports this.
 ### 6f. `pattern_scan` — built
 
 `cordon/tools/pattern_scan.py`, registered in `mcp_server.py`, patterns in
-`rules/gf/` (11 packs: xss, ssrf, sqli, lfi, rce, redirect, ssti, idor, upload,
-s3-buckets, + `manifest.json`).
+`rules/gf/` (14 packs: xss, ssrf, sqli, lfi, rce, redirect, ssti, idor, upload,
+s3-buckets, takeovers, sensitive-files, debug-pages, php-errors, +
+`manifest.json`). The pack is the deduplicated union of Cordon's curated sink
+regexes with the community libraries (1ndianl33t/Gf-Patterns,
+mrofisr/gf-patterns), parameter-shaped forms preferred over bare substrings so
+a match stays a sink shape rather than a dictionary word.
 
 The value of `gf` is not the binary — that is a hundred lines piping stdin
 through `grep -oP`. It is the *named pattern library*: per-bug-class regex packs

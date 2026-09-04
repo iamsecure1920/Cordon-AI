@@ -3,6 +3,11 @@
   "patterns": [
     "(s3[.-]?(?:amazonaws\\.com|amazonaws|[-a-z0-9]+\\.s3)|storage\\.googleapis\\.com|blob\\.core\\.windows\\.net|azureedge\\.net|cloudfront\\.net|digitaloceanspaces\\.com|r2\\.cloudflarestorage\\.com|firebasestorage\\.googleapis\\.com|storage\\.cloud\\.google\\.com)",
     "[a-z0-9][a-z0-9.-]{1,60}\\.s3[.-](?:[a-z0-9-]{1,20}\\.)?amazonaws\\.com",
-    "(amazonaws\\.com|googleapis\\.com/storage|blob\\.core\\.windows\\.net|cloudfront\\.net|digitaloceanspaces\\.com|cloudflarestorage\\.com)"
+    "(amazonaws\\.com|googleapis\\.com/storage|blob\\.core\\.windows\\.net|cloudfront\\.net|digitaloceanspaces\\.com|cloudflarestorage\\.com)",
+    "[a-z0-9.-]+\\.s3\\.amazonaws\\.com",
+    "[a-z0-9.-]+\\.s3-[a-z0-9-]\\.amazonaws\\.com",
+    "[a-z0-9.-]+\\.s3-website[.-](eu|ap|us|ca|sa|cn)",
+    "//s3\\.amazonaws\\.com/[a-z0-9._-]+",
+    "//s3-[a-z0-9-]+\\.amazonaws\\.com/[a-z0-9._-]+"
   ]
 }

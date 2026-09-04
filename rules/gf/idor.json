@@ -4,6 +4,19 @@
     "/(users?|accounts?|orders?|invoices?|documents?|files?|profiles?|members?|tenants?|organizations?|customers?|payments?|transactions?|messages?|tickets?|posts?|comments?|products?|items?|projects?|reports?|api/users?)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
     "/(users?|accounts?|orders?|invoices?|documents?|files?|profiles?|members?|tenants?|organizations?|customers?|payments?|transactions?|messages?|tickets?|posts?|comments?|products?|items?|projects?|reports?|api/users?)/\\d{2,}",
     "[?&](id|uid|user_id|user|account|account_id|customer|customer_id|order|order_id|invoice|invoice_id|doc|doc_id|file|file_id|ref|token|key|session|profile|member|tenant|org|organization|project|report|message|ticket|post|comment|product|item|payment|transaction)=['\"]?\\d{2,}['\"]?",
-    "[?&](id|uid|user_id|user|account|customer|order|invoice|doc|file|ref|token|key|session|profile|member|tenant|org|organization|project|report|message|ticket|post|comment|product|item|payment|transaction)=[0-9a-f]{8}-[0-9a-f]{4}-"
+    "[?&](id|uid|user_id|user|account|customer|order|invoice|doc|file|ref|token|key|session|profile|member|tenant|org|organization|project|report|message|ticket|post|comment|product|item|payment|transaction)=[0-9a-f]{8}-[0-9a-f]{4}-",
+    "id=",
+    "user=",
+    "account=",
+    "number=",
+    "order=",
+    "no=",
+    "doc=",
+    "key=",
+    "email=",
+    "group=",
+    "profile=",
+    "edit=",
+    "report="
   ]
 }

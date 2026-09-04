@@ -2,6 +2,14 @@
   "flags": "HnriP",
   "patterns": [
     "(render_template|render_template_string|Template|jinja2|Jinja2|twig|Twig|freemarker|FreeMarker|velocity|Velocity|mustache|handlebars|Handlebars|pug|ejs|\\{\\{|\\{%|\\$\\{|#\\{|<%=|\\{%=)",
-    "(render|render_string|from_string|Template\\(|compile|evaluate|Engine\\(|tpl|template)\\s*\\(?[^)]{0,120}(\\$|req|request|input|param|name|template|view|page|content|msg|message|payload|body)"
+    "(render|render_string|from_string|Template\\(|compile|evaluate|Engine\\(|tpl|template)\\s*\\(?[^)]{0,120}(\\$|req|request|input|param|name|template|view|page|content|msg|message|payload|body)",
+    "template=",
+    "preview=",
+    "id=",
+    "view=",
+    "activity=",
+    "name=",
+    "content=",
+    "redirect="
   ]
 }

@@ -173,9 +173,9 @@ COVERAGE: list[dict[str, Any]] = [
     },
     {
         "class": "subdomain-takeover", "title": "Subdomain Takeover", "phase": "recon",
-        "detection": "takeover_detect (subzy, subjack, subdominator, dnsreaper)",
+        "detection": "takeover_detect (subzy, subjack, subdominator, dnsreaper) + gf:takeovers",
         "validation": "takeover_verify + takeover_confirm",
-        "payloads": [], "gf": [], "status": "auto",
+        "payloads": [], "gf": ["takeovers"], "status": "auto",
         "bypass": "virtual-hosts",
     },
     {
@@ -206,9 +206,9 @@ COVERAGE: list[dict[str, Any]] = [
     },
     {
         "class": "secrets", "title": "API Keys / Token Leaks", "phase": "recon",
-        "detection": "secret_scan (trufflehog, gitleaks, noseyparker, kingfisher)",
+        "detection": "secret_scan (trufflehog, gitleaks, noseyparker, kingfisher) + gf:sensitive-files + gf:debug-pages + gf:php-errors",
         "validation": "secret_validate (is the key live and what does it reach)",
-        "payloads": [], "gf": [], "status": "auto",
+        "payloads": [], "gf": ["sensitive-files", "debug-pages", "php-errors"], "status": "auto",
         "bypass": "api-key-leaks",
     },
     {
